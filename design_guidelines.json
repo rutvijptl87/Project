@@ -1,0 +1,93 @@
+{
+  "theme": "Light Theme",
+  "archetype": "Archetype 4 (Swiss & High-Contrast) + Earthy Confidence",
+  "brand": {
+    "name": "Creator Consultant",
+    "domain": "Consultancy / Financial Management"
+  },
+  "design_philosophy": {
+    "core_principles": [
+      "Swiss Rigor: High density, clean lines, and pure functional utility.",
+      "Organic Trust: Deep, sophisticated greens replace generic SaaS blues to feel premium and trustworthy.",
+      "Data Clarity: The table is the hero. Typography must prioritize legibility of numbers and currency.",
+      "No rounded fluff: Crisp corners (max 6px) to maintain an authoritative, enterprise feel."
+    ],
+    "emotion": "Authoritative, Trustworthy, and Frictionless"
+  },
+  "colors": {
+    "background": "#FFFFFF",
+    "surface_off_white": "#F6F9F7",
+    "primary_dark_green": "#0A2E1F",
+    "primary_accent": "#10B981",
+    "primary_accent_hover": "#059669",
+    "text_main": "#04120C",
+    "text_muted": "#526B60",
+    "border": "#E2E8E4",
+    "table_header_bg": "#061A11",
+    "table_header_text": "#FFFFFF",
+    "status": {
+      "settled": { "bg": "#D1FAE5", "text": "#065F46", "border": "#34D399" },
+      "outstanding": { "bg": "#FEF2F2", "text": "#991B1B", "border": "#F87171" }
+    }
+  },
+  "typography": {
+    "font_families": {
+      "headings": "Cabinet Grotesk, sans-serif",
+      "body": "IBM Plex Sans, sans-serif",
+      "mono_data": "IBM Plex Mono, monospace"
+    },
+    "hierarchy": {
+      "h1": "text-3xl font-bold tracking-tight",
+      "h2": "text-xl font-semibold tracking-tight",
+      "kpi_value": "text-4xl font-semibold tracking-tighter font-mono",
+      "table_header": "text-xs font-semibold uppercase tracking-[0.1em]",
+      "table_body": "text-sm font-medium",
+      "body": "text-sm text-text_muted"
+    },
+    "guidelines": "NEVER use Inter. Use Cabinet Grotesk for section headings and KPI labels. Use IBM Plex Mono for all Rupee values and numbers."
+  },
+  "layout_and_spacing": {
+    "grid_system": "Control Room Grid (Dense and scanable)",
+    "container": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
+    "spacing_scale": "Use tight gaps (gap-4 or gap-6) between KPI cards and tables.",
+    "cards": "border border-border bg-white rounded-md shadow-sm p-5",
+    "navigation": "Top navbar, sticky, white bg, h-16, flex items-center justify-between, border-b border-border."
+  },
+  "component_rules": {
+    "tables": {
+      "header": "Dark green/near-black background (#061A11) with white text for high contrast and strong horizontal framing.",
+      "rows": "White background, border-b border-border, hover:bg-surface_off_white.",
+      "cells": "Padding py-3 px-4. Align numbers to the right, text to the left."
+    },
+    "buttons": {
+      "primary": "bg-primary_dark_green text-white hover:bg-primary_accent hover:text-white rounded-md px-4 py-2 transition-colors",
+      "secondary": "border border-border bg-white text-text_main hover:bg-surface_off_white rounded-md px-4 py-2"
+    },
+    "forms": {
+      "inputs": "border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary_accent",
+      "labels": "text-sm font-medium mb-1.5 block text-text_main"
+    },
+    "modals": {
+      "overlay": "bg-text_main/40 backdrop-blur-sm",
+      "content": "bg-white rounded-lg border border-border shadow-xl p-6 max-w-md w-full"
+    }
+  },
+  "formatting_rules": {
+    "currency": "Indian Rupee (₹). ALL currency values MUST use the Indian numbering system format (e.g., ₹ 1,23,45,678). Use Intl.NumberFormat('en-IN')."
+  },
+  "testing_attributes": {
+    "requirement": "ALL interactive elements, buttons, links, inputs, and major containers MUST include a 'data-testid' attribute.",
+    "convention": "kebab-case, role-based (e.g., 'data-testid=\"btn-new-project\"', 'data-testid=\"nav-clients\"')."
+  },
+  "instructions_to_main_agent": [
+    "1. Setup fonts: Install Cabinet Grotesk, IBM Plex Sans, and IBM Plex Mono (or use Google Fonts for IBM, Fontshare for Cabinet Grotesk).",
+    "2. Build the Global Navbar: 'Creator Consultant' Logo (text based, Cabinet Grotesk bold), Links (Projects, Clients, Architects, Settings), and CTA (+ New Project, Record Payment).",
+    "3. Build the Dashboard View: Top section with 3 KPI Cards (Total Quoted, Received, Outstanding). Ensure Indian Rupee formatting.",
+    "4. Build the Data Table: Dark header (black/dark green), sortable columns. Include columns: Project ID, Name, Client, Architect, Site Location, Quoted ₹, Received ₹, Outstanding ₹, Status, Actions (View/Pay/Edit/Delete).",
+    "5. Implement Modals/Forms: Create the 'Add Project' form, 'Record Payment' modal, Client and Architect management forms.",
+    "6. Do not implement a login flow; the dashboard should be accessible immediately.",
+    "7. Rely heavily on Shadcn UI (Tables, Dialogs, Cards) but restyle them with the exact hex codes provided. Strip away default border-radius (use rounded-md) and apply the custom fonts.",
+    "8. Use lucide-react for all icons."
+  ],
+  "image_urls": {}
+}
