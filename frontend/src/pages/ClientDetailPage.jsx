@@ -29,7 +29,7 @@ const ClientDetailPage = () => {
   const waPhone = c.phone ? String(c.phone).replace(/[^0-9]/g, '') : '';
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="client-detail-page">
+    <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="client-detail-page">
       <Link to="/clients" className="inline-flex items-center gap-1 text-sm mb-4 nav-link pl-2 pr-3" data-testid="btn-back">
         <ArrowLeft size={14}/> Back to Clients
       </Link>

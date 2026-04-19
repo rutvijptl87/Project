@@ -7,7 +7,7 @@ const Navbar = ({ onRecordPayment }) => {
   const { passwordSet, unlocked } = useAuth() || {};
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b" style={{ borderColor: 'var(--cc-border)' }} data-testid="main-navbar">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-3 group" data-testid="brand-logo">
           <img src="/logo.jpg" alt="Creator Consultant" className="h-10 w-auto object-contain" />
           <div className="leading-tight hidden sm:block">

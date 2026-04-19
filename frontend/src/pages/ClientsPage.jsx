@@ -56,7 +56,7 @@ const ClientsPage = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="clients-page">
+    <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="clients-page">
       <div className="flex items-end justify-between mb-6 flex-wrap gap-4">
         <div>
           <h1 className="font-head text-3xl md:text-4xl font-extrabold" style={{ color: 'var(--cc-dark-green)' }}>Clients</h1>

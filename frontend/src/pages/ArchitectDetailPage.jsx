@@ -28,7 +28,7 @@ const ArchitectDetailPage = () => {
   const { architect: a, projects, stats } = data;
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="architect-detail-page">
+    <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="architect-detail-page">
       <Link to="/architects" className="inline-flex items-center gap-1 text-sm mb-4 nav-link pl-2 pr-3" data-testid="btn-back">
         <ArrowLeft size={14}/> Back to Architects
       </Link>

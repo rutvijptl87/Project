@@ -9,7 +9,6 @@ import {
   FileText, Archive, ArchiveRestore, ArrowUpDown, ArrowUp, ArrowDown,
   Phone, Mail,
 } from 'lucide-react';
-
 const SORTABLE_COLUMNS = {
   project_code: 'Project ID',
   name: 'Project Name',
@@ -151,7 +150,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="projects-page">
+    <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="projects-page">
       <div className="flex items-end justify-between mb-6 flex-wrap gap-4">
         <div>
           <h1 className="font-head text-3xl md:text-4xl font-extrabold tracking-tight" style={{ color: 'var(--cc-dark-green)' }} data-testid="page-title">
@@ -256,7 +255,11 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
                   <td>
                     {p.client_name ? (
                       <div>
-                        <div className="link-underline" data-testid={`project-client-${p.project_code}`}>{p.client_name}</div>
+                        {p.client_id ? (
+                          <Link to={`/clients/${p.client_id}`} className="link-underline hover:opacity-80" data-testid={`project-client-${p.project_code}`}>{p.client_name}</Link>
+                        ) : (
+                          <span data-testid={`project-client-${p.project_code}`}>{p.client_name}</span>
+                        )}
                         {(p.client_phone || p.client_email) && (
                           <div className="flex gap-2 mt-0.5">
                             {p.client_phone && (
@@ -282,7 +285,11 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
                   <td>
                     {p.architect_name ? (
                       <div>
-                        <div className="link-underline">{p.architect_name}</div>
+                        {p.architect_id ? (
+                          <Link to={`/architects/${p.architect_id}`} className="link-underline hover:opacity-80" data-testid={`project-architect-${p.project_code}`}>{p.architect_name}</Link>
+                        ) : (
+                          <span data-testid={`project-architect-${p.project_code}`}>{p.architect_name}</span>
+                        )}
                         {(p.architect_phone || p.architect_email) && (
                           <div className="flex gap-2 mt-0.5">
                             {p.architect_phone && (

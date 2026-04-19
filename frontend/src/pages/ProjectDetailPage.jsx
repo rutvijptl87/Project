@@ -83,7 +83,7 @@ const ProjectDetailPage = () => {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="project-detail-page">
+    <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="project-detail-page">
       <Link to="/" className="inline-flex items-center gap-1 text-sm mb-4 nav-link pl-2 pr-3"><ArrowLeft size={14}/> Back to Projects</Link>
 
       <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
