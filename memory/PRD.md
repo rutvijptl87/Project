@@ -70,7 +70,28 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
 - ✅ 3 demo offers auto-seeded (OFR-0001 Audit, OFR-0002 Steel, OFR-0003 PMC)
 - ✅ Tested → 69/69 backend tests pass, all frontend flows pass
 
-## Session 5 — 2026-01 (SQLite Import + Fully Editable Offer PDF)
+## Session 6 — 2026-01 (Project Detail redesign: Quote Revisions + Activity Log + Per-project Excel)
+- ✅ **Session 4 & 5 features** still working (branded Offer PDF, password gate, SQLite import, fully editable offer PDF)
+- ✅ **Project Detail page redesigned** to match user's reference screenshot
+  - Header with project name (+ offer type badge), code, **clickable client/architect** links, location, date, status badge
+  - 3 color-coded KPI cards: Current Quoted | Total Received | Outstanding
+  - Action bar: Export Excel | Invoice PDF | Edit | Archive | Delete
+  - Contact bar showing client + architect phone/email
+- ✅ **Quote Revisions** feature
+  - Inline form on detail page: New Amount + Reason → Revise button
+  - History table with # / Old / New / Reason / Date
+  - Endpoint `POST /api/projects/{id}/revise-quote` updates project & logs activity
+  - Endpoint `GET /api/projects/{id}/revisions`
+- ✅ **Activity History**
+  - Color-coded action badges (PROJECT CREATED green, PAYMENT ADDED blue, PROJECT UPDATED yellow, PAYMENT DELETED red, QUOTE REVISED yellow, PROJECT ARCHIVED purple)
+  - Auto-logged on create / update / delete / archive / unarchive / payment-add / payment-delete / revise-quote
+  - 132 legacy activity entries imported from user's SQLite
+  - Endpoint `GET /api/projects/{id}/activity`
+- ✅ **Delete payment** — new `DELETE /api/payments/{id}` subtracts amount from project received, recomputes outstanding/status, logs activity
+- ✅ **Per-project Excel export** — `GET /api/projects/{id}/export` returns 4-sheet workbook (Project Info, Payments, Quote Revisions, Activity)
+- ✅ **Cascade delete** — deleting a project now also removes its payments, revisions, and activity
+- ✅ Tested → **35/35 new backend tests pass** (iter-6), all frontend flows verified
+
 - ✅ **Session 4 (Offer PDF + Password Gate)** features still fully working: branded Creator RCC Consultant LLP offer PDF + bcrypt password gate with Settings change flow
 - ✅ **Imported user's real SQLite DB** — 70 projects, 37 clients, 2 architects, 27 payments (CC-0001 to CC-0072 codes preserved, received amounts + status auto-computed from payments)
 - ✅ Total Quoted ₹44,47,492 / Received ₹10,12,500 / Outstanding ₹34,34,992
