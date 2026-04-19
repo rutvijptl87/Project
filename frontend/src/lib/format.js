@@ -1,0 +1,27 @@
+// Indian rupee formatting helper
+export const formatINR = (value, { withSymbol = true, decimals = 2 } = {}) => {
+  const num = Number(value || 0);
+  const formatted = new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(num);
+  return withSymbol ? `₹ ${formatted}` : formatted;
+};
+
+export const formatINRCompact = (value) => {
+  const num = Number(value || 0);
+  if (num >= 10000000) return `₹ ${(num / 10000000).toFixed(2)} Cr`;
+  if (num >= 100000) return `₹ ${(num / 100000).toFixed(2)} L`;
+  if (num >= 1000) return `₹ ${(num / 1000).toFixed(1)} K`;
+  return `₹ ${num.toFixed(0)}`;
+};
+
+export const formatDate = (iso) => {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  } catch {
+    return iso;
+  }
+};
