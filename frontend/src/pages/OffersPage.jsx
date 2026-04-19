@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, API } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import Modal from '../components/Modal';
 import { formatINR, formatDate } from '../lib/format';
 import {
@@ -61,6 +62,7 @@ const statusBadge = (s) => {
 };
 
 const OffersPage = () => {
+  const { forceVerify } = useAuth();
   const [offers, setOffers] = useState([]);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -158,7 +160,9 @@ const OffersPage = () => {
   };
 
   const handleDelete = async (o) => {
-    if (!window.confirm(`Delete offer ${o.offer_code}? This cannot be undone.`)) return;
+    if (!window.confirm(`Are you sure you want to delete offer ${o.offer_code}?\n\nThis cannot be undone.`)) return;
+    const ok = await forceVerify();
+    if (!ok) return;
     try {
       await api.delete(`/offers/${o.id}`);
       showToast('Offer deleted');

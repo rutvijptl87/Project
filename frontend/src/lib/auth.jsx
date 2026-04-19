@@ -57,6 +57,21 @@ export const AuthProvider = ({ children }) => {
     });
   }, [unlocked, passwordSet]);
 
+  // Force a fresh password prompt regardless of unlocked state — used for destructive actions like delete.
+  const forceVerify = useCallback(() => {
+    return new Promise((resolve) => {
+      if (passwordSet === false) {
+        setModalMode('setup');
+        pendingResolve.current = resolve;
+        setModalOpen(true);
+        return;
+      }
+      setModalMode('verify-delete');
+      pendingResolve.current = resolve;
+      setModalOpen(true);
+    });
+  }, [passwordSet]);
+
   // Register requireUnlock globally so axios interceptor can call it
   useEffect(() => {
     registerUnlockFn(requireUnlock);
@@ -71,13 +86,17 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ passwordSet, unlocked, requireUnlock, lock, markUnlocked, refreshStatus: loadStatus }}>
+    <AuthContext.Provider value={{ passwordSet, unlocked, requireUnlock, forceVerify, lock, markUnlocked, refreshStatus: loadStatus }}>
       {children}
       {modalOpen && (
         <PasswordModal
           mode={modalMode}
           onClose={() => handleModalResult(false)}
-          onSuccess={() => { markUnlocked(); loadStatus(); handleModalResult(true); }}
+          onSuccess={() => {
+            if (modalMode !== 'verify-delete') markUnlocked();
+            loadStatus();
+            handleModalResult(true);
+          }}
         />
       )}
     </AuthContext.Provider>
@@ -99,6 +118,7 @@ const PasswordModal = ({ mode, onClose, onSuccess }) => {
       if (mode === 'setup') {
         await api.post('/auth/set-password', { new_password: pw });
       } else {
+        // verify and verify-delete both call /auth/verify
         await api.post('/auth/verify', { password: pw });
       }
       onSuccess();
@@ -111,13 +131,15 @@ const PasswordModal = ({ mode, onClose, onSuccess }) => {
     <div className="modal-overlay" onClick={onClose} data-testid="password-modal-overlay">
       <div className="modal-content" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()} data-testid="password-modal">
         <div className="p-5 border-b" style={{ borderColor: 'var(--cc-border)' }}>
-          <h2 className="font-head text-xl font-bold" style={{ color: 'var(--cc-dark-green)' }}>
-            {mode === 'setup' ? '🔐 Set Edit Password' : '🔒 Enter Password to Edit'}
+          <h2 className="font-head text-xl font-bold" style={{ color: mode === 'verify-delete' ? '#DC2626' : 'var(--cc-dark-green)' }}>
+            {mode === 'setup' && '🔐 Set Edit Password'}
+            {mode === 'verify' && '🔒 Enter Password to Edit'}
+            {mode === 'verify-delete' && '⚠️  Confirm Delete — Enter Password'}
           </h2>
           <p className="text-xs mt-1" style={{ color: 'var(--cc-text-muted)' }}>
-            {mode === 'setup'
-              ? 'No password is set yet. Please set one to protect edit actions. You can change it later from Settings.'
-              : 'This password protects edit, delete, create and convert actions. It stays unlocked until you close the tab.'}
+            {mode === 'setup' && 'No password is set yet. Please set one to protect edit actions. You can change it later from Settings.'}
+            {mode === 'verify' && 'This password protects edit, delete, create and convert actions. It stays unlocked until you close the tab.'}
+            {mode === 'verify-delete' && 'Delete is permanent. Please re-enter your password to confirm this destructive action.'}
           </p>
         </div>
         <form onSubmit={submit} className="p-5 space-y-3">
@@ -136,8 +158,8 @@ const PasswordModal = ({ mode, onClose, onSuccess }) => {
           {err && <div className="text-sm text-red-600" data-testid="password-modal-error">{err}</div>}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="btn btn-outline" data-testid="password-modal-cancel">Cancel</button>
-            <button type="submit" disabled={busy} className="btn btn-primary" data-testid="password-modal-submit">
-              {busy ? 'Checking...' : (mode === 'setup' ? 'Set & Unlock' : 'Unlock')}
+            <button type="submit" disabled={busy} className={`btn ${mode === 'verify-delete' ? 'btn-danger' : 'btn-primary'}`} data-testid="password-modal-submit">
+              {busy ? 'Checking...' : (mode === 'setup' ? 'Set & Unlock' : (mode === 'verify-delete' ? 'Confirm Delete' : 'Unlock'))}
             </button>
           </div>
         </form>

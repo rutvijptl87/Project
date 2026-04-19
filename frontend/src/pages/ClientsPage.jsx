@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import Modal from '../components/Modal';
 import { Plus, Pencil, Trash2, Users, Phone, Mail } from 'lucide-react';
 
 const emptyClient = { name: '', phone: '', email: '', company: '', address: '' };
 
 const ClientsPage = () => {
+  const { forceVerify } = useAuth();
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -50,7 +52,9 @@ const ClientsPage = () => {
   };
 
   const handleDelete = async (c) => {
-    if (!window.confirm(`Delete client "${c.name}"?`)) return;
+    if (!window.confirm(`Are you sure you want to delete client "${c.name}"?\n\nAny projects linked to them will be unlinked (but not deleted).`)) return;
+    const ok = await forceVerify();
+    if (!ok) return;
     await api.delete(`/clients/${c.id}`);
     load();
   };

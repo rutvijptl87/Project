@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { formatINR, formatDate } from '../lib/format';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import {
@@ -21,6 +22,7 @@ const actionStyle = (action) => {
 const ProjectDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { forceVerify } = useAuth();
   const [project, setProject] = useState(null);
   const [payments, setPayments] = useState([]);
   const [revisions, setRevisions] = useState([]);
@@ -48,7 +50,9 @@ const ProjectDetailPage = () => {
   if (!project) return <div className="max-w-5xl mx-auto p-8">Loading...</div>;
 
   const handleDelete = async () => {
-    if (!window.confirm(`Permanently DELETE project ${project.project_code}? Use Archive to keep history.`)) return;
+    if (!window.confirm(`Are you sure you want to permanently DELETE project ${project.project_code}?\n\nThis will also delete all its payments, quote revisions and activity history. This cannot be undone.\n\nTip: Use Archive instead to keep history.`)) return;
+    const ok = await forceVerify();
+    if (!ok) return;
     await api.delete(`/projects/${id}`);
     navigate('/');
   };
@@ -64,7 +68,9 @@ const ProjectDetailPage = () => {
   const downloadReceipt = (paymentId) => window.open(`${API}/payments/${paymentId}/receipt`, '_blank');
 
   const handleDeletePayment = async (paymentId) => {
-    if (!window.confirm('Delete this payment? Totals will be recalculated.')) return;
+    if (!window.confirm('Are you sure you want to delete this payment?\n\nProject totals will be recalculated. This cannot be undone.')) return;
+    const ok = await forceVerify();
+    if (!ok) return;
     await api.delete(`/payments/${paymentId}`);
     load();
   };

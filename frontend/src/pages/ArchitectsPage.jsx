@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import Modal from '../components/Modal';
 import { Plus, Pencil, Trash2, Compass, Phone, Mail } from 'lucide-react';
 
 const emptyA = { name: '', phone: '', email: '', firm: '' };
 
 const ArchitectsPage = () => {
+  const { forceVerify } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -44,7 +46,9 @@ const ArchitectsPage = () => {
   };
 
   const handleDelete = async (a) => {
-    if (!window.confirm(`Delete architect "${a.name}"?`)) return;
+    if (!window.confirm(`Are you sure you want to delete architect "${a.name}"?\n\nAny projects linked to them will be unlinked (but not deleted).`)) return;
+    const ok = await forceVerify();
+    if (!ok) return;
     await api.delete(`/architects/${a.id}`);
     load();
   };
