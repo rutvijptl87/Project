@@ -73,8 +73,12 @@ class Project(BaseModel):
     name: str
     client_id: Optional[str] = None
     client_name: Optional[str] = ""
+    client_phone: Optional[str] = ""
+    client_email: Optional[str] = ""
     architect_id: Optional[str] = None
     architect_name: Optional[str] = ""
+    architect_phone: Optional[str] = ""
+    architect_email: Optional[str] = ""
     site_location: str = ""
     quoted_amount: float = 0.0
     received_amount: float = 0.0
@@ -133,13 +137,21 @@ async def _enrich_project(p: dict) -> dict:
     if p.get("client_id"):
         c = await db.clients.find_one({"id": p["client_id"]}, {"_id": 0})
         p["client_name"] = c["name"] if c else ""
+        p["client_phone"] = (c.get("phone") if c else "") or ""
+        p["client_email"] = (c.get("email") if c else "") or ""
     else:
         p["client_name"] = ""
+        p["client_phone"] = ""
+        p["client_email"] = ""
     if p.get("architect_id"):
         a = await db.architects.find_one({"id": p["architect_id"]}, {"_id": 0})
         p["architect_name"] = a["name"] if a else ""
+        p["architect_phone"] = (a.get("phone") if a else "") or ""
+        p["architect_email"] = (a.get("email") if a else "") or ""
     else:
         p["architect_name"] = ""
+        p["architect_phone"] = ""
+        p["architect_email"] = ""
     p["quoted_amount"] = float(p.get("quoted_amount", 0) or 0)
     p["received_amount"] = float(p.get("received_amount", 0) or 0)
     p["outstanding_amount"] = round(p["quoted_amount"] - p["received_amount"], 2)
