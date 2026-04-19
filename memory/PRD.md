@@ -70,7 +70,19 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
 - ✅ 3 demo offers auto-seeded (OFR-0001 Audit, OFR-0002 Steel, OFR-0003 PMC)
 - ✅ Tested → 69/69 backend tests pass, all frontend flows pass
 
-## Session 4 — 2026-01 (Offer PDF + Password Gate)
+## Session 5 — 2026-01 (SQLite Import + Fully Editable Offer PDF)
+- ✅ **Session 4 (Offer PDF + Password Gate)** features still fully working: branded Creator RCC Consultant LLP offer PDF + bcrypt password gate with Settings change flow
+- ✅ **Imported user's real SQLite DB** — 70 projects, 37 clients, 2 architects, 27 payments (CC-0001 to CC-0072 codes preserved, received amounts + status auto-computed from payments)
+- ✅ Total Quoted ₹44,47,492 / Received ₹10,12,500 / Outstanding ₹34,34,992
+- ✅ New **POST /api/import/sqlite** endpoint — accepts `.db` file upload, merge or replace mode, validates magic bytes, auto-resolves client/architect by name
+- ✅ **Settings → Import SQLite DB** button — upload historic DB files anytime
+- ✅ **Offer PDF fully editable** per-offer — all content from header to signature can be overridden:
+  - Subject line, Scope of Work (multi-line), **Payment Schedule** (dynamic list of `{label, percent}` rows with add/remove), **Terms & Conditions** (dynamic list with add/remove), Bank Details, Signatory Name, Intro Paragraph, Company Header/Tagline/Address
+  - All fields optional; sensible defaults used when blank
+  - Live percentage total indicator for payment schedule (warns if not 100%)
+  - "Customize PDF Content" collapsible section in Offer modal
+- ✅ Tested → **29/29 new backend tests pass** (iter-5), all frontend flows verified
+
 - ✅ **Branded Offer PDF generation** matching Creator RCC Consultant LLP sample format
   - Header with company name + address + phone + email
   - TO section with client details
