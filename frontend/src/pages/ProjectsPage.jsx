@@ -1,10 +1,24 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { formatINR } from '../lib/format';
 import DashboardKPI from '../components/DashboardKPI';
 import RecordPaymentModal from '../components/RecordPaymentModal';
-import { Plus, Search, Download, Upload, Eye, CreditCard, Pencil, Trash2, IndianRupee } from 'lucide-react';
+import {
+  Plus, Search, Download, Upload, Eye, Pencil, Trash2, IndianRupee,
+  FileText, Archive, ArchiveRestore, ArrowUpDown, ArrowUp, ArrowDown,
+} from 'lucide-react';
+
+const SORTABLE_COLUMNS = {
+  project_code: 'Project ID',
+  name: 'Project Name',
+  client_name: 'Client',
+  architect_name: 'Architect',
+  quoted_amount: 'Quoted',
+  received_amount: 'Received',
+  outstanding_amount: 'Outstanding',
+  status: 'Status',
+};
 
 const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
   const navigate = useNavigate();
@@ -15,13 +29,19 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
   const [payTargetId, setPayTargetId] = useState(null);
   const [importing, setImporting] = useState(false);
   const [toast, setToast] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [sortBy, setSortBy] = useState('created_at');
+  const [sortDir, setSortDir] = useState('desc');
   const fileInputRef = useRef(null);
 
   const load = async () => {
     setLoading(true);
     try {
+      const params = {};
+      if (search) params.search = search;
+      if (showArchived) params.archived_only = true;
       const [p, s] = await Promise.all([
-        api.get('/projects', { params: search ? { search } : {} }),
+        api.get('/projects', { params }),
         api.get('/dashboard/stats'),
       ]);
       setProjects(p.data);
@@ -33,40 +53,83 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
     }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [showArchived]);
+
+  const sortedProjects = useMemo(() => {
+    if (!sortBy) return projects;
+    const arr = [...projects];
+    arr.sort((a, b) => {
+      const va = a[sortBy];
+      const vb = b[sortBy];
+      let cmp;
+      if (typeof va === 'number' || typeof vb === 'number') {
+        cmp = (Number(va) || 0) - (Number(vb) || 0);
+      } else {
+        cmp = String(va || '').localeCompare(String(vb || ''), undefined, { numeric: true });
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return arr;
+  }, [projects, sortBy, sortDir]);
+
+  const toggleSort = (col) => {
+    if (sortBy === col) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(col);
+      setSortDir('asc');
+    }
+  };
+
+  const SortIcon = ({ col }) => {
+    if (sortBy !== col) return <ArrowUpDown size={11} className="inline ml-1 opacity-50" />;
+    return sortDir === 'asc'
+      ? <ArrowUp size={11} className="inline ml-1" />
+      : <ArrowDown size={11} className="inline ml-1" />;
+  };
 
   const handleSearch = (e) => {
     e.preventDefault();
     load();
   };
 
-  const handleDelete = async (id, code) => {
-    if (!window.confirm(`Delete project ${code}? This cannot be undone.`)) return;
+  const handleArchive = async (id, code) => {
+    if (!window.confirm(`Archive project ${code}? It will be hidden from the main list but can be restored.`)) return;
     try {
-      await api.delete(`/projects/${id}`);
-      showToast('Project deleted');
+      await api.post(`/projects/${id}/archive`);
+      showToast('Project archived');
       load();
-    } catch {
-      showToast('Delete failed', 'error');
-    }
+    } catch { showToast('Failed to archive', 'error'); }
   };
 
-  const openPay = (id) => {
-    setPayTargetId(id);
-    setShowPayModal(true);
+  const handleUnarchive = async (id, code) => {
+    try {
+      await api.post(`/projects/${id}/unarchive`);
+      showToast(`Project ${code} restored`);
+      load();
+    } catch { showToast('Failed to restore', 'error'); }
   };
+
+  const handleDelete = async (id, code) => {
+    if (!window.confirm(`Permanently DELETE project ${code}?\nThis cannot be undone. Use Archive instead to keep history.`)) return;
+    try {
+      await api.delete(`/projects/${id}`);
+      showToast('Project deleted permanently');
+      load();
+    } catch { showToast('Delete failed', 'error'); }
+  };
+
+  const openPay = (id) => { setPayTargetId(id); setShowPayModal(true); };
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 2500);
   };
 
-  const handleExport = () => {
-    window.open(`${API}/export/excel`, '_blank');
-  };
+  const handleExport = () => window.open(`${API}/export/excel`, '_blank');
+  const handleInvoice = (id) => window.open(`${API}/projects/${id}/invoice`, '_blank');
 
   const handleImportClick = () => fileInputRef.current?.click();
-
   const handleImport = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -90,24 +153,37 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="projects-page">
       <div className="flex items-end justify-between mb-6 flex-wrap gap-4">
         <div>
-          <h1 className="font-head text-3xl md:text-4xl font-extrabold tracking-tight" style={{ color: 'var(--cc-dark-green)' }} data-testid="page-title">All Projects</h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--cc-text-muted)' }}>Track quotes, payments and receivables in one place.</p>
+          <h1 className="font-head text-3xl md:text-4xl font-extrabold tracking-tight" style={{ color: 'var(--cc-dark-green)' }} data-testid="page-title">
+            {showArchived ? 'Archived Projects' : 'All Projects'}
+          </h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--cc-text-muted)' }}>
+            {showArchived ? 'Restore or permanently delete archived projects.' : 'Track quotes, payments and receivables in one place.'}
+          </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={handleExport} className="btn btn-outline" data-testid="btn-export-excel">
-            <Download size={15} /> Export Excel
+          <button
+            onClick={() => setShowArchived(!showArchived)}
+            className={`btn ${showArchived ? 'btn-primary' : 'btn-outline'}`}
+            data-testid="btn-toggle-archived"
+          >
+            <Archive size={15}/> {showArchived ? 'Back to Active' : 'View Archived'}
           </button>
-          <button onClick={handleImportClick} disabled={importing} className="btn btn-outline" data-testid="btn-import-excel">
-            <Upload size={15} /> {importing ? 'Importing...' : 'Import Historic'}
-          </button>
-          <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleImport} className="hidden" data-testid="import-file-input" />
-          <Link to="/projects/new" className="btn btn-primary" data-testid="btn-new-project">
-            <Plus size={15} /> New Project
-          </Link>
+          {!showArchived && <>
+            <button onClick={handleExport} className="btn btn-outline" data-testid="btn-export-excel">
+              <Download size={15} /> Export Excel
+            </button>
+            <button onClick={handleImportClick} disabled={importing} className="btn btn-outline" data-testid="btn-import-excel">
+              <Upload size={15} /> {importing ? 'Importing...' : 'Import Historic'}
+            </button>
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleImport} className="hidden" data-testid="import-file-input" />
+            <Link to="/projects/new" className="btn btn-primary" data-testid="btn-new-project">
+              <Plus size={15} /> New Project
+            </Link>
+          </>}
         </div>
       </div>
 
-      <DashboardKPI stats={stats} />
+      {!showArchived && <DashboardKPI stats={stats} />}
 
       <form onSubmit={handleSearch} className="card p-3 mb-4 flex gap-2" data-testid="search-form">
         <div className="flex-1 relative">
@@ -122,12 +198,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
         </div>
         <button type="submit" className="btn btn-accent" data-testid="search-btn">Search</button>
         {search && (
-          <button
-            type="button"
-            onClick={() => { setSearch(''); setTimeout(load, 0); }}
-            className="btn btn-outline"
-            data-testid="search-clear-btn"
-          >Clear</button>
+          <button type="button" onClick={() => { setSearch(''); setTimeout(load, 0); }} className="btn btn-outline" data-testid="search-clear-btn">Clear</button>
         )}
       </form>
 
@@ -136,28 +207,28 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
           <table className="cc-table" data-testid="projects-table">
             <thead>
               <tr>
-                <th>Project ID</th>
-                <th>Project Name</th>
-                <th>Client</th>
-                <th>Architect</th>
+                <th onClick={() => toggleSort('project_code')} className="cursor-pointer select-none" data-testid="sort-project_code">Project ID<SortIcon col="project_code"/></th>
+                <th onClick={() => toggleSort('name')} className="cursor-pointer select-none" data-testid="sort-name">Project Name<SortIcon col="name"/></th>
+                <th onClick={() => toggleSort('client_name')} className="cursor-pointer select-none" data-testid="sort-client_name">Client<SortIcon col="client_name"/></th>
+                <th onClick={() => toggleSort('architect_name')} className="cursor-pointer select-none" data-testid="sort-architect_name">Architect<SortIcon col="architect_name"/></th>
                 <th>Site Location</th>
-                <th className="text-right">Quoted (₹)</th>
-                <th className="text-right">Received (₹)</th>
-                <th className="text-right">Outstanding (₹)</th>
-                <th>Status</th>
+                <th onClick={() => toggleSort('quoted_amount')} className="cursor-pointer select-none text-right" data-testid="sort-quoted_amount">Quoted (₹)<SortIcon col="quoted_amount"/></th>
+                <th onClick={() => toggleSort('received_amount')} className="cursor-pointer select-none text-right" data-testid="sort-received_amount">Received (₹)<SortIcon col="received_amount"/></th>
+                <th onClick={() => toggleSort('outstanding_amount')} className="cursor-pointer select-none text-right" data-testid="sort-outstanding_amount">Outstanding (₹)<SortIcon col="outstanding_amount"/></th>
+                <th onClick={() => toggleSort('status')} className="cursor-pointer select-none" data-testid="sort-status">Status<SortIcon col="status"/></th>
                 <th className="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr><td colSpan={10} className="text-center py-10" style={{ color: 'var(--cc-text-muted)' }}>Loading projects...</td></tr>
-              ) : projects.length === 0 ? (
+              ) : sortedProjects.length === 0 ? (
                 <tr><td colSpan={10} className="text-center py-12">
-                  <div className="font-head text-lg font-semibold" style={{ color: 'var(--cc-dark-green)' }}>No projects yet</div>
-                  <div className="text-sm mb-4" style={{ color: 'var(--cc-text-muted)' }}>Start by creating your first project.</div>
-                  <Link to="/projects/new" className="btn btn-primary inline-flex" data-testid="btn-empty-new-project"><Plus size={15}/> New Project</Link>
+                  <div className="font-head text-lg font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{showArchived ? 'No archived projects' : 'No projects yet'}</div>
+                  <div className="text-sm mb-4" style={{ color: 'var(--cc-text-muted)' }}>{showArchived ? 'Archived projects will appear here.' : 'Start by creating your first project.'}</div>
+                  {!showArchived && <Link to="/projects/new" className="btn btn-primary inline-flex" data-testid="btn-empty-new-project"><Plus size={15}/> New Project</Link>}
                 </td></tr>
-              ) : projects.map((p) => (
+              ) : sortedProjects.map((p) => (
                 <tr key={p.id} data-testid={`project-row-${p.project_code}`}>
                   <td className="font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{p.project_code}</td>
                   <td className="font-medium">{p.name}</td>
@@ -168,24 +239,38 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
                   <td className="num">{formatINR(p.received_amount, { withSymbol: false })}</td>
                   <td className="num font-semibold">{formatINR(p.outstanding_amount, { withSymbol: false })}</td>
                   <td>
-                    <span className={`badge ${p.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`} data-testid={`status-${p.project_code}`}>
-                      {p.status}
-                    </span>
+                    <span className={`badge ${p.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`} data-testid={`status-${p.project_code}`}>{p.status}</span>
                   </td>
                   <td>
-                    <div className="flex gap-1 justify-end">
-                      <button onClick={() => navigate(`/projects/${p.id}`)} className="btn btn-outline btn-sm" title="View" data-testid={`btn-view-${p.project_code}`}>
-                        <Eye size={13}/> View
-                      </button>
-                      <button onClick={() => openPay(p.id)} className="btn btn-accent btn-sm" title="Record Payment" data-testid={`btn-pay-${p.project_code}`}>
-                        <IndianRupee size={13}/> Pay
-                      </button>
-                      <button onClick={() => navigate(`/projects/${p.id}/edit`)} className="btn btn-outline btn-sm" title="Edit" data-testid={`btn-edit-${p.project_code}`}>
-                        <Pencil size={13}/>
-                      </button>
-                      <button onClick={() => handleDelete(p.id, p.project_code)} className="btn btn-danger btn-sm" title="Delete" data-testid={`btn-delete-${p.project_code}`}>
-                        <Trash2 size={13}/>
-                      </button>
+                    <div className="flex gap-1 justify-end flex-wrap">
+                      {showArchived ? (
+                        <>
+                          <button onClick={() => handleUnarchive(p.id, p.project_code)} className="btn btn-accent btn-sm" title="Restore" data-testid={`btn-restore-${p.project_code}`}>
+                            <ArchiveRestore size={13}/> Restore
+                          </button>
+                          <button onClick={() => handleDelete(p.id, p.project_code)} className="btn btn-danger btn-sm" title="Delete permanently" data-testid={`btn-delete-${p.project_code}`}>
+                            <Trash2 size={13}/>
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => navigate(`/projects/${p.id}`)} className="btn btn-outline btn-sm" title="View" data-testid={`btn-view-${p.project_code}`}>
+                            <Eye size={13}/> View
+                          </button>
+                          <button onClick={() => openPay(p.id)} className="btn btn-accent btn-sm" title="Record Payment" data-testid={`btn-pay-${p.project_code}`}>
+                            <IndianRupee size={13}/> Pay
+                          </button>
+                          <button onClick={() => handleInvoice(p.id)} className="btn btn-outline btn-sm" title="Download Invoice PDF" data-testid={`btn-invoice-${p.project_code}`}>
+                            <FileText size={13}/>
+                          </button>
+                          <button onClick={() => navigate(`/projects/${p.id}/edit`)} className="btn btn-outline btn-sm" title="Edit" data-testid={`btn-edit-${p.project_code}`}>
+                            <Pencil size={13}/>
+                          </button>
+                          <button onClick={() => handleArchive(p.id, p.project_code)} className="btn btn-outline btn-sm" title="Archive" data-testid={`btn-archive-${p.project_code}`}>
+                            <Archive size={13}/>
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>

@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { api } from '../lib/api';
+import { api, API } from '../lib/api';
 import { formatINR, formatDate } from '../lib/format';
 import RecordPaymentModal from '../components/RecordPaymentModal';
-import { ArrowLeft, Pencil, IndianRupee, Trash2 } from 'lucide-react';
+import { ArrowLeft, Pencil, IndianRupee, Trash2, FileText, Download, Archive } from 'lucide-react';
 
 const ProjectDetailPage = () => {
   const { id } = useParams();
@@ -25,10 +25,19 @@ const ProjectDetailPage = () => {
   if (!project) return <div className="max-w-4xl mx-auto p-8">Loading...</div>;
 
   const handleDelete = async () => {
-    if (!window.confirm(`Delete project ${project.project_code}?`)) return;
-    await api.delete(`/projects/${id}`);
+    if (!window.confirm(`Permanently DELETE project ${project.project_code}? Use Archive to keep history.`)) return;
+    await api.delete(`/${'projects'}/${id}`);
     navigate('/');
   };
+
+  const handleArchive = async () => {
+    if (!window.confirm(`Archive project ${project.project_code}?`)) return;
+    await api.post(`/projects/${id}/archive`);
+    navigate('/');
+  };
+
+  const downloadInvoice = () => window.open(`${API}/projects/${id}/invoice`, '_blank');
+  const downloadReceipt = (paymentId) => window.open(`${API}/payments/${paymentId}/receipt`, '_blank');
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="project-detail-page">
@@ -42,9 +51,11 @@ const ProjectDetailPage = () => {
             <span className={`badge ${project.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`}>{project.status}</span>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button onClick={() => setShowPay(true)} className="btn btn-accent" data-testid="detail-btn-pay"><IndianRupee size={15}/> Record Payment</button>
+          <button onClick={downloadInvoice} className="btn btn-outline" data-testid="detail-btn-invoice"><FileText size={15}/> Invoice PDF</button>
           <Link to={`/projects/${id}/edit`} className="btn btn-outline" data-testid="detail-btn-edit"><Pencil size={15}/> Edit</Link>
+          <button onClick={handleArchive} className="btn btn-outline" data-testid="detail-btn-archive"><Archive size={15}/> Archive</button>
           <button onClick={handleDelete} className="btn btn-danger" data-testid="detail-btn-delete"><Trash2 size={15}/></button>
         </div>
       </div>
@@ -86,16 +97,22 @@ const ProjectDetailPage = () => {
                 <th>Date</th>
                 <th className="text-right">Amount (₹)</th>
                 <th>Notes</th>
+                <th className="text-right">Receipt</th>
               </tr>
             </thead>
             <tbody>
               {payments.length === 0 ? (
-                <tr><td colSpan={3} className="text-center py-8" style={{ color: 'var(--cc-text-muted)' }}>No payments recorded yet.</td></tr>
+                <tr><td colSpan={4} className="text-center py-8" style={{ color: 'var(--cc-text-muted)' }}>No payments recorded yet.</td></tr>
               ) : payments.map((p) => (
                 <tr key={p.id} data-testid={`payment-row-${p.id}`}>
                   <td>{formatDate(p.payment_date)}</td>
                   <td className="num font-semibold">{formatINR(p.amount, { withSymbol: false })}</td>
                   <td className="text-sm" style={{ color: 'var(--cc-text-muted)' }}>{p.notes || '—'}</td>
+                  <td className="text-right">
+                    <button onClick={() => downloadReceipt(p.id)} className="btn btn-outline btn-sm" data-testid={`btn-receipt-${p.id}`}>
+                      <Download size={12}/> Receipt
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

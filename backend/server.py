@@ -12,6 +12,10 @@ from typing import List, Optional
 from datetime import datetime, timezone, date
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -77,6 +81,7 @@ class Project(BaseModel):
     outstanding_amount: float = 0.0
     status: str = "Outstanding"
     notes: str = ""
+    archived: bool = False
     created_at: str
 
 
@@ -138,6 +143,7 @@ async def _enrich_project(p: dict) -> dict:
     p["quoted_amount"] = float(p.get("quoted_amount", 0) or 0)
     p["received_amount"] = float(p.get("received_amount", 0) or 0)
     p["outstanding_amount"] = round(p["quoted_amount"] - p["received_amount"], 2)
+    p["archived"] = bool(p.get("archived", False))
     # auto-update status
     if p["outstanding_amount"] <= 0 and p["quoted_amount"] > 0:
         p["status"] = "Settled"
@@ -239,19 +245,21 @@ async def delete_architect(architect_id: str):
 
 # ---------------------- PROJECTS ----------------------
 @api_router.get("/projects", response_model=List[Project])
-async def list_projects(search: Optional[str] = None):
+async def list_projects(search: Optional[str] = None, include_archived: bool = False, archived_only: bool = False):
     query = {}
+    if archived_only:
+        query["archived"] = True
+    elif not include_archived:
+        query["archived"] = {"$ne": True}
     if search:
         s = search.strip()
-        query = {
-            "$or": [
-                {"project_code": {"$regex": s, "$options": "i"}},
-                {"name": {"$regex": s, "$options": "i"}},
-                {"client_name": {"$regex": s, "$options": "i"}},
-                {"architect_name": {"$regex": s, "$options": "i"}},
-                {"site_location": {"$regex": s, "$options": "i"}},
-            ]
-        }
+        query["$or"] = [
+            {"project_code": {"$regex": s, "$options": "i"}},
+            {"name": {"$regex": s, "$options": "i"}},
+            {"client_name": {"$regex": s, "$options": "i"}},
+            {"architect_name": {"$regex": s, "$options": "i"}},
+            {"site_location": {"$regex": s, "$options": "i"}},
+        ]
     items = await db.projects.find(query, {"_id": 0}).sort("created_at", -1).to_list(5000)
     for p in items:
         await _enrich_project(p)
@@ -302,6 +310,22 @@ async def delete_project(project_id: str):
     return {"ok": True}
 
 
+@api_router.post("/projects/{project_id}/archive")
+async def archive_project(project_id: str):
+    res = await db.projects.update_one({"id": project_id}, {"$set": {"archived": True}})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Project not found")
+    return {"ok": True, "archived": True}
+
+
+@api_router.post("/projects/{project_id}/unarchive")
+async def unarchive_project(project_id: str):
+    res = await db.projects.update_one({"id": project_id}, {"$set": {"archived": False}})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Project not found")
+    return {"ok": True, "archived": False}
+
+
 # ---------------------- PAYMENTS ----------------------
 @api_router.get("/payments", response_model=List[Payment])
 async def list_payments(project_id: Optional[str] = None):
@@ -341,6 +365,324 @@ async def create_payment(data: PaymentIn):
     )
     doc.pop("_id", None)
     return doc
+
+
+# ---------------------- PDF (Invoice / Receipt) ----------------------
+BRAND_GREEN = colors.HexColor("#0A2E1F")
+BRAND_ACCENT = colors.HexColor("#10B981")
+BRAND_MUTED = colors.HexColor("#526B60")
+
+
+def _format_inr(n: float) -> str:
+    """Format number in Indian numbering system: 1,23,45,678.00"""
+    try:
+        neg = n < 0
+        n = abs(float(n))
+        whole = int(n)
+        frac = round(n - whole, 2)
+        s = str(whole)
+        if len(s) > 3:
+            last3 = s[-3:]
+            rest = s[:-3]
+            # Group rest by 2s
+            parts = []
+            while len(rest) > 2:
+                parts.insert(0, rest[-2:])
+                rest = rest[:-2]
+            if rest:
+                parts.insert(0, rest)
+            s = ",".join(parts) + "," + last3
+        result = f"{s}.{int(round(frac * 100)):02d}"
+        return ("-" if neg else "") + result
+    except Exception:
+        return f"{n:.2f}"
+
+
+def _draw_pdf_header(c: canvas.Canvas, title: str, sub_id: str):
+    width, height = A4
+    # Top green band
+    c.setFillColor(BRAND_GREEN)
+    c.rect(0, height - 28 * mm, width, 28 * mm, fill=1, stroke=0)
+    # Brand
+    c.setFillColor(colors.white)
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(18 * mm, height - 14 * mm, "CREATOR CONSULTANT")
+    c.setFillColor(BRAND_ACCENT)
+    c.setFont("Helvetica", 9)
+    c.drawString(18 * mm, height - 20 * mm, "Architecture • Engineering • Project Consultancy")
+    # Title on right
+    c.setFillColor(colors.white)
+    c.setFont("Helvetica-Bold", 22)
+    c.drawRightString(width - 18 * mm, height - 14 * mm, title)
+    c.setFont("Helvetica", 9)
+    c.drawRightString(width - 18 * mm, height - 20 * mm, sub_id)
+    # Reset
+    c.setFillColor(colors.black)
+
+
+def _draw_kv(c, x, y, key, value, key_w=40 * mm, bold_value=False):
+    c.setFont("Helvetica", 9)
+    c.setFillColor(BRAND_MUTED)
+    c.drawString(x, y, key.upper())
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold" if bold_value else "Helvetica", 11)
+    c.drawString(x + key_w, y, value or "—")
+
+
+def _draw_footer(c: canvas.Canvas):
+    width, _ = A4
+    c.setFillColor(BRAND_MUTED)
+    c.setFont("Helvetica", 8)
+    c.drawString(18 * mm, 12 * mm, "This is a computer generated document from Creator Consultant.")
+    c.drawRightString(width - 18 * mm, 12 * mm, datetime.now().strftime("Generated %d %b %Y, %H:%M"))
+
+
+async def _build_receipt_pdf(payment: dict, project: dict, client_doc: Optional[dict]) -> bytes:
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    pay_date = payment.get("payment_date", "")
+    try:
+        pay_date_str = datetime.fromisoformat(pay_date.replace("Z", "+00:00")).strftime("%d %b %Y")
+    except Exception:
+        pay_date_str = pay_date[:10]
+
+    _draw_pdf_header(c, "RECEIPT", f"Receipt ID: {payment['id'][:8].upper()}")
+
+    y = height - 42 * mm
+    # Meta
+    _draw_kv(c, 18 * mm, y, "Project", f"{project.get('project_code', '')} — {project.get('name', '')}", bold_value=True)
+    y -= 7 * mm
+    _draw_kv(c, 18 * mm, y, "Payment Date", pay_date_str, bold_value=True)
+    y -= 7 * mm
+    if client_doc:
+        _draw_kv(c, 18 * mm, y, "Received From", client_doc.get("name", ""), bold_value=True)
+        y -= 7 * mm
+        if client_doc.get("address"):
+            _draw_kv(c, 18 * mm, y, "Address", client_doc.get("address", ""))
+            y -= 7 * mm
+        contact_bits = []
+        if client_doc.get("phone"):
+            contact_bits.append(client_doc["phone"])
+        if client_doc.get("email"):
+            contact_bits.append(client_doc["email"])
+        if contact_bits:
+            _draw_kv(c, 18 * mm, y, "Contact", " • ".join(contact_bits))
+            y -= 7 * mm
+
+    # Amount highlight box
+    y -= 6 * mm
+    box_h = 28 * mm
+    c.setFillColor(BRAND_GREEN)
+    c.roundRect(18 * mm, y - box_h, width - 36 * mm, box_h, 6, fill=1, stroke=0)
+    c.setFillColor(colors.white)
+    c.setFont("Helvetica", 10)
+    c.drawString(24 * mm, y - 10 * mm, "AMOUNT RECEIVED")
+    c.setFont("Helvetica-Bold", 26)
+    c.drawString(24 * mm, y - 20 * mm, f"Rs. {_format_inr(payment.get('amount', 0))}")
+    c.setFillColor(BRAND_ACCENT)
+    c.setFont("Helvetica", 9)
+    c.drawRightString(width - 24 * mm, y - 20 * mm, "Indian Rupees")
+
+    y = y - box_h - 10 * mm
+    c.setFillColor(colors.black)
+
+    # Summary
+    _draw_kv(c, 18 * mm, y, "Project Quoted", f"Rs. {_format_inr(project.get('quoted_amount', 0))}")
+    y -= 6 * mm
+    _draw_kv(c, 18 * mm, y, "Total Received (incl. this)", f"Rs. {_format_inr(project.get('received_amount', 0))}")
+    y -= 6 * mm
+    _draw_kv(c, 18 * mm, y, "Outstanding Balance", f"Rs. {_format_inr(project.get('outstanding_amount', 0))}", bold_value=True)
+    y -= 10 * mm
+
+    if payment.get("notes"):
+        c.setFillColor(BRAND_MUTED)
+        c.setFont("Helvetica", 9)
+        c.drawString(18 * mm, y, "NOTES")
+        c.setFillColor(colors.black)
+        c.setFont("Helvetica", 10)
+        c.drawString(18 * mm, y - 5 * mm, payment["notes"][:110])
+        y -= 12 * mm
+
+    # Signature
+    y = max(y, 40 * mm)
+    c.setStrokeColor(BRAND_MUTED)
+    c.line(width - 70 * mm, 32 * mm, width - 20 * mm, 32 * mm)
+    c.setFillColor(BRAND_MUTED)
+    c.setFont("Helvetica", 9)
+    c.drawString(width - 70 * mm, 28 * mm, "Authorised Signatory")
+    c.setFont("Helvetica-Bold", 10)
+    c.setFillColor(BRAND_GREEN)
+    c.drawString(width - 70 * mm, 35 * mm, "For Creator Consultant")
+
+    _draw_footer(c)
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf.read()
+
+
+async def _build_invoice_pdf(project: dict, client_doc: Optional[dict], architect_doc: Optional[dict]) -> bytes:
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+
+    _draw_pdf_header(c, "INVOICE", f"Project: {project.get('project_code', '')}")
+
+    y = height - 42 * mm
+    # Bill to
+    c.setFillColor(BRAND_MUTED)
+    c.setFont("Helvetica", 9)
+    c.drawString(18 * mm, y, "BILL TO")
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold", 13)
+    y -= 6 * mm
+    c.drawString(18 * mm, y, (client_doc or {}).get("name", project.get("client_name", "")) or "—")
+    c.setFont("Helvetica", 10)
+    if client_doc:
+        if client_doc.get("company"):
+            y -= 5 * mm
+            c.drawString(18 * mm, y, client_doc["company"])
+        if client_doc.get("address"):
+            y -= 5 * mm
+            c.drawString(18 * mm, y, client_doc["address"][:80])
+        line = " • ".join([x for x in [client_doc.get("phone"), client_doc.get("email")] if x])
+        if line:
+            y -= 5 * mm
+            c.setFillColor(BRAND_MUTED)
+            c.drawString(18 * mm, y, line)
+            c.setFillColor(colors.black)
+
+    # Meta on right
+    ry = height - 42 * mm
+    c.setFillColor(BRAND_MUTED)
+    c.setFont("Helvetica", 9)
+    c.drawRightString(width - 18 * mm, ry, "INVOICE DATE")
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold", 11)
+    c.drawRightString(width - 18 * mm, ry - 5 * mm, datetime.now().strftime("%d %b %Y"))
+    c.setFillColor(BRAND_MUTED)
+    c.setFont("Helvetica", 9)
+    c.drawRightString(width - 18 * mm, ry - 12 * mm, "PROJECT STATUS")
+    c.setFillColor(BRAND_ACCENT if project.get("status") == "Settled" else colors.HexColor("#DC2626"))
+    c.setFont("Helvetica-Bold", 11)
+    c.drawRightString(width - 18 * mm, ry - 17 * mm, project.get("status", "Outstanding").upper())
+
+    # Line items table
+    y -= 18 * mm
+    c.setFillColor(BRAND_GREEN)
+    c.rect(18 * mm, y - 8 * mm, width - 36 * mm, 8 * mm, fill=1, stroke=0)
+    c.setFillColor(colors.white)
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(22 * mm, y - 5.5 * mm, "DESCRIPTION")
+    c.drawRightString(width - 22 * mm, y - 5.5 * mm, "AMOUNT (INR)")
+
+    y -= 8 * mm
+    c.setFillColor(colors.black)
+
+    # Project line
+    y -= 8 * mm
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(22 * mm, y, project.get("name", ""))
+    c.setFont("Helvetica", 9)
+    c.setFillColor(BRAND_MUTED)
+    y -= 5 * mm
+    desc = project.get("site_location") or ""
+    if desc:
+        c.drawString(22 * mm, y, f"Location: {desc[:75]}")
+        y -= 5 * mm
+    if architect_doc and architect_doc.get("name"):
+        c.drawString(22 * mm, y, f"Architect: {architect_doc['name']}")
+        y -= 5 * mm
+
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold", 12)
+    c.drawRightString(width - 22 * mm, y + 10 * mm, f"Rs. {_format_inr(project.get('quoted_amount', 0))}")
+
+    # Totals box
+    y -= 8 * mm
+    c.setStrokeColor(BRAND_MUTED)
+    c.line(18 * mm, y, width - 18 * mm, y)
+
+    y -= 8 * mm
+    c.setFont("Helvetica", 10)
+    c.setFillColor(BRAND_MUTED)
+    c.drawRightString(width - 60 * mm, y, "Quoted Amount")
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica", 11)
+    c.drawRightString(width - 22 * mm, y, f"Rs. {_format_inr(project.get('quoted_amount', 0))}")
+
+    y -= 7 * mm
+    c.setFillColor(BRAND_MUTED)
+    c.setFont("Helvetica", 10)
+    c.drawRightString(width - 60 * mm, y, "Received")
+    c.setFillColor(BRAND_ACCENT)
+    c.setFont("Helvetica", 11)
+    c.drawRightString(width - 22 * mm, y, f"Rs. {_format_inr(project.get('received_amount', 0))}")
+
+    y -= 10 * mm
+    # Outstanding highlight
+    c.setFillColor(BRAND_GREEN)
+    c.roundRect(width - 90 * mm, y - 4 * mm, 72 * mm, 14 * mm, 4, fill=1, stroke=0)
+    c.setFillColor(colors.white)
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(width - 86 * mm, y + 3 * mm, "AMOUNT DUE")
+    c.setFont("Helvetica-Bold", 14)
+    c.drawRightString(width - 22 * mm, y + 3 * mm, f"Rs. {_format_inr(project.get('outstanding_amount', 0))}")
+
+    # Footer notes
+    c.setFillColor(BRAND_MUTED)
+    c.setFont("Helvetica", 9)
+    c.drawString(18 * mm, 40 * mm, "Payment Terms: Due on receipt. Kindly pay via bank transfer, cheque or UPI.")
+    c.drawString(18 * mm, 35 * mm, "Thank you for your business.")
+
+    _draw_footer(c)
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf.read()
+
+
+@api_router.get("/payments/{payment_id}/receipt")
+async def payment_receipt_pdf(payment_id: str):
+    payment = await db.payments.find_one({"id": payment_id}, {"_id": 0})
+    if not payment:
+        raise HTTPException(404, "Payment not found")
+    project = await db.projects.find_one({"id": payment["project_id"]}, {"_id": 0})
+    if not project:
+        raise HTTPException(404, "Project not found")
+    await _enrich_project(project)
+    client_doc = None
+    if project.get("client_id"):
+        client_doc = await db.clients.find_one({"id": project["client_id"]}, {"_id": 0})
+    pdf_bytes = await _build_receipt_pdf(payment, project, client_doc)
+    filename = f"receipt_{project['project_code']}_{payment_id[:8]}.pdf"
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@api_router.get("/projects/{project_id}/invoice")
+async def project_invoice_pdf(project_id: str):
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not project:
+        raise HTTPException(404, "Project not found")
+    await _enrich_project(project)
+    client_doc = None
+    architect_doc = None
+    if project.get("client_id"):
+        client_doc = await db.clients.find_one({"id": project["client_id"]}, {"_id": 0})
+    if project.get("architect_id"):
+        architect_doc = await db.architects.find_one({"id": project["architect_id"]}, {"_id": 0})
+    pdf_bytes = await _build_invoice_pdf(project, client_doc, architect_doc)
+    filename = f"invoice_{project['project_code']}.pdf"
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ---------------------- DASHBOARD ----------------------
