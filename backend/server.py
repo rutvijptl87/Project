@@ -110,6 +110,17 @@ class OfferIn(BaseModel):
     offer_date: Optional[str] = None  # ISO
     notes: Optional[str] = ""
     reference_no: Optional[str] = ""  # like STR/AUDIT/2026/023
+    # Editable PDF content — all optional; defaults used when blank
+    subject: Optional[str] = ""  # overrides auto-generated SUBJECT line
+    scope_of_work: Optional[str] = ""  # multiline scope block (overrides description for PDF)
+    payment_schedule: Optional[List[dict]] = None  # [{label, percent}] — if empty, 50/50 default
+    terms_conditions: Optional[List[str]] = None  # list of T&C bullets — if empty, defaults
+    bank_details: Optional[str] = ""  # overrides default bank line
+    signature_name: Optional[str] = ""  # overrides "Mr. Rutvij Patel..."
+    company_header: Optional[str] = ""  # overrides "CREATOR RCC CONSULTANT LLP"
+    company_tagline: Optional[str] = ""
+    company_address: Optional[str] = ""
+    intro_paragraph: Optional[str] = ""  # overrides default intro
 
 
 class Offer(BaseModel):
@@ -134,6 +145,17 @@ class Offer(BaseModel):
     offer_date: str = ""
     reference_no: str = ""
     notes: str = ""
+    # Editable PDF content
+    subject: str = ""
+    scope_of_work: str = ""
+    payment_schedule: List[dict] = Field(default_factory=list)
+    terms_conditions: List[str] = Field(default_factory=list)
+    bank_details: str = ""
+    signature_name: str = ""
+    company_header: str = ""
+    company_tagline: str = ""
+    company_address: str = ""
+    intro_paragraph: str = ""
     linked_project_id: Optional[str] = None
     linked_project_code: Optional[str] = ""
     created_at: str
@@ -872,6 +894,19 @@ async def _enrich_offer(o: dict) -> dict:
     o["offer_date"] = o.get("offer_date") or ""
     o["reference_no"] = o.get("reference_no") or ""
     o["notes"] = o.get("notes") or ""
+    # Editable PDF content fields — normalize types
+    o["subject"] = o.get("subject", "") or ""
+    o["scope_of_work"] = o.get("scope_of_work", "") or ""
+    ps = o.get("payment_schedule")
+    o["payment_schedule"] = ps if isinstance(ps, list) else []
+    tcs = o.get("terms_conditions")
+    o["terms_conditions"] = tcs if isinstance(tcs, list) else []
+    o["bank_details"] = o.get("bank_details", "") or ""
+    o["signature_name"] = o.get("signature_name", "") or ""
+    o["company_header"] = o.get("company_header", "") or ""
+    o["company_tagline"] = o.get("company_tagline", "") or ""
+    o["company_address"] = o.get("company_address", "") or ""
+    o["intro_paragraph"] = o.get("intro_paragraph", "") or ""
     return o
 
 
@@ -1051,7 +1086,47 @@ async def auth_set_password(data: PasswordSetIn):
 
 # ---------------------- OFFER PDF GENERATION ----------------------
 async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
-    """Generate Creator RCC Consultant LLP branded offer PDF."""
+    """Generate Creator RCC Consultant LLP branded offer PDF.
+    All content is editable per-offer with sensible defaults."""
+    # Defaults
+    DEFAULT_HEADER = "CREATOR RCC CONSULTANT LLP"
+    DEFAULT_TAGLINE = "Leading Project Management Consultant  |  Structural Engineer"
+    DEFAULT_ADDRESS = "A-001, Siddhivinayak Park, Sector 8A, Plot No. 21, Airoli, Navi Mumbai - 400 708  |  Ph: 9987076241  |  project@creatorconsultant.net"
+    DEFAULT_INTRO = (
+        "We, Creator RCC Consultant LLP, are a leading structural engineering and project management "
+        "consultancy authorized by BMC, NMMC and TMC. We thank you for the opportunity and are pleased "
+        "to submit our offer for the captioned work as detailed below."
+    )
+    DEFAULT_BANK = "BANK DETAILS  |  Kotak Bank  |  A/C: Creator RCC Consultant LLP  |  A/C No: 9987076241  |  IFSC: KKBK0001360  |  Branch: Airoli, Sector 6"
+    DEFAULT_SIG = "Mr. Rutvij Patel — Consulting Structural Engineer"
+    DEFAULT_TCS = [
+        "Taxes (GST and any other applicable levies) to be paid by the Client.",
+        "Any drill-holes / chipping and their filling during testing are the responsibility of the Owner.",
+        "Scope excludes any additional tests/phases not listed above; these will be charged extra by mutual agreement.",
+        "Payments to be made in favour of 'CREATOR RCC CONSULTANT LLP'.",
+    ]
+
+    company_header = offer.get("company_header") or DEFAULT_HEADER
+    company_tagline = offer.get("company_tagline") or DEFAULT_TAGLINE
+    company_address = offer.get("company_address") or DEFAULT_ADDRESS
+    intro_paragraph = offer.get("intro_paragraph") or DEFAULT_INTRO
+    bank_details = offer.get("bank_details") or DEFAULT_BANK
+    signature_name = offer.get("signature_name") or DEFAULT_SIG
+    tcs = offer.get("terms_conditions") or DEFAULT_TCS
+
+    base = float(offer.get("base_amount", 0) or 0)
+    gst_pct = float(offer.get("gst_percent", 18) or 0)
+    gst_amt = round(base * gst_pct / 100.0, 2)
+    grand = round(base + gst_amt, 2)
+
+    # Payment schedule (fallback: 50/50)
+    schedule = offer.get("payment_schedule") or []
+    if not schedule:
+        schedule = [
+            {"label": "Advance on confirmation / appointment letter", "percent": 50.0},
+            {"label": "On completion of final work / submission of report", "percent": 50.0},
+        ]
+
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
@@ -1062,15 +1137,14 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
     c.setFillColor(BRAND_GREEN)
     c.rect(0, height - 32 * mm, width, 32 * mm, fill=1, stroke=0)
     c.setFillColor(colors.white)
-    c.setFont("Helvetica-Bold", 20)
-    c.drawString(18 * mm, height - 15 * mm, "CREATOR RCC CONSULTANT LLP")
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(18 * mm, height - 15 * mm, company_header[:60])
     c.setFillColor(BRAND_ACCENT)
     c.setFont("Helvetica", 9)
-    c.drawString(18 * mm, height - 21 * mm, "Leading Project Management Consultant  |  Structural Engineer")
+    c.drawString(18 * mm, height - 21 * mm, company_tagline[:110])
     c.setFillColor(colors.white)
     c.setFont("Helvetica", 8)
-    c.drawString(18 * mm, height - 27 * mm,
-                 "A-001, Siddhivinayak Park, Sector 8A, Plot No. 21, Airoli, Navi Mumbai - 400 708  |  Ph: 9987076241  |  project@creatorconsultant.net")
+    c.drawString(18 * mm, height - 27 * mm, company_address[:160])
 
     # Reference / date
     y = height - 40 * mm
@@ -1082,7 +1156,6 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
     c.setFillColor(colors.black)
     c.setFont("Helvetica-Bold", 11)
     c.drawString(18 * mm, y, offer.get("reference_no") or offer.get("offer_code", ""))
-    # Date formatting
     odate = offer.get("offer_date") or ""
     try:
         dfmt = datetime.fromisoformat(odate.replace("Z", "+00:00")).strftime("%d-%m-%Y") if odate else datetime.now().strftime("%d-%m-%Y")
@@ -1116,23 +1189,21 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
     y -= 10 * mm
     c.setFillColor(BRAND_GREEN)
     c.setFont("Helvetica-Bold", 11)
-    subject = f"SUBJECT: Proposal for {offer.get('effective_type', '')} — {offer.get('description', '')[:80]}".strip().rstrip(" —")
-    c.drawString(18 * mm, y, subject[:100])
+    subject_override = (offer.get("subject") or "").strip()
+    subject = subject_override or f"SUBJECT: Proposal for {offer.get('effective_type', '')} — {offer.get('description', '')[:80]}".strip().rstrip(" —")
+    if not subject.upper().startswith("SUBJECT"):
+        subject = "SUBJECT: " + subject
+    c.drawString(18 * mm, y, subject[:110])
     c.setFillColor(colors.black)
 
     # Intro
     y -= 9 * mm
-    intro = (
-        "We, Creator RCC Consultant LLP, are a leading structural engineering and project management "
-        "consultancy authorized by BMC, NMMC and TMC. We thank you for the opportunity and are pleased "
-        "to submit our offer for the captioned work as detailed below."
-    )
-    p = Paragraph(intro, body_style)
+    p = Paragraph(intro_paragraph, body_style)
     w_para, h_para = p.wrap(width - 36 * mm, 40 * mm)
     p.drawOn(c, 18 * mm, y - h_para)
     y -= h_para + 6 * mm
 
-    # Scope / description block
+    # Scope
     c.setFillColor(BRAND_GREEN)
     c.setFont("Helvetica-Bold", 10)
     c.drawString(18 * mm, y, "SCOPE OF WORK")
@@ -1140,23 +1211,24 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
     c.line(18 * mm, y - 1.5 * mm, width - 18 * mm, y - 1.5 * mm)
     y -= 8 * mm
 
-    scope_text = offer.get("description") or f"{offer.get('effective_type', '')} consultancy services as per industry standard practices."
-    if offer.get("notes"):
-        scope_text += f"\n\nInclusions / Methodology: {offer['notes']}"
+    scope_text = (offer.get("scope_of_work") or "").strip()
+    if not scope_text:
+        scope_text = offer.get("description") or f"{offer.get('effective_type', '')} consultancy services as per industry standard practices."
+        if offer.get("notes"):
+            scope_text += f"\n\nInclusions / Methodology: {offer['notes']}"
     p = Paragraph(scope_text.replace("\n", "<br/>"), body_style)
-    w_para, h_para = p.wrap(width - 36 * mm, 60 * mm)
+    w_para, h_para = p.wrap(width - 36 * mm, 80 * mm)
     p.drawOn(c, 18 * mm, y - h_para)
     y -= h_para + 8 * mm
     c.setFillColor(colors.black)
 
-    # Fees table
+    # Fees
     c.setFillColor(BRAND_GREEN)
     c.setFont("Helvetica-Bold", 10)
     c.drawString(18 * mm, y, "PROFESSIONAL FEES")
     c.line(18 * mm, y - 1.5 * mm, width - 18 * mm, y - 1.5 * mm)
     y -= 6 * mm
 
-    # Header row
     c.setFillColor(BRAND_GREEN)
     c.rect(18 * mm, y - 7 * mm, width - 36 * mm, 7 * mm, fill=1, stroke=0)
     c.setFillColor(colors.white)
@@ -1165,12 +1237,6 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
     c.drawRightString(width - 22 * mm, y - 5 * mm, "AMOUNT (INR)")
     y -= 7 * mm
 
-    base = float(offer.get("base_amount", 0) or 0)
-    gst_pct = float(offer.get("gst_percent", 18) or 0)
-    gst_amt = round(base * gst_pct / 100.0, 2)
-    grand = round(base + gst_amt, 2)
-
-    # Rows
     def _row(label, amount, bold=False, highlight=False):
         nonlocal y
         y -= 7 * mm
@@ -1181,7 +1247,7 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
         else:
             c.setFillColor(colors.black)
         c.setFont("Helvetica-Bold" if bold else "Helvetica", 10)
-        c.drawString(22 * mm, y + 1.5 * mm, label)
+        c.drawString(22 * mm, y + 1.5 * mm, label[:75])
         c.drawRightString(width - 22 * mm, y + 1.5 * mm, f"Rs. {_format_inr(amount)}")
         c.setFillColor(colors.black)
 
@@ -1191,7 +1257,7 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
 
     y -= 12 * mm
 
-    # Payment Terms
+    # Payment Terms (editable list)
     c.setFillColor(BRAND_GREEN)
     c.setFont("Helvetica-Bold", 10)
     c.drawString(18 * mm, y, "PAYMENT TERMS")
@@ -1199,14 +1265,12 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
     y -= 6 * mm
     c.setFillColor(colors.black)
     c.setFont("Helvetica", 10)
-    half = round(grand / 2, 2)
-    terms = [
-        f"• 50% Advance on confirmation / appointment letter:  Rs. {_format_inr(half)}",
-        f"• 50% on completion of final work / submission of report:  Rs. {_format_inr(grand - half)}",
-    ]
-    for t in terms:
+    for entry in schedule:
+        label = str(entry.get("label", "")).strip() or "—"
+        pct = float(entry.get("percent", 0) or 0)
+        amt = round(grand * pct / 100.0, 2)
         y -= 5 * mm
-        c.drawString(20 * mm, y, t)
+        c.drawString(20 * mm, y, f"• {pct:g}% {label}:  Rs. {_format_inr(amt)}")
 
     # T&C
     y -= 10 * mm
@@ -1217,21 +1281,15 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
     y -= 6 * mm
     c.setFillColor(colors.black)
     c.setFont("Helvetica", 9)
-    tcs = [
-        "Taxes (GST and any other applicable levies) to be paid by the Client.",
-        "Any drill-holes / chipping and their filling during testing are the responsibility of the Owner.",
-        "Scope excludes any additional tests/phases not listed above; these will be charged extra by mutual agreement.",
-        "Payments to be made in favour of 'CREATOR RCC CONSULTANT LLP'.",
-    ]
     for t in tcs:
         y -= 5 * mm
-        c.drawString(20 * mm, y, f"• {t}")
+        c.drawString(20 * mm, y, f"• {str(t)[:130]}")
 
     # Bank details
     y -= 10 * mm
     c.setFillColor(BRAND_GREEN)
     c.setFont("Helvetica-Bold", 9)
-    c.drawString(18 * mm, y, "BANK DETAILS  |  Kotak Bank  |  A/C: Creator RCC Consultant LLP  |  A/C No: 9987076241  |  IFSC: KKBK0001360  |  Branch: Airoli, Sector 6")
+    c.drawString(18 * mm, y, bank_details[:180])
     c.setFillColor(colors.black)
 
     # Signature
@@ -1244,7 +1302,7 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
     c.setFont("Helvetica", 9)
     c.drawString(width - 70 * mm, 26 * mm, "Authorised Signatory")
     c.setFont("Helvetica-Oblique", 8)
-    c.drawString(width - 70 * mm, 22 * mm, "Mr. Rutvij Patel — Consulting Structural Engineer")
+    c.drawString(width - 70 * mm, 22 * mm, signature_name[:60])
 
     _draw_footer(c)
     c.showPage()
@@ -1503,6 +1561,201 @@ async def import_excel(file: UploadFile = File(...)):
         imported["projects"] += 1
 
     return {"ok": True, "imported": imported}
+
+
+@api_router.post("/import/sqlite")
+async def import_sqlite(file: UploadFile = File(...), replace: bool = False):
+    """Import data from an uploaded SQLite .db file (creator_consultant legacy format).
+    Expects tables: clients(id, name), architects(id, name), projects(id, project_id, project_name,
+    client_name, architect_name, site_location, quoted_amount, created_at), payments(id, project_id, amount, note, paid_at).
+    If replace=True, clears existing data first.
+    """
+    import sqlite3
+    import tempfile
+
+    content = await file.read()
+    if not content[:16].startswith(b"SQLite"):
+        raise HTTPException(400, "Uploaded file is not a valid SQLite database")
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
+        tf.write(content)
+        tmp_path = tf.name
+    try:
+        if replace:
+            await db.projects.delete_many({})
+            await db.clients.delete_many({})
+            await db.architects.delete_many({})
+            await db.payments.delete_many({})
+            await db.counters.delete_many({})
+
+        conn = sqlite3.connect(tmp_path)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        def _parse_dt(s):
+            if not s:
+                return _now()
+            try:
+                return datetime.strptime(s, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).isoformat()
+            except Exception:
+                return _now()
+
+        imported = {"clients": 0, "architects": 0, "projects": 0, "payments": 0}
+
+        # Clients (dedupe by name, keep existing)
+        client_by_name = {}
+        existing_clients = await db.clients.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(10000)
+        for ec in existing_clients:
+            client_by_name[ec["name"].strip().lower()] = ec["id"]
+        try:
+            cur.execute("SELECT name FROM clients")
+            for r in cur.fetchall():
+                nm = (r["name"] or "").strip()
+                if not nm or nm.lower() == "none":
+                    continue
+                key = nm.lower()
+                if key in client_by_name:
+                    continue
+                cid = _new_id()
+                await db.clients.insert_one({
+                    "id": cid, "name": nm, "phone": "", "email": "",
+                    "company": "", "address": "", "created_at": _now(),
+                })
+                client_by_name[key] = cid
+                imported["clients"] += 1
+        except sqlite3.Error:
+            pass
+
+        # Architects
+        arch_by_name = {}
+        existing_arch = await db.architects.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(10000)
+        for ea in existing_arch:
+            arch_by_name[ea["name"].strip().lower()] = ea["id"]
+        try:
+            cur.execute("SELECT name FROM architects")
+            for r in cur.fetchall():
+                nm = (r["name"] or "").strip()
+                if not nm or nm.lower() == "none":
+                    continue
+                key = nm.lower()
+                if key in arch_by_name:
+                    continue
+                aid = _new_id()
+                await db.architects.insert_one({
+                    "id": aid, "name": nm, "phone": "", "email": "", "firm": "",
+                    "created_at": _now(),
+                })
+                arch_by_name[key] = aid
+                imported["architects"] += 1
+        except sqlite3.Error:
+            pass
+
+        # Projects
+        projects_by_code = {}
+        existing_codes = {p["project_code"] async for p in db.projects.find({}, {"_id": 0, "project_code": 1})}
+        max_seq = 0
+        for code in existing_codes:
+            try:
+                s = int(str(code).split("-")[-1])
+                if s > max_seq:
+                    max_seq = s
+            except Exception:
+                pass
+        try:
+            cur.execute("SELECT * FROM projects ORDER BY id")
+            for p in cur.fetchall():
+                code = p["project_id"] or f"CC-{p['id']:04d}"
+                if code in existing_codes:
+                    projects_by_code[code] = None
+                    continue
+                try:
+                    s = int(str(code).split("-")[-1])
+                    if s > max_seq:
+                        max_seq = s
+                except Exception:
+                    pass
+                cl_name = (p["client_name"] or "").strip()
+                ar_name = (p["architect_name"] or "").strip()
+                pid = _new_id()
+                doc = {
+                    "id": pid,
+                    "project_code": code,
+                    "name": (p["project_name"] or "").strip() or "Untitled",
+                    "client_id": client_by_name.get(cl_name.lower()),
+                    "client_name": cl_name if cl_name.lower() != "none" else "",
+                    "architect_id": arch_by_name.get(ar_name.lower()),
+                    "architect_name": ar_name if ar_name.lower() != "none" else "",
+                    "site_location": (p["site_location"] or "").strip(),
+                    "quoted_amount": float(p["quoted_amount"] or 0),
+                    "received_amount": 0.0,
+                    "outstanding_amount": 0.0,
+                    "status": "Outstanding",
+                    "notes": "",
+                    "archived": False,
+                    "offer_id": None, "offer_code": "", "offer_type": "", "offer_file_path": "",
+                    "created_at": _parse_dt(p["created_at"]),
+                }
+                await db.projects.insert_one(doc)
+                projects_by_code[code] = pid
+                imported["projects"] += 1
+        except sqlite3.Error as e:
+            raise HTTPException(400, f"Projects import failed: {e}")
+
+        # Payments
+        received_by_code = {}
+        try:
+            cur.execute("SELECT * FROM payments ORDER BY id")
+            for pay in cur.fetchall():
+                code = pay["project_id"]
+                pid = projects_by_code.get(code)
+                if not pid:
+                    # project might exist from earlier — look up by code
+                    existing = await db.projects.find_one({"project_code": code}, {"_id": 0, "id": 1})
+                    if not existing:
+                        continue
+                    pid = existing["id"]
+                amt = float(pay["amount"] or 0)
+                if amt <= 0:
+                    continue
+                await db.payments.insert_one({
+                    "id": _new_id(),
+                    "project_id": pid,
+                    "project_code": code,
+                    "amount": amt,
+                    "payment_date": _parse_dt(pay["paid_at"]),
+                    "notes": (pay["note"] or "").strip(),
+                    "created_at": _parse_dt(pay["paid_at"]),
+                })
+                received_by_code[code] = received_by_code.get(code, 0) + amt
+                imported["payments"] += 1
+        except sqlite3.Error:
+            pass
+
+        # Update totals on projects
+        for code, tot in received_by_code.items():
+            proj = await db.projects.find_one({"project_code": code}, {"_id": 0})
+            if not proj:
+                continue
+            q = float(proj.get("quoted_amount", 0) or 0)
+            new_received = float(proj.get("received_amount", 0) or 0) + tot
+            out = round(q - new_received, 2)
+            status = "Settled" if (q > 0 and out <= 0) else "Outstanding"
+            await db.projects.update_one(
+                {"project_code": code},
+                {"$set": {"received_amount": new_received, "outstanding_amount": out, "status": status}},
+            )
+
+        # Update counter
+        await db.counters.update_one(
+            {"_id": "project_code"}, {"$max": {"seq": max_seq}}, upsert=True
+        )
+        conn.close()
+        return {"ok": True, "imported": imported}
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
 
 
 # ---------------------- SEED ----------------------

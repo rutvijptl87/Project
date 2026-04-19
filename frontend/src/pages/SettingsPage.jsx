@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api, API } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { Download, Database, ExternalLink, Lock, Unlock, KeyRound, CheckCircle2 } from 'lucide-react';
+import { Download, Database, ExternalLink, Lock, Unlock, KeyRound, CheckCircle2, Upload } from 'lucide-react';
 
 const SettingsPage = () => {
   const [stats, setStats] = useState(null);
@@ -11,6 +11,9 @@ const SettingsPage = () => {
   const [confirmPw, setConfirmPw] = useState('');
   const [saving, setSaving] = useState(false);
   const [pwMsg, setPwMsg] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState(null);
+  const sqliteRef = useRef(null);
 
   useEffect(() => {
     api.get('/dashboard/stats').then((r) => setStats(r.data)).catch(() => {});
@@ -46,6 +49,33 @@ const SettingsPage = () => {
     } catch (err) {
       setPwMsg({ type: 'error', text: err?.response?.data?.detail || 'Failed to change password' });
     } finally { setSaving(false); }
+  };
+
+  const handleSqliteImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!window.confirm(`Import ${file.name}?\nThis will ADD new records to your existing data (duplicates skipped by project code / client name).`)) {
+      if (sqliteRef.current) sqliteRef.current.value = '';
+      return;
+    }
+    const replace = window.confirm('Do you also want to REPLACE all existing projects/clients/architects/payments with the imported data?\n\nClick OK to replace, Cancel to merge.');
+    setImporting(true);
+    setImportMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const url = `/import/sqlite?replace=${replace ? 'true' : 'false'}`;
+      const r = await api.post(url, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const { imported } = r.data;
+      setImportMsg({ type: 'success', text: `Imported: ${imported.projects} projects, ${imported.clients} clients, ${imported.architects} architects, ${imported.payments} payments.` });
+      const s = await api.get('/dashboard/stats');
+      setStats(s.data);
+    } catch (err) {
+      setImportMsg({ type: 'error', text: err?.response?.data?.detail || 'Import failed' });
+    } finally {
+      setImporting(false);
+      if (sqliteRef.current) sqliteRef.current.value = '';
+    }
   };
 
   return (
@@ -142,6 +172,45 @@ const SettingsPage = () => {
             <Database size={15}/> Seed Demo Data
           </button>
         </div>
+      </div>
+
+      {/* SQLite Import */}
+      <div className="card p-6 mb-4" data-testid="sqlite-import-card">
+        <h2 className="font-head text-xl font-bold mb-2" style={{ color: 'var(--cc-dark-green)' }}>Import SQLite DB</h2>
+        <p className="text-sm mb-3" style={{ color: 'var(--cc-text-muted)' }}>
+          Import data from a legacy SQLite .db file. The file should contain tables: clients, architects, projects, payments.
+        </p>
+        <div className="flex gap-2 items-center flex-wrap">
+          <input
+            type="file"
+            accept=".db,.sqlite,.sqlite3"
+            ref={sqliteRef}
+            onChange={handleSqliteImport}
+            className="hidden"
+            data-testid="sqlite-file-input"
+          />
+          <button
+            type="button"
+            onClick={() => sqliteRef.current?.click()}
+            disabled={importing}
+            className="btn btn-accent"
+            data-testid="btn-import-sqlite"
+          >
+            <Upload size={15}/> {importing ? 'Importing...' : 'Import SQLite DB'}
+          </button>
+        </div>
+        {importMsg && (
+          <div
+            className="text-sm rounded-md p-2.5 mt-3 flex items-center gap-2"
+            style={importMsg.type === 'error'
+              ? { background: '#FEF2F2', color: '#991B1B', border: '1px solid #FCA5A5' }
+              : { background: '#D1FAE5', color: '#065F46', border: '1px solid #34D399' }}
+            data-testid="import-message"
+          >
+            {importMsg.type === 'success' && <CheckCircle2 size={14}/>}
+            {importMsg.text}
+          </div>
+        )}
       </div>
 
       <div className="card p-6">

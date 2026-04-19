@@ -24,6 +24,25 @@ const emptyOffer = {
   offer_date: new Date().toISOString().slice(0, 10),
   reference_no: '',
   notes: '',
+  // Editable PDF content
+  subject: '',
+  scope_of_work: '',
+  payment_schedule: [
+    { label: 'Advance on confirmation / appointment letter', percent: 50 },
+    { label: 'On completion of final work / submission of report', percent: 50 },
+  ],
+  terms_conditions: [
+    'Taxes (GST and any other applicable levies) to be paid by the Client.',
+    'Any drill-holes / chipping and their filling during testing are the responsibility of the Owner.',
+    'Scope excludes any additional tests/phases not listed above; these will be charged extra by mutual agreement.',
+    "Payments to be made in favour of 'CREATOR RCC CONSULTANT LLP'.",
+  ],
+  bank_details: 'BANK DETAILS  |  Kotak Bank  |  A/C: Creator RCC Consultant LLP  |  A/C No: 9987076241  |  IFSC: KKBK0001360  |  Branch: Airoli, Sector 6',
+  signature_name: 'Mr. Rutvij Patel — Consulting Structural Engineer',
+  company_header: '',
+  company_tagline: '',
+  company_address: '',
+  intro_paragraph: '',
 };
 
 const typeColor = (t) => {
@@ -53,6 +72,7 @@ const OffersPage = () => {
   const [statusFilter, setStatusFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -77,6 +97,7 @@ const OffersPage = () => {
     setEditing(null);
     setForm({ ...emptyOffer, offer_date: new Date().toISOString().slice(0, 10) });
     setError('');
+    setAdvancedOpen(false);
     setModalOpen(true);
   };
 
@@ -95,8 +116,19 @@ const OffersPage = () => {
       offer_date: o.offer_date ? o.offer_date.slice(0, 10) : new Date().toISOString().slice(0, 10),
       reference_no: o.reference_no || '',
       notes: o.notes || '',
+      subject: o.subject || '',
+      scope_of_work: o.scope_of_work || '',
+      payment_schedule: (o.payment_schedule && o.payment_schedule.length) ? o.payment_schedule : emptyOffer.payment_schedule,
+      terms_conditions: (o.terms_conditions && o.terms_conditions.length) ? o.terms_conditions : emptyOffer.terms_conditions,
+      bank_details: o.bank_details || emptyOffer.bank_details,
+      signature_name: o.signature_name || emptyOffer.signature_name,
+      company_header: o.company_header || '',
+      company_tagline: o.company_tagline || '',
+      company_address: o.company_address || '',
+      intro_paragraph: o.intro_paragraph || '',
     });
     setError('');
+    setAdvancedOpen(false);
     setModalOpen(true);
   };
 
@@ -387,6 +419,175 @@ const OffersPage = () => {
           </div>
 
           {error && <div className="text-sm text-red-600" data-testid="offer-form-error">{error}</div>}
+
+          {/* Advanced: Customize PDF */}
+          <div className="border-t pt-3" style={{ borderColor: 'var(--cc-border)' }}>
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen(!advancedOpen)}
+              className="text-sm font-semibold flex items-center gap-1"
+              style={{ color: 'var(--cc-accent)' }}
+              data-testid="toggle-advanced"
+            >
+              {advancedOpen ? '▾' : '▸'} Customize PDF Content (Scope, Payment Schedule, T&C, Bank, Signature)
+            </button>
+            <div className="text-xs mt-1" style={{ color: 'var(--cc-text-muted)' }}>
+              All fields below are pre-filled with sensible defaults. Edit any/all as needed for this specific offer.
+            </div>
+
+            {advancedOpen && (
+              <div className="space-y-3 mt-3">
+                <div>
+                  <label className="label">Subject Line (override)</label>
+                  <input
+                    className="input"
+                    value={form.subject}
+                    onChange={(e) => update('subject', e.target.value)}
+                    placeholder="Leave blank to auto-generate from type + description"
+                    data-testid="offer-form-subject"
+                  />
+                </div>
+
+                <div>
+                  <label className="label">Scope of Work (multi-line)</label>
+                  <textarea
+                    className="textarea"
+                    rows={5}
+                    value={form.scope_of_work}
+                    onChange={(e) => update('scope_of_work', e.target.value)}
+                    placeholder="Phase 1: ...&#10;Phase 2: ...&#10;Leave blank to use Description field."
+                    data-testid="offer-form-scope"
+                  />
+                </div>
+
+                <div>
+                  <label className="label">Payment Schedule</label>
+                  <div className="space-y-2" data-testid="payment-schedule-list">
+                    {form.payment_schedule.map((row, idx) => (
+                      <div key={idx} className="flex gap-2 items-center">
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="input"
+                          style={{ width: 80 }}
+                          value={row.percent}
+                          onChange={(e) => {
+                            const arr = [...form.payment_schedule];
+                            arr[idx] = { ...arr[idx], percent: parseFloat(e.target.value || 0) };
+                            update('payment_schedule', arr);
+                          }}
+                          data-testid={`payment-percent-${idx}`}
+                        />
+                        <span className="text-xs">%</span>
+                        <input
+                          className="input flex-1"
+                          value={row.label}
+                          onChange={(e) => {
+                            const arr = [...form.payment_schedule];
+                            arr[idx] = { ...arr[idx], label: e.target.value };
+                            update('payment_schedule', arr);
+                          }}
+                          placeholder="Milestone description"
+                          data-testid={`payment-label-${idx}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const arr = form.payment_schedule.filter((_, i) => i !== idx);
+                            update('payment_schedule', arr);
+                          }}
+                          className="btn btn-outline btn-sm"
+                          title="Remove"
+                        ><Trash2 size={12}/></button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => update('payment_schedule', [...form.payment_schedule, { label: '', percent: 0 }])}
+                      className="btn btn-outline btn-sm"
+                      data-testid="btn-add-payment-row"
+                    ><Plus size={12}/> Add milestone</button>
+                    <div className="text-xs" style={{ color: 'var(--cc-text-muted)' }}>
+                      Total: {form.payment_schedule.reduce((s, r) => s + (parseFloat(r.percent) || 0), 0).toFixed(2)}% (should be 100)
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="label">Terms &amp; Conditions</label>
+                  <div className="space-y-2" data-testid="tcs-list">
+                    {form.terms_conditions.map((t, idx) => (
+                      <div key={idx} className="flex gap-2 items-start">
+                        <span className="text-xs mt-2.5" style={{ color: 'var(--cc-text-muted)' }}>•</span>
+                        <input
+                          className="input flex-1"
+                          value={t}
+                          onChange={(e) => {
+                            const arr = [...form.terms_conditions];
+                            arr[idx] = e.target.value;
+                            update('terms_conditions', arr);
+                          }}
+                          data-testid={`tc-row-${idx}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => update('terms_conditions', form.terms_conditions.filter((_, i) => i !== idx))}
+                          className="btn btn-outline btn-sm"
+                        ><Trash2 size={12}/></button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => update('terms_conditions', [...form.terms_conditions, ''])}
+                      className="btn btn-outline btn-sm"
+                      data-testid="btn-add-tc"
+                    ><Plus size={12}/> Add term</button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="label">Bank Details (single line)</label>
+                  <input
+                    className="input"
+                    value={form.bank_details}
+                    onChange={(e) => update('bank_details', e.target.value)}
+                    data-testid="offer-form-bank"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Signatory Name</label>
+                    <input
+                      className="input"
+                      value={form.signature_name}
+                      onChange={(e) => update('signature_name', e.target.value)}
+                      data-testid="offer-form-signature"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Intro Paragraph (override)</label>
+                    <input
+                      className="input"
+                      value={form.intro_paragraph}
+                      onChange={(e) => update('intro_paragraph', e.target.value)}
+                      placeholder="Leave blank for default"
+                      data-testid="offer-form-intro"
+                    />
+                  </div>
+                </div>
+
+                <details className="text-xs">
+                  <summary className="cursor-pointer" style={{ color: 'var(--cc-text-muted)' }}>Advanced: Company header overrides</summary>
+                  <div className="space-y-2 mt-2">
+                    <input className="input" placeholder="Company Name (override)" value={form.company_header} onChange={(e) => update('company_header', e.target.value)} />
+                    <input className="input" placeholder="Tagline (override)" value={form.company_tagline} onChange={(e) => update('company_tagline', e.target.value)} />
+                    <input className="input" placeholder="Address line (override)" value={form.company_address} onChange={(e) => update('company_address', e.target.value)} />
+                  </div>
+                </details>
+              </div>
+            )}
+          </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t" style={{ borderColor: 'var(--cc-border)' }}>
             <button type="button" onClick={() => setModalOpen(false)} className="btn btn-outline">Cancel</button>
