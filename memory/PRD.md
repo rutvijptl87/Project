@@ -39,6 +39,17 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
 - ✅ Record Payment endpoint that atomically updates `received_amount`, `outstanding_amount`, and auto-flips status to Settled
 - ✅ Cascade: delete project → deletes payments; delete/update client/architect → syncs or nullifies in projects
 - ✅ Multi-sheet Excel export (Projects + Clients + Architects) with styled headers
+
+## What's Been Implemented — 2026-02 (Session continuation)
+- ✅ PDF Invoice & Receipt generation via ReportLab (dynamic per project/payment)
+- ✅ Sortable columns + Archive / Restore (soft-delete) for Projects
+- ✅ Offers module: custom type codes (CC-QTxx), status pipeline, conversion to Project, fully editable Offer PDFs
+- ✅ SQLite legacy data import (70 projects + clients + payments + activity logs)
+- ✅ Global password protection (bcrypt) — blocks write ops via axios interceptor; Settings page to change password
+- ✅ Project Detail redesign: quote revisions, activity timeline, Excel export per project, clickable architect/client links
+- ✅ Widened UI to 1600px; contact shortcuts (Call/Email/WhatsApp) in Projects list
+- ✅ **Delete confirmation + forced password re-verification** (2026-02) — every delete action (Projects, Clients, Architects, Offers, Project Detail, Payments) requires BOTH a `window.confirm("Are you sure...")` and a red "Confirm Delete — Enter Password" modal that prompts even when the session is already unlocked. Verified via testing agent iteration_7 (8/8 assertions passed).
+
 - ✅ Excel import that auto-creates missing clients/architects by name, skips duplicates
 - ✅ Beautiful green+white UI — Cabinet Grotesk headings, IBM Plex Sans body, IBM Plex Mono for numbers
 - ✅ All pages: Projects (dashboard+table), Clients, Architects, New/Edit Project form, Project Detail + payment history, Settings
