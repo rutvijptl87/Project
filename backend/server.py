@@ -463,6 +463,10 @@ async def create_project(data: ProjectIn):
     doc["created_at"] = _now()
     await _enrich_project(doc)
     await db.projects.insert_one(doc.copy())
+    await _log_activity(
+        doc["id"], doc["project_code"], "PROJECT CREATED",
+        f"Name: {doc.get('name', '')} | Client: {doc.get('client_name', '-')} | Architect: {doc.get('architect_name', '-')} | Quoted: {doc.get('quoted_amount', 0)}",
+    )
     doc.pop("_id", None)
     return doc
 
@@ -472,10 +476,16 @@ async def update_project(project_id: str, data: ProjectIn):
     existing = await db.projects.find_one({"id": project_id}, {"_id": 0})
     if not existing:
         raise HTTPException(404, "Project not found")
+    old_name = existing.get("name", "")
+    old_quoted = existing.get("quoted_amount", 0)
     update = data.model_dump()
     existing.update(update)
     await _enrich_project(existing)
     await db.projects.update_one({"id": project_id}, {"$set": existing})
+    await _log_activity(
+        project_id, existing.get("project_code", ""), "PROJECT UPDATED",
+        f"Name: '{old_name}' -> '{existing.get('name', '')}' | Quoted: {old_quoted} -> {existing.get('quoted_amount', 0)}",
+    )
     existing.pop("_id", None)
     return existing
 
@@ -486,6 +496,8 @@ async def delete_project(project_id: str):
     if res.deleted_count == 0:
         raise HTTPException(404, "Project not found")
     await db.payments.delete_many({"project_id": project_id})
+    await db.quote_revisions.delete_many({"project_id": project_id})
+    await db.activity_log.delete_many({"project_id": project_id})
     return {"ok": True}
 
 
@@ -494,6 +506,8 @@ async def archive_project(project_id: str):
     res = await db.projects.update_one({"id": project_id}, {"$set": {"archived": True}})
     if res.matched_count == 0:
         raise HTTPException(404, "Project not found")
+    proj = await db.projects.find_one({"id": project_id}, {"_id": 0, "project_code": 1})
+    await _log_activity(project_id, (proj or {}).get("project_code", ""), "PROJECT ARCHIVED", "")
     return {"ok": True, "archived": True}
 
 
@@ -502,6 +516,8 @@ async def unarchive_project(project_id: str):
     res = await db.projects.update_one({"id": project_id}, {"$set": {"archived": False}})
     if res.matched_count == 0:
         raise HTTPException(404, "Project not found")
+    proj = await db.projects.find_one({"id": project_id}, {"_id": 0, "project_code": 1})
+    await _log_activity(project_id, (proj or {}).get("project_code", ""), "PROJECT RESTORED", "")
     return {"ok": True, "archived": False}
 
 
@@ -542,8 +558,188 @@ async def create_payment(data: PaymentIn):
             "status": project["status"],
         }},
     )
+    await _log_activity(
+        data.project_id, project.get("project_code", ""),
+        "PAYMENT ADDED",
+        f"Amount: Rs. {float(data.amount):,.2f} | Note: {data.notes or '-'}",
+    )
     doc.pop("_id", None)
     return doc
+
+
+@api_router.delete("/payments/{payment_id}")
+async def delete_payment(payment_id: str):
+    pay = await db.payments.find_one({"id": payment_id}, {"_id": 0})
+    if not pay:
+        raise HTTPException(404, "Payment not found")
+    await db.payments.delete_one({"id": payment_id})
+    # Recompute project totals
+    project = await db.projects.find_one({"id": pay["project_id"]}, {"_id": 0})
+    if project:
+        new_received = max(0.0, float(project.get("received_amount", 0)) - float(pay["amount"]))
+        project["received_amount"] = new_received
+        await _enrich_project(project)
+        await db.projects.update_one(
+            {"id": pay["project_id"]},
+            {"$set": {
+                "received_amount": new_received,
+                "outstanding_amount": project["outstanding_amount"],
+                "status": project["status"],
+            }},
+        )
+        await _log_activity(
+            pay["project_id"], project.get("project_code", ""),
+            "PAYMENT DELETED",
+            f"Amount: Rs. {float(pay['amount']):,.2f} | Note: {pay.get('notes', '-')}",
+        )
+    return {"ok": True}
+
+
+# ---------------------- QUOTE REVISIONS ----------------------
+class QuoteRevisionIn(BaseModel):
+    new_amount: float
+    reason: Optional[str] = ""
+
+
+@api_router.get("/projects/{project_id}/revisions")
+async def list_revisions(project_id: str):
+    items = await db.quote_revisions.find({"project_id": project_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return items
+
+
+@api_router.post("/projects/{project_id}/revise-quote")
+async def revise_quote(project_id: str, data: QuoteRevisionIn):
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not project:
+        raise HTTPException(404, "Project not found")
+    old_amount = float(project.get("quoted_amount", 0) or 0)
+    new_amount = float(data.new_amount)
+    if new_amount < 0:
+        raise HTTPException(400, "Amount must be >= 0")
+    rev = {
+        "id": _new_id(),
+        "project_id": project_id,
+        "project_code": project.get("project_code", ""),
+        "old_amount": old_amount,
+        "new_amount": new_amount,
+        "reason": data.reason or "",
+        "created_at": _now(),
+    }
+    await db.quote_revisions.insert_one(rev.copy())
+    # Update project quoted amount, re-enrich
+    project["quoted_amount"] = new_amount
+    await _enrich_project(project)
+    await db.projects.update_one(
+        {"id": project_id},
+        {"$set": {
+            "quoted_amount": new_amount,
+            "outstanding_amount": project["outstanding_amount"],
+            "status": project["status"],
+        }},
+    )
+    await _log_activity(
+        project_id, project.get("project_code", ""),
+        "QUOTE REVISED",
+        f"Old: Rs. {old_amount:,.2f} -> New: Rs. {new_amount:,.2f} | Reason: {data.reason or '-'}",
+    )
+    rev.pop("_id", None)
+    return rev
+
+
+# ---------------------- ACTIVITY LOG ----------------------
+async def _log_activity(project_id: str, project_code: str, action: str, detail: str = ""):
+    try:
+        await db.activity_log.insert_one({
+            "id": _new_id(),
+            "project_id": project_id,
+            "project_code": project_code,
+            "action": action,
+            "detail": detail,
+            "created_at": _now(),
+        })
+    except Exception as e:
+        logger.error(f"activity log error: {e}")
+
+
+@api_router.get("/projects/{project_id}/activity")
+async def list_activity(project_id: str):
+    items = await db.activity_log.find({"project_id": project_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return items
+
+
+# ---------------------- PER-PROJECT EXCEL EXPORT ----------------------
+@api_router.get("/projects/{project_id}/export")
+async def export_project_excel(project_id: str):
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not project:
+        raise HTTPException(404, "Project not found")
+    await _enrich_project(project)
+    payments = await db.payments.find({"project_id": project_id}, {"_id": 0}).sort("payment_date", 1).to_list(5000)
+    revisions = await db.quote_revisions.find({"project_id": project_id}, {"_id": 0}).sort("created_at", 1).to_list(5000)
+    activity = await db.activity_log.find({"project_id": project_id}, {"_id": 0}).sort("created_at", 1).to_list(5000)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Project Info"
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="061A11")
+
+    info_rows = [
+        ("Project ID", project.get("project_code", "")),
+        ("Project Name", project.get("name", "")),
+        ("Client", project.get("client_name", "")),
+        ("Architect", project.get("architect_name", "")),
+        ("Site Location", project.get("site_location", "")),
+        ("Current Quoted (INR)", project.get("quoted_amount", 0)),
+        ("Received (INR)", project.get("received_amount", 0)),
+        ("Outstanding (INR)", project.get("outstanding_amount", 0)),
+        ("Status", project.get("status", "")),
+        ("Notes", project.get("notes", "")),
+        ("Created", project.get("created_at", "")),
+    ]
+    for label, value in info_rows:
+        ws.append([label, value])
+    for r in range(1, len(info_rows) + 1):
+        ws.cell(row=r, column=1).font = Font(bold=True)
+    ws.column_dimensions["A"].width = 22
+    ws.column_dimensions["B"].width = 50
+
+    ws2 = wb.create_sheet("Payments")
+    ws2.append(["#", "Date", "Amount (INR)", "Notes"])
+    for col in range(1, 5):
+        c = ws2.cell(row=1, column=col)
+        c.font = header_font
+        c.fill = header_fill
+    for i, p in enumerate(payments, 1):
+        ws2.append([i, p.get("payment_date", ""), float(p.get("amount", 0)), p.get("notes", "")])
+
+    ws3 = wb.create_sheet("Quote Revisions")
+    ws3.append(["#", "Old Amount (INR)", "New Amount (INR)", "Reason", "Date"])
+    for col in range(1, 6):
+        c = ws3.cell(row=1, column=col)
+        c.font = header_font
+        c.fill = header_fill
+    for i, r in enumerate(revisions, 1):
+        ws3.append([i, float(r.get("old_amount", 0)), float(r.get("new_amount", 0)), r.get("reason", ""), r.get("created_at", "")])
+
+    ws4 = wb.create_sheet("Activity")
+    ws4.append(["#", "Action", "Detail", "Date"])
+    for col in range(1, 5):
+        c = ws4.cell(row=1, column=col)
+        c.font = header_font
+        c.fill = header_fill
+    for i, a in enumerate(activity, 1):
+        ws4.append([i, a.get("action", ""), a.get("detail", ""), a.get("created_at", "")])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"project_{project.get('project_code', 'export')}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ---------------------- PDF (Invoice / Receipt) ----------------------
