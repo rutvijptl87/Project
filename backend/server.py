@@ -132,20 +132,31 @@ async def _next_project_code() -> str:
     return f"CC-{seq:04d}"
 
 
-async def _enrich_project(p: dict) -> dict:
-    """Attach client and architect names, compute outstanding."""
-    if p.get("client_id"):
-        c = await db.clients.find_one({"id": p["client_id"]}, {"_id": 0})
-        p["client_name"] = c["name"] if c else ""
+async def _enrich_project(p: dict, client_map: Optional[dict] = None, architect_map: Optional[dict] = None) -> dict:
+    """Attach client and architect names, compute outstanding.
+    If client_map/architect_map are provided, use them (batch mode, no DB queries).
+    Otherwise fall back to per-doc DB fetch (single-project mode).
+    """
+    cid = p.get("client_id")
+    if cid:
+        if client_map is not None:
+            c = client_map.get(cid)
+        else:
+            c = await db.clients.find_one({"id": cid}, {"_id": 0})
+        p["client_name"] = (c.get("name") if c else "") or ""
         p["client_phone"] = (c.get("phone") if c else "") or ""
         p["client_email"] = (c.get("email") if c else "") or ""
     else:
         p["client_name"] = ""
         p["client_phone"] = ""
         p["client_email"] = ""
-    if p.get("architect_id"):
-        a = await db.architects.find_one({"id": p["architect_id"]}, {"_id": 0})
-        p["architect_name"] = a["name"] if a else ""
+    aid = p.get("architect_id")
+    if aid:
+        if architect_map is not None:
+            a = architect_map.get(aid)
+        else:
+            a = await db.architects.find_one({"id": aid}, {"_id": 0})
+        p["architect_name"] = (a.get("name") if a else "") or ""
         p["architect_phone"] = (a.get("phone") if a else "") or ""
         p["architect_email"] = (a.get("email") if a else "") or ""
     else:
@@ -162,6 +173,27 @@ async def _enrich_project(p: dict) -> dict:
     elif p.get("status") not in ("Settled", "Outstanding"):
         p["status"] = "Outstanding"
     return p
+
+
+async def _enrich_projects_batch(projects: List[dict]) -> List[dict]:
+    """Efficiently enrich a list of projects by batch-loading clients and architects.
+    Avoids N+1 DB queries.
+    """
+    if not projects:
+        return projects
+    client_ids = {p["client_id"] for p in projects if p.get("client_id")}
+    architect_ids = {p["architect_id"] for p in projects if p.get("architect_id")}
+    client_map = {}
+    architect_map = {}
+    if client_ids:
+        clients = await db.clients.find({"id": {"$in": list(client_ids)}}, {"_id": 0}).to_list(len(client_ids))
+        client_map = {c["id"]: c for c in clients}
+    if architect_ids:
+        architects = await db.architects.find({"id": {"$in": list(architect_ids)}}, {"_id": 0}).to_list(len(architect_ids))
+        architect_map = {a["id"]: a for a in architects}
+    for p in projects:
+        await _enrich_project(p, client_map=client_map, architect_map=architect_map)
+    return projects
 
 
 # ---------------------- CLIENTS ----------------------
@@ -273,8 +305,7 @@ async def list_projects(search: Optional[str] = None, include_archived: bool = F
             {"site_location": {"$regex": s, "$options": "i"}},
         ]
     items = await db.projects.find(query, {"_id": 0}).sort("created_at", -1).to_list(5000)
-    for p in items:
-        await _enrich_project(p)
+    await _enrich_projects_batch(items)
     return items
 
 
@@ -701,12 +732,12 @@ async def project_invoice_pdf(project_id: str):
 @api_router.get("/dashboard/stats")
 async def dashboard_stats():
     projects = await db.projects.find({}, {"_id": 0}).to_list(10000)
+    await _enrich_projects_batch(projects)
     total_quoted = 0.0
     total_received = 0.0
     outstanding_count = 0
     settled_count = 0
     for p in projects:
-        await _enrich_project(p)
         total_quoted += p["quoted_amount"]
         total_received += p["received_amount"]
         if p["status"] == "Settled":
@@ -729,8 +760,7 @@ async def dashboard_stats():
 @api_router.get("/export/excel")
 async def export_excel():
     projects = await db.projects.find({}, {"_id": 0}).sort("project_code", 1).to_list(10000)
-    for p in projects:
-        await _enrich_project(p)
+    await _enrich_projects_batch(projects)
 
     wb = openpyxl.Workbook()
     ws = wb.active
