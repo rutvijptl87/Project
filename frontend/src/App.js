@@ -12,37 +12,38 @@ import OffersPage from './pages/OffersPage';
 import ProjectFormPage from './pages/ProjectFormPage';
 import ProjectDetailPage from './pages/ProjectDetailPage';
 import SettingsPage from './pages/SettingsPage';
+import { AuthProvider } from './lib/auth';
 
 function App() {
   const [showPayModal, setShowPayModal] = useState(false);
-  const [globalRefreshTick, setGlobalRefreshTick] = useState(0);
 
   return (
-    <BrowserRouter>
-      <div className="min-h-screen" style={{ background: '#FBFCFB' }}>
-        <Navbar onRecordPayment={() => setShowPayModal(true)} />
+    <AuthProvider>
+      <BrowserRouter>
+        <div className="min-h-screen" style={{ background: '#FBFCFB' }}>
+          <Navbar onRecordPayment={() => setShowPayModal(true)} />
 
-        <Routes>
-          <Route path="/" element={<ProjectsPage showPayModal={showPayModal} setShowPayModal={setShowPayModal} />} />
-          <Route path="/offers" element={<OffersPage />} />
-          <Route path="/clients" element={<ClientsPage />} />
-          <Route path="/clients/:id" element={<ClientDetailPage />} />
-          <Route path="/architects" element={<ArchitectsPage />} />
-          <Route path="/architects/:id" element={<ArchitectDetailPage />} />
-          <Route path="/projects/new" element={<ProjectFormPage />} />
-          <Route path="/projects/:id" element={<ProjectDetailPage />} />
-          <Route path="/projects/:id/edit" element={<ProjectFormPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
+          <Routes>
+            <Route path="/" element={<ProjectsPage showPayModal={showPayModal} setShowPayModal={setShowPayModal} />} />
+            <Route path="/offers" element={<OffersPage />} />
+            <Route path="/clients" element={<ClientsPage />} />
+            <Route path="/clients/:id" element={<ClientDetailPage />} />
+            <Route path="/architects" element={<ArchitectsPage />} />
+            <Route path="/architects/:id" element={<ArchitectDetailPage />} />
+            <Route path="/projects/new" element={<ProjectFormPage />} />
+            <Route path="/projects/:id" element={<ProjectDetailPage />} />
+            <Route path="/projects/:id/edit" element={<ProjectFormPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
 
-        {/* Global payment modal usable from navbar on any page */}
-        <RecordPaymentModalWrapper
-          show={showPayModal}
-          onClose={() => setShowPayModal(false)}
-          onSaved={() => setGlobalRefreshTick((t) => t + 1)}
-        />
-      </div>
-    </BrowserRouter>
+          <RecordPaymentModalWrapper
+            show={showPayModal}
+            onClose={() => setShowPayModal(false)}
+            onSaved={() => {}}
+          />
+        </div>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
 

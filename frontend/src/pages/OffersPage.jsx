@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../lib/api';
+import { api, API } from '../lib/api';
 import Modal from '../components/Modal';
 import { formatINR, formatDate } from '../lib/format';
 import {
   Plus, Pencil, Trash2, FileText, Copy, CheckCircle2, XCircle, Clock,
-  ArrowRight, Search, Folder,
+  ArrowRight, Search, Folder, Download,
 } from 'lucide-react';
 
 const OFFER_TYPES = ['RCC', 'Steel', 'Audit', 'PMC', 'Retrofitting', 'Other'];
@@ -262,6 +262,16 @@ const OffersPage = () => {
                   </td>
                   <td>
                     <div className="flex gap-1 justify-end">
+                      <a
+                        href={`${API}/offers/${o.id}/pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-outline btn-sm"
+                        title="Download Offer PDF"
+                        data-testid={`btn-offer-pdf-${o.offer_code}`}
+                      >
+                        <Download size={13}/> PDF
+                      </a>
                       {!o.linked_project_id && o.status !== 'Rejected' && (
                         <button onClick={() => handleConvert(o)} className="btn btn-accent btn-sm" title="Convert to Project" data-testid={`btn-convert-${o.offer_code}`}>
                           <ArrowRight size={13}/> Convert

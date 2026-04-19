@@ -6,6 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import io
 import logging
+import bcrypt
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional
@@ -16,6 +17,8 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import Paragraph, Frame, KeepInFrame
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -989,6 +992,283 @@ async def convert_offer_to_project(offer_id: str):
     )
     project_doc.pop("_id", None)
     return project_doc
+
+
+# ---------------------- AUTH (single shared password) ----------------------
+class PasswordVerifyIn(BaseModel):
+    password: str
+
+
+class PasswordSetIn(BaseModel):
+    current_password: Optional[str] = None  # required if password already set
+    new_password: str
+
+
+def _hash_password(pw: str) -> str:
+    return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def _verify_password(pw: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(pw.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
+
+
+@api_router.get("/auth/status")
+async def auth_status():
+    doc = await db.auth_config.find_one({"_id": "auth_config"})
+    return {"password_set": bool(doc and doc.get("password_hash"))}
+
+
+@api_router.post("/auth/verify")
+async def auth_verify(data: PasswordVerifyIn):
+    doc = await db.auth_config.find_one({"_id": "auth_config"})
+    if not doc or not doc.get("password_hash"):
+        # No password set yet — open app
+        return {"ok": True, "password_set": False}
+    if not _verify_password(data.password, doc["password_hash"]):
+        raise HTTPException(401, "Incorrect password")
+    return {"ok": True, "password_set": True}
+
+
+@api_router.post("/auth/set-password")
+async def auth_set_password(data: PasswordSetIn):
+    if not data.new_password or len(data.new_password) < 4:
+        raise HTTPException(400, "New password must be at least 4 characters")
+    existing = await db.auth_config.find_one({"_id": "auth_config"})
+    if existing and existing.get("password_hash"):
+        if not data.current_password or not _verify_password(data.current_password, existing["password_hash"]):
+            raise HTTPException(401, "Current password is incorrect")
+    new_hash = _hash_password(data.new_password)
+    await db.auth_config.update_one(
+        {"_id": "auth_config"},
+        {"$set": {"password_hash": new_hash, "updated_at": _now()}},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+# ---------------------- OFFER PDF GENERATION ----------------------
+async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
+    """Generate Creator RCC Consultant LLP branded offer PDF."""
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    styles = getSampleStyleSheet()
+    body_style = ParagraphStyle("body", parent=styles["Normal"], fontSize=10, leading=14, fontName="Helvetica")
+
+    # Header band
+    c.setFillColor(BRAND_GREEN)
+    c.rect(0, height - 32 * mm, width, 32 * mm, fill=1, stroke=0)
+    c.setFillColor(colors.white)
+    c.setFont("Helvetica-Bold", 20)
+    c.drawString(18 * mm, height - 15 * mm, "CREATOR RCC CONSULTANT LLP")
+    c.setFillColor(BRAND_ACCENT)
+    c.setFont("Helvetica", 9)
+    c.drawString(18 * mm, height - 21 * mm, "Leading Project Management Consultant  |  Structural Engineer")
+    c.setFillColor(colors.white)
+    c.setFont("Helvetica", 8)
+    c.drawString(18 * mm, height - 27 * mm,
+                 "A-001, Siddhivinayak Park, Sector 8A, Plot No. 21, Airoli, Navi Mumbai - 400 708  |  Ph: 9987076241  |  project@creatorconsultant.net")
+
+    # Reference / date
+    y = height - 40 * mm
+    c.setFillColor(BRAND_MUTED)
+    c.setFont("Helvetica", 9)
+    c.drawString(18 * mm, y, "REF. NO.")
+    c.drawRightString(width - 18 * mm, y, "DATE")
+    y -= 5 * mm
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(18 * mm, y, offer.get("reference_no") or offer.get("offer_code", ""))
+    # Date formatting
+    odate = offer.get("offer_date") or ""
+    try:
+        dfmt = datetime.fromisoformat(odate.replace("Z", "+00:00")).strftime("%d-%m-%Y") if odate else datetime.now().strftime("%d-%m-%Y")
+    except Exception:
+        dfmt = datetime.now().strftime("%d-%m-%Y")
+    c.drawRightString(width - 18 * mm, y, dfmt)
+
+    # To
+    y -= 12 * mm
+    c.setFillColor(BRAND_MUTED)
+    c.setFont("Helvetica", 9)
+    c.drawString(18 * mm, y, "TO,")
+    y -= 5 * mm
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(18 * mm, y, (client_doc or {}).get("name") or offer.get("client_name") or "Client Name")
+    c.setFont("Helvetica", 10)
+    if client_doc and client_doc.get("company"):
+        y -= 5 * mm
+        c.drawString(18 * mm, y, client_doc["company"])
+    if client_doc and client_doc.get("address"):
+        y -= 5 * mm
+        c.drawString(18 * mm, y, client_doc["address"][:90])
+    if offer.get("site_location"):
+        y -= 5 * mm
+        c.setFillColor(BRAND_MUTED)
+        c.drawString(18 * mm, y, f"Site: {offer['site_location'][:90]}")
+        c.setFillColor(colors.black)
+
+    # Subject
+    y -= 10 * mm
+    c.setFillColor(BRAND_GREEN)
+    c.setFont("Helvetica-Bold", 11)
+    subject = f"SUBJECT: Proposal for {offer.get('effective_type', '')} — {offer.get('description', '')[:80]}".strip().rstrip(" —")
+    c.drawString(18 * mm, y, subject[:100])
+    c.setFillColor(colors.black)
+
+    # Intro
+    y -= 9 * mm
+    intro = (
+        "We, Creator RCC Consultant LLP, are a leading structural engineering and project management "
+        "consultancy authorized by BMC, NMMC and TMC. We thank you for the opportunity and are pleased "
+        "to submit our offer for the captioned work as detailed below."
+    )
+    p = Paragraph(intro, body_style)
+    w_para, h_para = p.wrap(width - 36 * mm, 40 * mm)
+    p.drawOn(c, 18 * mm, y - h_para)
+    y -= h_para + 6 * mm
+
+    # Scope / description block
+    c.setFillColor(BRAND_GREEN)
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(18 * mm, y, "SCOPE OF WORK")
+    c.setStrokeColor(BRAND_GREEN)
+    c.line(18 * mm, y - 1.5 * mm, width - 18 * mm, y - 1.5 * mm)
+    y -= 8 * mm
+
+    scope_text = offer.get("description") or f"{offer.get('effective_type', '')} consultancy services as per industry standard practices."
+    if offer.get("notes"):
+        scope_text += f"\n\nInclusions / Methodology: {offer['notes']}"
+    p = Paragraph(scope_text.replace("\n", "<br/>"), body_style)
+    w_para, h_para = p.wrap(width - 36 * mm, 60 * mm)
+    p.drawOn(c, 18 * mm, y - h_para)
+    y -= h_para + 8 * mm
+    c.setFillColor(colors.black)
+
+    # Fees table
+    c.setFillColor(BRAND_GREEN)
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(18 * mm, y, "PROFESSIONAL FEES")
+    c.line(18 * mm, y - 1.5 * mm, width - 18 * mm, y - 1.5 * mm)
+    y -= 6 * mm
+
+    # Header row
+    c.setFillColor(BRAND_GREEN)
+    c.rect(18 * mm, y - 7 * mm, width - 36 * mm, 7 * mm, fill=1, stroke=0)
+    c.setFillColor(colors.white)
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(22 * mm, y - 5 * mm, "DESCRIPTION")
+    c.drawRightString(width - 22 * mm, y - 5 * mm, "AMOUNT (INR)")
+    y -= 7 * mm
+
+    base = float(offer.get("base_amount", 0) or 0)
+    gst_pct = float(offer.get("gst_percent", 18) or 0)
+    gst_amt = round(base * gst_pct / 100.0, 2)
+    grand = round(base + gst_amt, 2)
+
+    # Rows
+    def _row(label, amount, bold=False, highlight=False):
+        nonlocal y
+        y -= 7 * mm
+        if highlight:
+            c.setFillColor(BRAND_GREEN)
+            c.rect(18 * mm, y - 1 * mm, width - 36 * mm, 7 * mm, fill=1, stroke=0)
+            c.setFillColor(colors.white)
+        else:
+            c.setFillColor(colors.black)
+        c.setFont("Helvetica-Bold" if bold else "Helvetica", 10)
+        c.drawString(22 * mm, y + 1.5 * mm, label)
+        c.drawRightString(width - 22 * mm, y + 1.5 * mm, f"Rs. {_format_inr(amount)}")
+        c.setFillColor(colors.black)
+
+    _row(f"{offer.get('effective_type', 'Consultancy')} charges as per scope above", base)
+    _row(f"GST @ {gst_pct:.0f}%", gst_amt)
+    _row("GRAND TOTAL (Inclusive of GST)", grand, bold=True, highlight=True)
+
+    y -= 12 * mm
+
+    # Payment Terms
+    c.setFillColor(BRAND_GREEN)
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(18 * mm, y, "PAYMENT TERMS")
+    c.line(18 * mm, y - 1.5 * mm, width - 18 * mm, y - 1.5 * mm)
+    y -= 6 * mm
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica", 10)
+    half = round(grand / 2, 2)
+    terms = [
+        f"• 50% Advance on confirmation / appointment letter:  Rs. {_format_inr(half)}",
+        f"• 50% on completion of final work / submission of report:  Rs. {_format_inr(grand - half)}",
+    ]
+    for t in terms:
+        y -= 5 * mm
+        c.drawString(20 * mm, y, t)
+
+    # T&C
+    y -= 10 * mm
+    c.setFillColor(BRAND_GREEN)
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(18 * mm, y, "TERMS & CONDITIONS")
+    c.line(18 * mm, y - 1.5 * mm, width - 18 * mm, y - 1.5 * mm)
+    y -= 6 * mm
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica", 9)
+    tcs = [
+        "Taxes (GST and any other applicable levies) to be paid by the Client.",
+        "Any drill-holes / chipping and their filling during testing are the responsibility of the Owner.",
+        "Scope excludes any additional tests/phases not listed above; these will be charged extra by mutual agreement.",
+        "Payments to be made in favour of 'CREATOR RCC CONSULTANT LLP'.",
+    ]
+    for t in tcs:
+        y -= 5 * mm
+        c.drawString(20 * mm, y, f"• {t}")
+
+    # Bank details
+    y -= 10 * mm
+    c.setFillColor(BRAND_GREEN)
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(18 * mm, y, "BANK DETAILS  |  Kotak Bank  |  A/C: Creator RCC Consultant LLP  |  A/C No: 9987076241  |  IFSC: KKBK0001360  |  Branch: Airoli, Sector 6")
+    c.setFillColor(colors.black)
+
+    # Signature
+    c.setStrokeColor(BRAND_MUTED)
+    c.line(width - 70 * mm, 30 * mm, width - 20 * mm, 30 * mm)
+    c.setFillColor(BRAND_GREEN)
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(width - 70 * mm, 35 * mm, "For Creator RCC Consultant LLP")
+    c.setFillColor(BRAND_MUTED)
+    c.setFont("Helvetica", 9)
+    c.drawString(width - 70 * mm, 26 * mm, "Authorised Signatory")
+    c.setFont("Helvetica-Oblique", 8)
+    c.drawString(width - 70 * mm, 22 * mm, "Mr. Rutvij Patel — Consulting Structural Engineer")
+
+    _draw_footer(c)
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf.read()
+
+
+@api_router.get("/offers/{offer_id}/pdf")
+async def offer_pdf(offer_id: str):
+    offer = await db.offers.find_one({"id": offer_id}, {"_id": 0})
+    if not offer:
+        raise HTTPException(404, "Offer not found")
+    await _enrich_offer(offer)
+    client_doc = None
+    if offer.get("client_id"):
+        client_doc = await db.clients.find_one({"id": offer["client_id"]}, {"_id": 0})
+    pdf_bytes = await _build_offer_pdf(offer, client_doc)
+    filename = f"offer_{offer['offer_code']}_{(offer.get('effective_type') or 'proposal').replace(' ', '_')}.pdf"
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ---------------------- DASHBOARD ----------------------
