@@ -307,21 +307,39 @@ async def backup_status():
 async def google_connect():
     """Returns an authorization URL the frontend opens in a new tab / redirect."""
     flow = _make_flow(scopes=SCOPES)
-    auth_url, _state = flow.authorization_url(
+    auth_url, state = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
         prompt="consent",  # required to always get refresh_token
+    )
+    # Persist PKCE code_verifier + state so the callback can complete the exchange.
+    await _db.google_drive_config.update_one(
+        {"_key": CONFIG_DOC_ID},
+        {"$set": {
+            "_key": CONFIG_DOC_ID,
+            "pending_code_verifier": flow.code_verifier,
+            "pending_state": state,
+            "pending_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True,
     )
     return {"authorization_url": auth_url}
 
 
 @router.get("/google/callback")
-async def google_callback(code: str = Query(...), error: Optional[str] = Query(None)):
+async def google_callback(code: str = Query(...), state: Optional[str] = Query(None), error: Optional[str] = Query(None)):
     """Google redirects here with ?code=... We exchange and store credentials, then redirect to frontend."""
     frontend = os.environ.get("FRONTEND_URL", "/")
     if error:
         return RedirectResponse(f"{frontend}/settings?drive=error&reason={error}")
+
+    # Retrieve pending PKCE code_verifier saved in /connect
+    pending = await _db.google_drive_config.find_one({"_key": CONFIG_DOC_ID}, {"_id": 0}) or {}
+    code_verifier = pending.get("pending_code_verifier")
+
     flow = _make_flow(scopes=None)  # accept all granted scopes
+    if code_verifier:
+        flow.code_verifier = code_verifier
     try:
         flow.fetch_token(code=code)
     except Exception as e:
@@ -342,18 +360,21 @@ async def google_callback(code: str = Query(...), error: Optional[str] = Query(N
 
     await _db.google_drive_config.update_one(
         {"_key": CONFIG_DOC_ID},
-        {"$set": {
-            "_key": CONFIG_DOC_ID,
-            "access_token": creds.token,
-            "refresh_token": creds.refresh_token,
-            "token_uri": creds.token_uri,
-            "client_id": creds.client_id,
-            "client_secret": creds.client_secret,
-            "scopes": list(creds.scopes) if creds.scopes else SCOPES,
-            "expiry": creds.expiry.isoformat() if creds.expiry else None,
-            "email": email,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }},
+        {
+            "$set": {
+                "_key": CONFIG_DOC_ID,
+                "access_token": creds.token,
+                "refresh_token": creds.refresh_token,
+                "token_uri": creds.token_uri,
+                "client_id": creds.client_id,
+                "client_secret": creds.client_secret,
+                "scopes": list(creds.scopes) if creds.scopes else SCOPES,
+                "expiry": creds.expiry.isoformat() if creds.expiry else None,
+                "email": email,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            "$unset": {"pending_code_verifier": "", "pending_state": "", "pending_at": ""},
+        },
         upsert=True,
     )
     return RedirectResponse(f"{frontend}/settings?drive=connected")
