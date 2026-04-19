@@ -342,6 +342,9 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
                           <button onClick={() => handleArchive(p.id, p.project_code)} className="btn btn-outline btn-sm" title="Archive" data-testid={`btn-archive-${p.project_code}`}>
                             <Archive size={13}/>
                           </button>
+                          <button onClick={() => handleDelete(p.id, p.project_code)} className="btn btn-danger btn-sm" title="Delete permanently" data-testid={`btn-delete-${p.project_code}`}>
+                            <Trash2 size={13}/>
+                          </button>
                         </>
                       )}
                     </div>
