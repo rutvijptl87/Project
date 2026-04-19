@@ -44,14 +44,19 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
 - ✅ All pages: Projects (dashboard+table), Clients, Architects, New/Edit Project form, Project Detail + payment history, Settings
 - ✅ Tested by testing_agent_v3 → 28/28 backend tests pass, all frontend flows pass
 
+## Session 2 — 2026-01 (Iteration 2)
+- ✅ **PDF Invoice generation** per project — branded green header, client details, line item, totals box, outstanding highlight. Endpoint: `GET /api/projects/{id}/invoice`
+- ✅ **PDF Receipt generation** per payment — received amount banner, running totals (quoted / total received / outstanding), notes, signature line. Endpoint: `GET /api/payments/{id}/receipt`
+- ✅ **Sortable columns** on projects table — click any header to sort asc/desc (Project ID, Name, Client, Architect, Quoted, Received, Outstanding, Status)
+- ✅ **Archive / soft-delete** — `POST /api/projects/{id}/archive` and `/unarchive`; list endpoint accepts `include_archived` and `archived_only` params; frontend has "View Archived" toggle with Restore and permanent Delete actions
+- ✅ Invoice PDF button on each project row + project detail page; Receipt PDF button on each payment in history
+- ✅ Tested → 41/41 backend tests pass, all frontend flows pass
+
+
 ## Prioritized Backlog
-- **P1** — Fix minor console warning `<span>` inside `<option>` in RecordPaymentModal (cosmetic only)
-- **P1** — Add invoice/receipt PDF generation per payment
-- **P1** — Add WhatsApp / SMS share of payment reminder (via Twilio) to clients with outstanding balance
+- **P1** — WhatsApp / SMS share of payment reminder (via Twilio) to clients with outstanding balance
 - **P2** — Monthly revenue chart on dashboard (recharts already installed)
 - **P2** — Multi-currency support (currently INR only)
-- **P2** — Column sort in projects table
-- **P2** — Archive / restore projects (soft delete)
 - **P3** — Multi-user with roles (admin / staff) + Google Auth if needed
 - **P3** — PWA/offline mode
 
