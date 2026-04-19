@@ -8,6 +8,7 @@ import ClientsPage from './pages/ClientsPage';
 import ArchitectsPage from './pages/ArchitectsPage';
 import ArchitectDetailPage from './pages/ArchitectDetailPage';
 import ClientDetailPage from './pages/ClientDetailPage';
+import OffersPage from './pages/OffersPage';
 import ProjectFormPage from './pages/ProjectFormPage';
 import ProjectDetailPage from './pages/ProjectDetailPage';
 import SettingsPage from './pages/SettingsPage';
@@ -23,6 +24,7 @@ function App() {
 
         <Routes>
           <Route path="/" element={<ProjectsPage showPayModal={showPayModal} setShowPayModal={setShowPayModal} />} />
+          <Route path="/offers" element={<OffersPage />} />
           <Route path="/clients" element={<ClientsPage />} />
           <Route path="/clients/:id" element={<ClientDetailPage />} />
           <Route path="/architects" element={<ArchitectsPage />} />

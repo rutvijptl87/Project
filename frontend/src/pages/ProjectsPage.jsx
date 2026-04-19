@@ -232,7 +232,27 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
               ) : sortedProjects.map((p) => (
                 <tr key={p.id} data-testid={`project-row-${p.project_code}`}>
                   <td className="font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{p.project_code}</td>
-                  <td className="font-medium">{p.name}</td>
+                  <td className="font-medium">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {p.offer_type && (
+                        <span
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                          style={(() => {
+                            const t = (p.offer_type || '').toLowerCase();
+                            if (t === 'rcc') return { background: '#E0F2FE', color: '#075985', border: '1px solid #7DD3FC' };
+                            if (t === 'steel') return { background: '#F3F4F6', color: '#374151', border: '1px solid #9CA3AF' };
+                            if (t === 'audit') return { background: '#FEF3C7', color: '#92400E', border: '1px solid #FCD34D' };
+                            if (t === 'pmc') return { background: '#EDE9FE', color: '#5B21B6', border: '1px solid #C4B5FD' };
+                            return { background: '#D1FAE5', color: '#065F46', border: '1px solid #34D399' };
+                          })()}
+                          title={p.offer_code ? `Offer: ${p.offer_code}` : undefined}
+                        >
+                          {p.offer_type}
+                        </span>
+                      )}
+                      <span>{p.name}</span>
+                    </div>
+                  </td>
                   <td>
                     {p.client_name ? (
                       <div>

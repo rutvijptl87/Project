@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { formatINR, formatDate } from '../lib/format';
 import RecordPaymentModal from '../components/RecordPaymentModal';
-import { ArrowLeft, Pencil, IndianRupee, Trash2, FileText, Download, Archive } from 'lucide-react';
+import { ArrowLeft, Pencil, IndianRupee, Trash2, FileText, Download, Archive, Folder, Copy } from 'lucide-react';
 
 const ProjectDetailPage = () => {
   const { id } = useParams();
@@ -46,7 +46,22 @@ const ProjectDetailPage = () => {
       <div className="flex items-start justify-between mb-4 flex-wrap gap-3">
         <div>
           <div className="font-mono-data text-sm font-semibold" style={{ color: 'var(--cc-accent)' }} data-testid="detail-code">{project.project_code}</div>
-          <h1 className="font-head text-3xl font-extrabold" style={{ color: 'var(--cc-dark-green)' }} data-testid="detail-name">{project.name}</h1>
+          <h1 className="font-head text-3xl font-extrabold flex items-center gap-2 flex-wrap" style={{ color: 'var(--cc-dark-green)' }} data-testid="detail-name">
+            {project.offer_type && (
+              <span
+                className="text-xs font-bold px-2 py-1 rounded"
+                style={(() => {
+                  const t = (project.offer_type || '').toLowerCase();
+                  if (t === 'rcc') return { background: '#E0F2FE', color: '#075985', border: '1px solid #7DD3FC' };
+                  if (t === 'steel') return { background: '#F3F4F6', color: '#374151', border: '1px solid #9CA3AF' };
+                  if (t === 'audit') return { background: '#FEF3C7', color: '#92400E', border: '1px solid #FCD34D' };
+                  if (t === 'pmc') return { background: '#EDE9FE', color: '#5B21B6', border: '1px solid #C4B5FD' };
+                  return { background: '#D1FAE5', color: '#065F46', border: '1px solid #34D399' };
+                })()}
+              >{project.offer_type}</span>
+            )}
+            {project.name}
+          </h1>
           <div className="mt-2">
             <span className={`badge ${project.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`}>{project.status}</span>
           </div>
@@ -85,6 +100,40 @@ const ProjectDetailPage = () => {
           <Info label="Created" value={formatDate(project.created_at)} />
         </div>
       </div>
+
+      {project.offer_code && (
+        <div className="card p-5 mb-6" data-testid="linked-offer-card">
+          <h2 className="font-head text-lg font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--cc-dark-green)' }}>
+            <FileText size={18}/> Linked Offer
+          </h2>
+          <div className="grid md:grid-cols-2 gap-4 text-sm">
+            <Info label="Offer ID" value={project.offer_code} />
+            <Info label="Type" value={project.offer_type || '—'} />
+            {project.offer_file_path ? (
+              <div className="md:col-span-2">
+                <div className="text-xs uppercase tracking-wide mb-1" style={{ color: 'var(--cc-text-muted)' }}>File Path on your PC</div>
+                <div className="flex items-center gap-2 rounded-lg p-3 font-mono-data text-xs" style={{ background: 'var(--cc-surface)', border: '1px solid var(--cc-border)' }}>
+                  <Folder size={14} style={{ color: 'var(--cc-accent)' }}/>
+                  <span className="flex-1 break-all" data-testid="linked-offer-path">{project.offer_file_path}</span>
+                  <button
+                    onClick={() => { navigator.clipboard?.writeText(project.offer_file_path); alert('Path copied!'); }}
+                    className="btn btn-outline btn-sm"
+                    data-testid="copy-offer-path"
+                  ><Copy size={12}/> Copy</button>
+                </div>
+                <div className="text-xs mt-1" style={{ color: 'var(--cc-text-muted)' }}>
+                  Tip: Paste this path into your file explorer address bar to open the offer document.
+                </div>
+              </div>
+            ) : (
+              <Info label="File Path" value="—" full />
+            )}
+            <div className="md:col-span-2">
+              <Link to="/offers" className="text-xs link-underline">→ Go to Offers page</Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="card overflow-hidden">
         <div className="p-5 border-b" style={{ borderColor: 'var(--cc-border)' }}>

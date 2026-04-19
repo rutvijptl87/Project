@@ -86,6 +86,53 @@ class Project(BaseModel):
     status: str = "Outstanding"
     notes: str = ""
     archived: bool = False
+    # Offer linkage (optional — filled when a project is created from an offer)
+    offer_id: Optional[str] = None
+    offer_code: Optional[str] = ""
+    offer_type: Optional[str] = ""
+    offer_file_path: Optional[str] = ""
+    created_at: str
+
+
+class OfferIn(BaseModel):
+    offer_type: str  # RCC / Steel / Audit / Other
+    custom_type: Optional[str] = ""  # when offer_type == "Other"
+    client_id: Optional[str] = None
+    description: Optional[str] = ""
+    site_location: Optional[str] = ""
+    base_amount: float = 0.0  # pre-GST
+    gst_percent: float = 18.0
+    file_path: Optional[str] = ""  # path on user's PC, e.g. D:\Offers\2026\audit.pdf
+    status: Optional[str] = "Pending"  # Pending / Accepted / Rejected
+    offer_date: Optional[str] = None  # ISO
+    notes: Optional[str] = ""
+    reference_no: Optional[str] = ""  # like STR/AUDIT/2026/023
+
+
+class Offer(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    offer_code: str  # OFR-0001
+    offer_type: str
+    custom_type: str = ""
+    effective_type: str = ""  # convenience: the type to display (custom_type if type == Other else offer_type)
+    client_id: Optional[str] = None
+    client_name: Optional[str] = ""
+    client_phone: Optional[str] = ""
+    client_email: Optional[str] = ""
+    description: str = ""
+    site_location: str = ""
+    base_amount: float = 0.0
+    gst_percent: float = 18.0
+    gst_amount: float = 0.0
+    total_amount: float = 0.0
+    file_path: str = ""
+    status: str = "Pending"
+    offer_date: str = ""
+    reference_no: str = ""
+    notes: str = ""
+    linked_project_id: Optional[str] = None
+    linked_project_code: Optional[str] = ""
     created_at: str
 
 
@@ -130,6 +177,18 @@ async def _next_project_code() -> str:
     # If just created, seq will be 1
     seq = doc.get("seq", 1) if doc else 1
     return f"CC-{seq:04d}"
+
+
+async def _next_offer_code() -> str:
+    """Get next sequential offer code like OFR-0001."""
+    doc = await db.counters.find_one_and_update(
+        {"_id": "offer_code"},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=True,
+    )
+    seq = doc.get("seq", 1) if doc else 1
+    return f"OFR-{seq:04d}"
 
 
 async def _enrich_project(p: dict, client_map: Optional[dict] = None, architect_map: Optional[dict] = None) -> dict:
@@ -780,7 +839,160 @@ async def project_invoice_pdf(project_id: str):
     )
 
 
+# ---------------------- OFFERS ----------------------
+def _effective_offer_type(offer_type: str, custom_type: str) -> str:
+    if offer_type and offer_type.lower() == "other":
+        return (custom_type or "Other").strip()
+    return (offer_type or "").strip()
+
+
+async def _enrich_offer(o: dict) -> dict:
+    if o.get("client_id"):
+        c = await db.clients.find_one({"id": o["client_id"]}, {"_id": 0})
+        o["client_name"] = (c.get("name") if c else "") or ""
+        o["client_phone"] = (c.get("phone") if c else "") or ""
+        o["client_email"] = (c.get("email") if c else "") or ""
+    else:
+        o["client_name"] = ""
+        o["client_phone"] = ""
+        o["client_email"] = ""
+    o["base_amount"] = float(o.get("base_amount", 0) or 0)
+    o["gst_percent"] = float(o.get("gst_percent", 18) or 0)
+    o["gst_amount"] = round(o["base_amount"] * o["gst_percent"] / 100.0, 2)
+    o["total_amount"] = round(o["base_amount"] + o["gst_amount"], 2)
+    o["effective_type"] = _effective_offer_type(o.get("offer_type", ""), o.get("custom_type", ""))
+    o["custom_type"] = o.get("custom_type", "") or ""
+    o["file_path"] = o.get("file_path", "") or ""
+    o["description"] = o.get("description", "") or ""
+    o["site_location"] = o.get("site_location", "") or ""
+    o["status"] = o.get("status") or "Pending"
+    o["offer_date"] = o.get("offer_date") or ""
+    o["reference_no"] = o.get("reference_no") or ""
+    o["notes"] = o.get("notes") or ""
+    return o
+
+
+@api_router.get("/offers", response_model=List[Offer])
+async def list_offers(status: Optional[str] = None, search: Optional[str] = None):
+    query = {}
+    if status:
+        query["status"] = status
+    if search:
+        s = search.strip()
+        query["$or"] = [
+            {"offer_code": {"$regex": s, "$options": "i"}},
+            {"description": {"$regex": s, "$options": "i"}},
+            {"client_name": {"$regex": s, "$options": "i"}},
+            {"site_location": {"$regex": s, "$options": "i"}},
+            {"reference_no": {"$regex": s, "$options": "i"}},
+        ]
+    items = await db.offers.find(query, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    for o in items:
+        await _enrich_offer(o)
+    return items
+
+
+@api_router.get("/offers/{offer_id}", response_model=Offer)
+async def get_offer(offer_id: str):
+    o = await db.offers.find_one({"id": offer_id}, {"_id": 0})
+    if not o:
+        raise HTTPException(404, "Offer not found")
+    await _enrich_offer(o)
+    return o
+
+
+@api_router.post("/offers", response_model=Offer)
+async def create_offer(data: OfferIn):
+    doc = data.model_dump()
+    doc["id"] = _new_id()
+    doc["offer_code"] = await _next_offer_code()
+    doc["created_at"] = _now()
+    doc["linked_project_id"] = None
+    doc["linked_project_code"] = ""
+    await _enrich_offer(doc)
+    await db.offers.insert_one(doc.copy())
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.put("/offers/{offer_id}", response_model=Offer)
+async def update_offer(offer_id: str, data: OfferIn):
+    existing = await db.offers.find_one({"id": offer_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Offer not found")
+    update = data.model_dump()
+    existing.update(update)
+    await _enrich_offer(existing)
+    await db.offers.update_one({"id": offer_id}, {"$set": existing})
+    # If this offer is already linked to a project, sync offer metadata on the project
+    if existing.get("linked_project_id"):
+        await db.projects.update_one(
+            {"id": existing["linked_project_id"]},
+            {"$set": {
+                "offer_type": existing["effective_type"],
+                "offer_file_path": existing.get("file_path", ""),
+            }},
+        )
+    existing.pop("_id", None)
+    return existing
+
+
+@api_router.delete("/offers/{offer_id}")
+async def delete_offer(offer_id: str):
+    res = await db.offers.delete_one({"id": offer_id})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Offer not found")
+    # Clear offer linkage on any project pointing to it
+    await db.projects.update_many(
+        {"offer_id": offer_id},
+        {"$set": {"offer_id": None, "offer_code": "", "offer_type": "", "offer_file_path": ""}},
+    )
+    return {"ok": True}
+
+
+@api_router.post("/offers/{offer_id}/convert-to-project", response_model=Project)
+async def convert_offer_to_project(offer_id: str):
+    offer = await db.offers.find_one({"id": offer_id}, {"_id": 0})
+    if not offer:
+        raise HTTPException(404, "Offer not found")
+    if offer.get("linked_project_id"):
+        raise HTTPException(400, f"Offer already converted to project {offer.get('linked_project_code', '')}")
+    await _enrich_offer(offer)
+    # Create a project from this offer
+    project_doc = {
+        "id": _new_id(),
+        "project_code": await _next_project_code(),
+        "name": offer.get("description") or f"{offer.get('effective_type', 'Project')} for {offer.get('client_name', '')}".strip(),
+        "client_id": offer.get("client_id"),
+        "architect_id": None,
+        "site_location": offer.get("site_location", ""),
+        "quoted_amount": float(offer.get("total_amount", 0) or 0),  # use GST-inclusive total
+        "received_amount": 0.0,
+        "status": "Outstanding",
+        "notes": offer.get("notes", ""),
+        "offer_id": offer["id"],
+        "offer_code": offer["offer_code"],
+        "offer_type": offer["effective_type"],
+        "offer_file_path": offer.get("file_path", ""),
+        "created_at": _now(),
+    }
+    await _enrich_project(project_doc)
+    await db.projects.insert_one(project_doc.copy())
+    # Mark offer as Accepted and linked
+    await db.offers.update_one(
+        {"id": offer_id},
+        {"$set": {
+            "status": "Accepted",
+            "linked_project_id": project_doc["id"],
+            "linked_project_code": project_doc["project_code"],
+        }},
+    )
+    project_doc.pop("_id", None)
+    return project_doc
+
+
 # ---------------------- DASHBOARD ----------------------
+
 @api_router.get("/dashboard/stats")
 async def dashboard_stats():
     # Lightweight projection: we only need amounts + status for totals (no client/architect joins needed)
@@ -807,6 +1019,8 @@ async def dashboard_stats():
         "total_projects": len(projects),
         "total_clients": await db.clients.count_documents({}),
         "total_architects": await db.architects.count_documents({}),
+        "total_offers": await db.offers.count_documents({}),
+        "pending_offers": await db.offers.count_documents({"status": "Pending"}),
         "total_quoted": round(total_quoted, 2),
         "total_received": round(total_received, 2),
         "total_outstanding": round(total_quoted - total_received, 2),
@@ -1071,6 +1285,68 @@ async def seed_demo():
         await _enrich_project(doc)
         await db.projects.insert_one(doc.copy())
 
+    # Offers (sample pending + accepted)
+    offers_data = [
+        {
+            "offer_type": "Audit", "custom_type": "",
+            "client_id": client_ids[1],
+            "description": "RCC-Basic-Audit of Row House",
+            "site_location": "Plot 44, Sector 4, Koparkhairane, Navi Mumbai",
+            "base_amount": 28000, "gst_percent": 18.0,
+            "file_path": "D:\\CreatorConsultant\\Offers\\2026\\STR-AUDIT-2026-023.pdf",
+            "status": "Pending",
+            "reference_no": "STR/AUDIT/2026/023",
+            "offer_date": _now(),
+            "notes": "Half cell + Rebound Hammer + Carbonation + UPV. 50% advance.",
+        },
+        {
+            "offer_type": "Steel", "custom_type": "",
+            "client_id": client_ids[2],
+            "description": "MS Structural Design & Consultancy",
+            "site_location": "TTC IND. Area, Rabale MIDC, Navi Mumbai",
+            "base_amount": 200000, "gst_percent": 18.0,
+            "file_path": "D:\\CreatorConsultant\\Offers\\2025\\STR-QUOT-2025-160.pdf",
+            "status": "Pending",
+            "reference_no": "STR/QUOT/2025/160",
+            "offer_date": _now(),
+            "notes": "20,000 sq.ft. @ Rs 10/sq.ft.",
+        },
+        {
+            "offer_type": "Other", "custom_type": "PMC",
+            "client_id": client_ids[3],
+            "description": "Project Management Consultancy",
+            "site_location": "Novo Rabale MIDC",
+            "base_amount": 150000, "gst_percent": 18.0,
+            "file_path": "D:\\CreatorConsultant\\Offers\\2026\\PMC-offer.pdf",
+            "status": "Pending",
+            "reference_no": "STR/PMC/2026/005",
+            "offer_date": _now(),
+            "notes": "Quarterly site visits + BOQ review",
+        },
+    ]
+    for o in offers_data:
+        od = {
+            "id": _new_id(),
+            "offer_code": await _next_offer_code(),
+            "offer_type": o["offer_type"],
+            "custom_type": o["custom_type"],
+            "client_id": o["client_id"],
+            "description": o["description"],
+            "site_location": o["site_location"],
+            "base_amount": float(o["base_amount"]),
+            "gst_percent": float(o["gst_percent"]),
+            "file_path": o["file_path"],
+            "status": o["status"],
+            "offer_date": o["offer_date"],
+            "reference_no": o["reference_no"],
+            "notes": o["notes"],
+            "linked_project_id": None,
+            "linked_project_code": "",
+            "created_at": _now(),
+        }
+        await _enrich_offer(od)
+        await db.offers.insert_one(od.copy())
+
     return {"ok": True, "seeded": True}
 
 
@@ -1104,6 +1380,40 @@ async def on_startup():
         if await db.projects.count_documents({}) == 0:
             logger.info("Seeding demo data on startup...")
             await seed_demo()
+        # Separately seed offers if missing (back-compat for existing DBs)
+        if await db.offers.count_documents({}) == 0:
+            logger.info("Seeding demo offers...")
+            clients = await db.clients.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(10)
+            if clients:
+                sample_offers = [
+                    {"offer_type": "Audit", "custom_type": "", "client_id": clients[min(1, len(clients)-1)]["id"],
+                     "description": "RCC-Basic-Audit of Row House",
+                     "site_location": "Plot 44, Sector 4, Koparkhairane, Navi Mumbai",
+                     "base_amount": 28000.0, "gst_percent": 18.0,
+                     "file_path": "D:\\CreatorConsultant\\Offers\\2026\\STR-AUDIT-2026-023.pdf",
+                     "status": "Pending", "reference_no": "STR/AUDIT/2026/023",
+                     "notes": "Half cell + Rebound Hammer + Carbonation + UPV. 50% advance."},
+                    {"offer_type": "Steel", "custom_type": "", "client_id": clients[min(2, len(clients)-1)]["id"],
+                     "description": "MS Structural Design & Consultancy",
+                     "site_location": "TTC IND. Area, Rabale MIDC, Navi Mumbai",
+                     "base_amount": 200000.0, "gst_percent": 18.0,
+                     "file_path": "D:\\CreatorConsultant\\Offers\\2025\\STR-QUOT-2025-160.pdf",
+                     "status": "Pending", "reference_no": "STR/QUOT/2025/160",
+                     "notes": "20,000 sq.ft. @ Rs 10/sq.ft."},
+                    {"offer_type": "Other", "custom_type": "PMC", "client_id": clients[min(3, len(clients)-1)]["id"],
+                     "description": "Project Management Consultancy",
+                     "site_location": "Novo Rabale MIDC",
+                     "base_amount": 150000.0, "gst_percent": 18.0,
+                     "file_path": "D:\\CreatorConsultant\\Offers\\2026\\PMC-offer.pdf",
+                     "status": "Pending", "reference_no": "STR/PMC/2026/005",
+                     "notes": "Quarterly site visits + BOQ review"},
+                ]
+                for o in sample_offers:
+                    od = {**o, "id": _new_id(), "offer_code": await _next_offer_code(),
+                          "offer_date": _now(), "linked_project_id": None, "linked_project_code": "",
+                          "created_at": _now()}
+                    await _enrich_offer(od)
+                    await db.offers.insert_one(od.copy())
     except Exception as e:
         logger.error(f"Seed error: {e}")
 
