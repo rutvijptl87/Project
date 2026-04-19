@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import Modal from '../components/Modal';
 import { Plus, Pencil, Trash2, Compass, Phone, Mail } from 'lucide-react';
@@ -80,7 +81,11 @@ const ArchitectsPage = () => {
                 </td></tr>
               ) : items.map((a) => (
                 <tr key={a.id} data-testid={`architect-row-${a.id}`}>
-                  <td className="font-medium">{a.name}</td>
+                  <td className="font-medium">
+                    <Link to={`/architects/${a.id}`} className="link-underline hover:opacity-80" data-testid={`architect-link-${a.id}`}>
+                      {a.name}
+                    </Link>
+                  </td>
                   <td className="font-mono-data text-xs">{a.phone ? <a href={`tel:${a.phone}`} className="inline-flex items-center gap-1"><Phone size={11}/>{a.phone}</a> : '—'}</td>
                   <td className="text-xs">{a.email ? <a href={`mailto:${a.email}`} className="inline-flex items-center gap-1 link-underline"><Mail size={11}/>{a.email}</a> : '—'}</td>
                   <td>{a.firm || '—'}</td>

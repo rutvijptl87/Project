@@ -249,6 +249,58 @@ async def list_architects():
     return items
 
 
+@api_router.get("/architects/{architect_id}")
+async def get_architect_detail(architect_id: str):
+    architect = await db.architects.find_one({"id": architect_id}, {"_id": 0})
+    if not architect:
+        raise HTTPException(404, "Architect not found")
+    projects = await db.projects.find({"architect_id": architect_id}, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    await _enrich_projects_batch(projects)
+    total_quoted = sum(p.get("quoted_amount", 0) for p in projects)
+    total_received = sum(p.get("received_amount", 0) for p in projects)
+    total_outstanding = round(total_quoted - total_received, 2)
+    outstanding_count = sum(1 for p in projects if p.get("status") != "Settled")
+    settled_count = sum(1 for p in projects if p.get("status") == "Settled")
+    return {
+        "architect": architect,
+        "projects": projects,
+        "stats": {
+            "total_projects": len(projects),
+            "total_quoted": round(total_quoted, 2),
+            "total_received": round(total_received, 2),
+            "total_outstanding": total_outstanding,
+            "outstanding_count": outstanding_count,
+            "settled_count": settled_count,
+        },
+    }
+
+
+@api_router.get("/clients/{client_id}")
+async def get_client_detail(client_id: str):
+    client_doc = await db.clients.find_one({"id": client_id}, {"_id": 0})
+    if not client_doc:
+        raise HTTPException(404, "Client not found")
+    projects = await db.projects.find({"client_id": client_id}, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    await _enrich_projects_batch(projects)
+    total_quoted = sum(p.get("quoted_amount", 0) for p in projects)
+    total_received = sum(p.get("received_amount", 0) for p in projects)
+    total_outstanding = round(total_quoted - total_received, 2)
+    outstanding_count = sum(1 for p in projects if p.get("status") != "Settled")
+    settled_count = sum(1 for p in projects if p.get("status") == "Settled")
+    return {
+        "client": client_doc,
+        "projects": projects,
+        "stats": {
+            "total_projects": len(projects),
+            "total_quoted": round(total_quoted, 2),
+            "total_received": round(total_received, 2),
+            "total_outstanding": total_outstanding,
+            "outstanding_count": outstanding_count,
+            "settled_count": settled_count,
+        },
+    }
+
+
 @api_router.post("/architects", response_model=Architect)
 async def create_architect(data: ArchitectIn):
     doc = data.model_dump()

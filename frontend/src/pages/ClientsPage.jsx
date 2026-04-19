@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import Modal from '../components/Modal';
 import { Plus, Pencil, Trash2, Users, Phone, Mail } from 'lucide-react';
@@ -88,7 +89,11 @@ const ClientsPage = () => {
                 </td></tr>
               ) : clients.map((c) => (
                 <tr key={c.id} data-testid={`client-row-${c.id}`}>
-                  <td className="font-medium">{c.name}</td>
+                  <td className="font-medium">
+                    <Link to={`/clients/${c.id}`} className="link-underline hover:opacity-80" data-testid={`client-link-${c.id}`}>
+                      {c.name}
+                    </Link>
+                  </td>
                   <td className="font-mono-data text-xs">{c.phone ? <a href={`tel:${c.phone}`} className="inline-flex items-center gap-1"><Phone size={11}/>{c.phone}</a> : '—'}</td>
                   <td className="text-xs">{c.email ? <a href={`mailto:${c.email}`} className="inline-flex items-center gap-1 link-underline"><Mail size={11}/>{c.email}</a> : '—'}</td>
                   <td>{c.company || '—'}</td>
