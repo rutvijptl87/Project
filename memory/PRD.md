@@ -52,6 +52,25 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
 - ✅ Invoice PDF button on each project row + project detail page; Receipt PDF button on each payment in history
 - ✅ Tested → 41/41 backend tests pass, all frontend flows pass
 
+## Session 3 — 2026-01 (Contact Shortcuts + Detail Pages + Offers)
+- ✅ **Logo updated** to user-provided green building logo (navbar + favicon)
+- ✅ **Contact shortcuts** (phone/email/WhatsApp) on Projects table under client and architect names
+- ✅ **Architect Detail page** (`/architects/:id`) — click any architect to see their profile + all their projects with KPIs (total projects, quoted, received, outstanding)
+- ✅ **Client Detail page** (`/clients/:id`) — same pattern; click client to see all their projects + contact shortcuts
+- ✅ **Deployment health check PASS** — fixed N+1 query via `_enrich_projects_batch()` helper; optimized dashboard_stats projection
+- ✅ **Offers module** (new) — track proposals before they become projects
+  - Offer types: RCC, Steel, Audit, PMC, Retrofitting, **Other (custom)**
+  - Fields: reference no., client, description, site location, base amount, GST %, **file path on PC**, status (Pending/Accepted/Rejected), date, notes
+  - Auto-calc of GST amount + grand total (live preview in form)
+  - **Convert to Project** — one-click creates project with GST-inclusive amount, inherits client/location/notes, stores offer linkage (offer_code, offer_type, file_path)
+  - Filter tabs (All/Pending/Accepted/Rejected) + search
+  - Copy file-path button on every row
+- ✅ **Offer type badge** shown before project name in Projects table + Project Detail page (color-coded per type)
+- ✅ **Linked Offer card** on Project Detail — shows offer ID, type, file path with Copy button
+- ✅ 3 demo offers auto-seeded (OFR-0001 Audit, OFR-0002 Steel, OFR-0003 PMC)
+- ✅ Tested → 69/69 backend tests pass, all frontend flows pass
+
+
 
 ## Prioritized Backlog
 - **P1** — WhatsApp / SMS share of payment reminder (via Twilio) to clients with outstanding balance
