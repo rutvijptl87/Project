@@ -731,16 +731,23 @@ async def project_invoice_pdf(project_id: str):
 # ---------------------- DASHBOARD ----------------------
 @api_router.get("/dashboard/stats")
 async def dashboard_stats():
-    projects = await db.projects.find({}, {"_id": 0}).to_list(10000)
-    await _enrich_projects_batch(projects)
+    # Lightweight projection: we only need amounts + status for totals (no client/architect joins needed)
+    projects = await db.projects.find(
+        {},
+        {"_id": 0, "quoted_amount": 1, "received_amount": 1, "status": 1},
+    ).to_list(10000)
     total_quoted = 0.0
     total_received = 0.0
     outstanding_count = 0
     settled_count = 0
     for p in projects:
-        total_quoted += p["quoted_amount"]
-        total_received += p["received_amount"]
-        if p["status"] == "Settled":
+        q = float(p.get("quoted_amount", 0) or 0)
+        r = float(p.get("received_amount", 0) or 0)
+        total_quoted += q
+        total_received += r
+        # Derive effective status (same logic as _enrich_project)
+        effective_status = "Settled" if (q > 0 and (q - r) <= 0) else (p.get("status") or "Outstanding")
+        if effective_status == "Settled":
             settled_count += 1
         else:
             outstanding_count += 1
