@@ -2084,6 +2084,17 @@ async def root():
     return {"message": "Creator Consultant API", "status": "ok"}
 
 
+# Backup module — Google Drive auto-backup
+import backup as backup_module
+backup_module.init(
+    db,
+    collections_to_backup=[
+        "projects", "clients", "architects", "payments",
+        "offers", "activity_log", "quote_revisions", "counters",
+    ],
+)
+api_router.include_router(backup_module.router)
+
 # Include the router
 app.include_router(api_router)
 
@@ -2146,7 +2157,17 @@ async def on_startup():
     except Exception as e:
         logger.error(f"Seed error: {e}")
 
+    # Start Google Drive auto-backup scheduler
+    try:
+        await backup_module.start_scheduler()
+    except Exception as e:
+        logger.error(f"Failed to start backup scheduler: {e}")
+
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    try:
+        await backup_module.stop_scheduler()
+    except Exception:
+        pass
     client.close()

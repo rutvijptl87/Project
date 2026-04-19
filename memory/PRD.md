@@ -49,6 +49,7 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
 - ✅ Project Detail redesign: quote revisions, activity timeline, Excel export per project, clickable architect/client links
 - ✅ Widened UI to 1600px; contact shortcuts (Call/Email/WhatsApp) in Projects list
 - ✅ **Delete confirmation + forced password re-verification** (2026-02) — every delete action (Projects, Clients, Architects, Offers, Project Detail, Payments) requires BOTH a `window.confirm("Are you sure...")` and a red "Confirm Delete — Enter Password" modal that prompts even when the session is already unlocked. Verified via testing agent iteration_7 (8/8 assertions passed).
+- ✅ **Google Drive Auto-Backup** (2026-02) — personal OAuth connect, scheduled full-DB JSON dump every 6 hours via APScheduler, local server copy + upload to "Creator Consultant Backups" Drive folder, retention = last 30, manual "Run Backup Now" button, "Download Latest Backup", history view. New files: `/app/backend/backup.py`, `/app/frontend/src/components/BackupCard.jsx`. New env vars: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_DRIVE_REDIRECT_URI`, `FRONTEND_URL`, `BACKUP_FOLDER_NAME`, `BACKUP_INTERVAL_HOURS=6`, `BACKUP_RETENTION_COUNT=30`. New Mongo collections: `google_drive_config`, `backup_log`.
 
 - ✅ Excel import that auto-creates missing clients/architects by name, skips duplicates
 - ✅ Beautiful green+white UI — Cabinet Grotesk headings, IBM Plex Sans body, IBM Plex Mono for numbers
