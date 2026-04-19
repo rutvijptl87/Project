@@ -70,6 +70,33 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
 - ✅ 3 demo offers auto-seeded (OFR-0001 Audit, OFR-0002 Steel, OFR-0003 PMC)
 - ✅ Tested → 69/69 backend tests pass, all frontend flows pass
 
+## Session 4 — 2026-01 (Offer PDF + Password Gate)
+- ✅ **Branded Offer PDF generation** matching Creator RCC Consultant LLP sample format
+  - Header with company name + address + phone + email
+  - TO section with client details
+  - SUBJECT line
+  - Intro paragraph (BMC/NMMC/TMC authorized)
+  - SCOPE OF WORK block (rendered from offer description + notes)
+  - PROFESSIONAL FEES table (Base + GST + Grand Total highlighted row)
+  - PAYMENT TERMS (50% advance + 50% completion)
+  - TERMS & CONDITIONS (GST responsibility, drill-hole filling clause, etc.)
+  - Bank details footer
+  - Signature line "For Creator RCC Consultant LLP — Mr. Rutvij Patel, Consulting Structural Engineer"
+  - Endpoint: `GET /api/offers/{id}/pdf`
+  - "PDF" Download button added to every offer row
+- ✅ **Password gate for edit actions** (single shared password, bcrypt-hashed)
+  - 3 auth endpoints: `GET /api/auth/status`, `POST /api/auth/verify`, `POST /api/auth/set-password`
+  - Axios interceptor auto-prompts on any POST/PUT/DELETE (except /auth/* and GETs)
+  - First-time setup flow: if no password set, first edit attempt prompts user to set one
+  - Unlock persists in sessionStorage until tab closes
+  - Navbar lock indicator (green Unlocked / yellow Locked)
+  - Settings → Edit Password card with Set Password / Change Password / Lock Now UI
+  - Current-password required when changing (not on first-time setup)
+  - Min 4 characters enforced backend-side
+- ✅ Tested → **90/90 backend tests pass**, all frontend flows pass
+- ✅ `/app/memory/test_credentials.md` updated
+
+
 
 
 ## Prioritized Backlog
