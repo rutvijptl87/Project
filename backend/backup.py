@@ -312,17 +312,17 @@ async def google_connect():
         include_granted_scopes="true",
         prompt="consent",  # required to always get refresh_token
     )
-    # Persist PKCE code_verifier + state so the callback can complete the exchange.
-    await _db.google_drive_config.update_one(
-        {"_key": CONFIG_DOC_ID},
-        {"$set": {
-            "_key": CONFIG_DOC_ID,
-            "pending_code_verifier": flow.code_verifier,
-            "pending_state": state,
-            "pending_at": datetime.now(timezone.utc).isoformat(),
-        }},
-        upsert=True,
-    )
+    # Store the PKCE verifier in a SEPARATE state-keyed document so concurrent
+    # connect attempts don't overwrite each other's verifier.
+    await _db.oauth_pending.insert_one({
+        "state": state,
+        "code_verifier": flow.code_verifier,
+        "created_at": datetime.now(timezone.utc),
+    })
+    # Sweep old pending docs (>30 min)
+    from datetime import timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
+    await _db.oauth_pending.delete_many({"created_at": {"$lt": cutoff}})
     return {"authorization_url": auth_url}
 
 
@@ -333,9 +333,12 @@ async def google_callback(code: str = Query(...), state: Optional[str] = Query(N
     if error:
         return RedirectResponse(f"{frontend}/settings?drive=error&reason={error}")
 
-    # Retrieve pending PKCE code_verifier saved in /connect
-    pending = await _db.google_drive_config.find_one({"_key": CONFIG_DOC_ID}, {"_id": 0}) or {}
-    code_verifier = pending.get("pending_code_verifier")
+    # Retrieve PKCE code_verifier for THIS state
+    code_verifier = None
+    if state:
+        pending_doc = await _db.oauth_pending.find_one_and_delete({"state": state})
+        if pending_doc:
+            code_verifier = pending_doc.get("code_verifier")
 
     flow = _make_flow(scopes=None)  # accept all granted scopes
     if code_verifier:
@@ -360,21 +363,18 @@ async def google_callback(code: str = Query(...), state: Optional[str] = Query(N
 
     await _db.google_drive_config.update_one(
         {"_key": CONFIG_DOC_ID},
-        {
-            "$set": {
-                "_key": CONFIG_DOC_ID,
-                "access_token": creds.token,
-                "refresh_token": creds.refresh_token,
-                "token_uri": creds.token_uri,
-                "client_id": creds.client_id,
-                "client_secret": creds.client_secret,
-                "scopes": list(creds.scopes) if creds.scopes else SCOPES,
-                "expiry": creds.expiry.isoformat() if creds.expiry else None,
-                "email": email,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            },
-            "$unset": {"pending_code_verifier": "", "pending_state": "", "pending_at": ""},
-        },
+        {"$set": {
+            "_key": CONFIG_DOC_ID,
+            "access_token": creds.token,
+            "refresh_token": creds.refresh_token,
+            "token_uri": creds.token_uri,
+            "client_id": creds.client_id,
+            "client_secret": creds.client_secret,
+            "scopes": list(creds.scopes) if creds.scopes else SCOPES,
+            "expiry": creds.expiry.isoformat() if creds.expiry else None,
+            "email": email,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
         upsert=True,
     )
     return RedirectResponse(f"{frontend}/settings?drive=connected")
