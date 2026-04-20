@@ -79,7 +79,7 @@ const RecordPaymentModal = ({ open, onClose, defaultProjectId, defaultAuditId, e
             <option value="">-- Select {isAudit ? 'an audit' : 'a project'} --</option>
             {items.map((p) => (
               <option key={p.id} value={p.id}>
-                {labelCode(p)} — {labelName(p)} ({p.client_name || 'No client'}) • Outstanding {formatINR(p.outstanding_amount)}
+                {labelCode(p)} — {labelName(p)} ({p.client_name || 'No client'}) • Outstanding ₹ {Number(p.outstanding_amount || 0).toLocaleString('en-IN')}
               </option>
             ))}
           </select>
