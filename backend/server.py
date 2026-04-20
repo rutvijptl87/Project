@@ -1060,6 +1060,358 @@ async def project_invoice_pdf(project_id: str):
     )
 
 
+# ---------------------- AUDITS ----------------------
+class AuditIn(BaseModel):
+    audit_code: Optional[str] = ""      # editable; auto-filled if blank
+    audit_offer: str = ""                # e.g. "Structural Audit" (free text)
+    report_id: Optional[str] = ""        # editable; auto-filled if blank
+    client_id: Optional[str] = None
+    total_amount: float = 0.0
+    status: Optional[str] = "Outstanding"
+    notes: Optional[str] = ""
+
+
+class Audit(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    audit_code: str
+    audit_offer: str = ""
+    report_id: str = ""
+    client_id: Optional[str] = None
+    client_name: Optional[str] = ""
+    client_phone: Optional[str] = ""
+    client_email: Optional[str] = ""
+    total_amount: float = 0.0
+    received_amount: float = 0.0
+    outstanding_amount: float = 0.0
+    status: str = "Outstanding"
+    notes: str = ""
+    archived: bool = False
+    created_at: str
+
+
+async def _next_audit_code() -> str:
+    doc = await db.counters.find_one_and_update(
+        {"_id": "audit_code"},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=True,
+    )
+    seq = doc.get("seq", 1) if doc else 1
+    return f"AUD-{seq:04d}"
+
+
+async def _next_report_id() -> str:
+    year = datetime.now(timezone.utc).year
+    doc = await db.counters.find_one_and_update(
+        {"_id": f"report_id_{year}"},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=True,
+    )
+    seq = doc.get("seq", 1) if doc else 1
+    return f"RPT-{year}-{seq:03d}"
+
+
+async def _enrich_audit(a: dict) -> dict:
+    if a.get("client_id"):
+        c = await db.clients.find_one({"id": a["client_id"]}, {"_id": 0})
+        a["client_name"] = (c.get("name") if c else "") or ""
+        a["client_phone"] = (c.get("phone") if c else "") or ""
+        a["client_email"] = (c.get("email") if c else "") or ""
+    else:
+        a["client_name"] = a.get("client_name") or ""
+        a["client_phone"] = a.get("client_phone") or ""
+        a["client_email"] = a.get("client_email") or ""
+    total = float(a.get("total_amount", 0) or 0)
+    received = float(a.get("received_amount", 0) or 0)
+    outstanding = max(0.0, total - received)
+    a["outstanding_amount"] = outstanding
+    if outstanding <= 0.009 and total > 0:
+        a["status"] = "Settled"
+    else:
+        a["status"] = a.get("status") or "Outstanding"
+        if a["status"] == "Settled":
+            a["status"] = "Outstanding"
+    return a
+
+
+async def _log_audit_activity(audit_id: str, audit_code: str, action: str, detail: str = ""):
+    try:
+        await db.activity_log.insert_one({
+            "id": _new_id(),
+            "audit_id": audit_id,
+            "audit_code": audit_code,
+            "project_id": None,
+            "project_code": "",
+            "action": action,
+            "detail": detail,
+            "created_at": _now(),
+        })
+    except Exception as e:
+        logger.error(f"audit activity log error: {e}")
+
+
+@api_router.get("/audits", response_model=List[Audit])
+async def list_audits(archived: Optional[bool] = False, search: Optional[str] = None):
+    query = {"archived": bool(archived)}
+    if search:
+        s = search.strip()
+        query["$or"] = [
+            {"audit_code": {"$regex": s, "$options": "i"}},
+            {"audit_offer": {"$regex": s, "$options": "i"}},
+            {"report_id": {"$regex": s, "$options": "i"}},
+            {"client_name": {"$regex": s, "$options": "i"}},
+            {"notes": {"$regex": s, "$options": "i"}},
+        ]
+    items = await db.audits.find(query, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    for a in items:
+        await _enrich_audit(a)
+    return items
+
+
+@api_router.get("/audits/{audit_id}", response_model=Audit)
+async def get_audit(audit_id: str):
+    a = await db.audits.find_one({"id": audit_id}, {"_id": 0})
+    if not a:
+        raise HTTPException(404, "Audit not found")
+    await _enrich_audit(a)
+    return a
+
+
+@api_router.post("/audits", response_model=Audit)
+async def create_audit(data: AuditIn):
+    doc = data.model_dump()
+    doc["id"] = _new_id()
+    doc["audit_code"] = (doc.get("audit_code") or "").strip() or await _next_audit_code()
+    doc["report_id"] = (doc.get("report_id") or "").strip() or await _next_report_id()
+    doc["received_amount"] = 0.0
+    doc["archived"] = False
+    doc["created_at"] = _now()
+    await _enrich_audit(doc)
+    await db.audits.insert_one(doc.copy())
+    await _log_audit_activity(
+        doc["id"], doc["audit_code"], "AUDIT CREATED",
+        f"Offer: {doc.get('audit_offer', '-')} | Client: {doc.get('client_name', '-')} | Total: {doc.get('total_amount', 0)}",
+    )
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.put("/audits/{audit_id}", response_model=Audit)
+async def update_audit(audit_id: str, data: AuditIn):
+    existing = await db.audits.find_one({"id": audit_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Audit not found")
+    old_total = existing.get("total_amount", 0)
+    update = data.model_dump()
+    # Keep the existing code/report_id if new value is blank
+    if not (update.get("audit_code") or "").strip():
+        update["audit_code"] = existing.get("audit_code", "")
+    if not (update.get("report_id") or "").strip():
+        update["report_id"] = existing.get("report_id", "")
+    existing.update(update)
+    await _enrich_audit(existing)
+    await db.audits.update_one({"id": audit_id}, {"$set": existing})
+    await _log_audit_activity(
+        audit_id, existing.get("audit_code", ""), "AUDIT UPDATED",
+        f"Total: {old_total} -> {existing.get('total_amount', 0)}",
+    )
+    existing.pop("_id", None)
+    return existing
+
+
+@api_router.delete("/audits/{audit_id}")
+async def delete_audit(audit_id: str):
+    res = await db.audits.delete_one({"id": audit_id})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Audit not found")
+    await db.audit_payments.delete_many({"audit_id": audit_id})
+    await db.activity_log.delete_many({"audit_id": audit_id})
+    return {"ok": True}
+
+
+@api_router.post("/audits/{audit_id}/archive")
+async def archive_audit(audit_id: str):
+    res = await db.audits.update_one({"id": audit_id}, {"$set": {"archived": True}})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Audit not found")
+    a = await db.audits.find_one({"id": audit_id}, {"_id": 0, "audit_code": 1})
+    await _log_audit_activity(audit_id, (a or {}).get("audit_code", ""), "AUDIT ARCHIVED", "")
+    return {"ok": True, "archived": True}
+
+
+@api_router.post("/audits/{audit_id}/unarchive")
+async def unarchive_audit(audit_id: str):
+    res = await db.audits.update_one({"id": audit_id}, {"$set": {"archived": False}})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Audit not found")
+    a = await db.audits.find_one({"id": audit_id}, {"_id": 0, "audit_code": 1})
+    await _log_audit_activity(audit_id, (a or {}).get("audit_code", ""), "AUDIT RESTORED", "")
+    return {"ok": True, "archived": False}
+
+
+# ---------- Audit Payments (separate collection from project payments) ----------
+class AuditPaymentIn(BaseModel):
+    audit_id: str
+    amount: float
+    payment_date: Optional[str] = None
+    notes: Optional[str] = ""
+
+
+class AuditPayment(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    audit_id: str
+    audit_code: str
+    amount: float
+    payment_date: str
+    notes: str = ""
+    created_at: str
+
+
+@api_router.get("/audit-payments", response_model=List[AuditPayment])
+async def list_audit_payments(audit_id: Optional[str] = None):
+    q = {"audit_id": audit_id} if audit_id else {}
+    items = await db.audit_payments.find(q, {"_id": 0}).sort("payment_date", -1).to_list(5000)
+    return items
+
+
+@api_router.post("/audit-payments", response_model=AuditPayment)
+async def create_audit_payment(data: AuditPaymentIn):
+    audit = await db.audits.find_one({"id": data.audit_id}, {"_id": 0})
+    if not audit:
+        raise HTTPException(404, "Audit not found")
+    if data.amount <= 0:
+        raise HTTPException(400, "Amount must be > 0")
+    doc = {
+        "id": _new_id(),
+        "audit_id": data.audit_id,
+        "audit_code": audit.get("audit_code", ""),
+        "amount": float(data.amount),
+        "payment_date": data.payment_date or _now(),
+        "notes": data.notes or "",
+        "created_at": _now(),
+    }
+    await db.audit_payments.insert_one(doc.copy())
+    new_received = float(audit.get("received_amount", 0)) + float(data.amount)
+    audit["received_amount"] = new_received
+    await _enrich_audit(audit)
+    await db.audits.update_one(
+        {"id": data.audit_id},
+        {"$set": {
+            "received_amount": new_received,
+            "outstanding_amount": audit["outstanding_amount"],
+            "status": audit["status"],
+        }},
+    )
+    await _log_audit_activity(
+        data.audit_id, audit.get("audit_code", ""), "PAYMENT ADDED",
+        f"Amount: Rs. {float(data.amount):,.2f} | Note: {data.notes or '-'}",
+    )
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.delete("/audit-payments/{payment_id}")
+async def delete_audit_payment(payment_id: str):
+    pay = await db.audit_payments.find_one({"id": payment_id}, {"_id": 0})
+    if not pay:
+        raise HTTPException(404, "Audit payment not found")
+    await db.audit_payments.delete_one({"id": payment_id})
+    audit = await db.audits.find_one({"id": pay["audit_id"]}, {"_id": 0})
+    if audit:
+        new_received = max(0.0, float(audit.get("received_amount", 0)) - float(pay["amount"]))
+        audit["received_amount"] = new_received
+        await _enrich_audit(audit)
+        await db.audits.update_one(
+            {"id": pay["audit_id"]},
+            {"$set": {
+                "received_amount": new_received,
+                "outstanding_amount": audit["outstanding_amount"],
+                "status": audit["status"],
+            }},
+        )
+        await _log_audit_activity(
+            pay["audit_id"], audit.get("audit_code", ""), "PAYMENT DELETED",
+            f"Amount: Rs. {float(pay['amount']):,.2f} | Note: {pay.get('notes', '-')}",
+        )
+    return {"ok": True}
+
+
+@api_router.get("/audits/{audit_id}/activity")
+async def list_audit_activity(audit_id: str):
+    items = await db.activity_log.find({"audit_id": audit_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return items
+
+
+def _audit_to_project_shape(a: dict) -> dict:
+    """Adapt audit dict to the shape expected by _build_invoice_pdf / _build_receipt_pdf."""
+    return {
+        "id": a.get("id", ""),
+        "project_code": a.get("audit_code", ""),
+        "name": a.get("audit_offer", "") or "Structural Audit",
+        "client_id": a.get("client_id"),
+        "client_name": a.get("client_name", ""),
+        "client_phone": a.get("client_phone", ""),
+        "client_email": a.get("client_email", ""),
+        "architect_id": None,
+        "architect_name": "",
+        "architect_phone": "",
+        "architect_email": "",
+        "site_location": "",
+        "quoted_amount": float(a.get("total_amount", 0) or 0),
+        "received_amount": float(a.get("received_amount", 0) or 0),
+        "outstanding_amount": float(a.get("outstanding_amount", 0) or 0),
+        "status": a.get("status", "Outstanding"),
+        "notes": a.get("notes", "") or f"Report ID: {a.get('report_id', '')}",
+        "created_at": a.get("created_at", _now()),
+    }
+
+
+@api_router.get("/audits/{audit_id}/invoice")
+async def audit_invoice_pdf(audit_id: str):
+    audit = await db.audits.find_one({"id": audit_id}, {"_id": 0})
+    if not audit:
+        raise HTTPException(404, "Audit not found")
+    await _enrich_audit(audit)
+    client_doc = None
+    if audit.get("client_id"):
+        client_doc = await db.clients.find_one({"id": audit["client_id"]}, {"_id": 0})
+    proj_shape = _audit_to_project_shape(audit)
+    pdf_bytes = await _build_invoice_pdf(proj_shape, client_doc, None)
+    filename = f"invoice_{audit['audit_code']}.pdf"
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@api_router.get("/audit-payments/{payment_id}/receipt")
+async def audit_payment_receipt_pdf(payment_id: str):
+    payment = await db.audit_payments.find_one({"id": payment_id}, {"_id": 0})
+    if not payment:
+        raise HTTPException(404, "Audit payment not found")
+    audit = await db.audits.find_one({"id": payment["audit_id"]}, {"_id": 0})
+    if not audit:
+        raise HTTPException(404, "Audit not found")
+    await _enrich_audit(audit)
+    client_doc = None
+    if audit.get("client_id"):
+        client_doc = await db.clients.find_one({"id": audit["client_id"]}, {"_id": 0})
+    proj_shape = _audit_to_project_shape(audit)
+    # The receipt builder reads payment["project_code"]; map audit_code -> project_code
+    payment_shape = {**payment, "project_id": payment["audit_id"], "project_code": payment["audit_code"]}
+    pdf_bytes = await _build_receipt_pdf(payment_shape, proj_shape, client_doc)
+    filename = f"receipt_{audit['audit_code']}_{payment_id[:8]}.pdf"
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 # ---------------------- OFFERS ----------------------
 def _effective_offer_type(offer_type: str, custom_type: str) -> str:
     if offer_type and offer_type.lower() == "other":
@@ -2090,6 +2442,7 @@ backup_module.init(
     db,
     collections_to_backup=[
         "projects", "clients", "architects", "payments",
+        "audits", "audit_payments",
         "offers", "activity_log", "quote_revisions", "counters",
     ],
 )

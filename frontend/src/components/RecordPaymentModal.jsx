@@ -4,9 +4,10 @@ import { api } from '../lib/api';
 import { formatINR } from '../lib/format';
 import { IndianRupee } from 'lucide-react';
 
-const RecordPaymentModal = ({ open, onClose, defaultProjectId, onSaved }) => {
-  const [projects, setProjects] = useState([]);
-  const [projectId, setProjectId] = useState(defaultProjectId || '');
+const RecordPaymentModal = ({ open, onClose, defaultProjectId, defaultAuditId, entityType = 'project', onSaved }) => {
+  const isAudit = entityType === 'audit';
+  const [items, setItems] = useState([]);
+  const [entityId, setEntityId] = useState(isAudit ? (defaultAuditId || '') : (defaultProjectId || ''));
   const [amount, setAmount] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
@@ -15,31 +16,46 @@ const RecordPaymentModal = ({ open, onClose, defaultProjectId, onSaved }) => {
 
   useEffect(() => {
     if (open) {
-      api.get('/projects').then((r) => setProjects(r.data)).catch(() => {});
-      setProjectId(defaultProjectId || '');
+      const url = isAudit ? '/audits' : '/projects';
+      api.get(url).then((r) => setItems(r.data)).catch(() => {});
+      setEntityId(isAudit ? (defaultAuditId || '') : (defaultProjectId || ''));
       setAmount('');
       setNotes('');
       setError('');
       setPaymentDate(new Date().toISOString().slice(0, 10));
     }
-  }, [open, defaultProjectId]);
+  }, [open, defaultProjectId, defaultAuditId, isAudit]);
 
-  const selected = projects.find((p) => p.id === projectId);
+  const selected = items.find((p) => p.id === entityId);
+
+  const labelCode = (p) => (isAudit ? p.audit_code : p.project_code);
+  const labelName = (p) => (isAudit ? (p.audit_offer || 'Audit') : p.name);
+  const quotedKey = isAudit ? 'total_amount' : 'quoted_amount';
+  const quotedLabel = isAudit ? 'Total' : 'Quoted';
 
   const handleSave = async (e) => {
     e.preventDefault();
     setError('');
-    if (!projectId) return setError('Please select a project');
+    if (!entityId) return setError(isAudit ? 'Please select an audit' : 'Please select a project');
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) return setError('Enter a valid amount');
     setSaving(true);
     try {
-      await api.post('/payments', {
-        project_id: projectId,
-        amount: amt,
-        payment_date: new Date(paymentDate).toISOString(),
-        notes,
-      });
+      if (isAudit) {
+        await api.post('/audit-payments', {
+          audit_id: entityId,
+          amount: amt,
+          payment_date: new Date(paymentDate).toISOString(),
+          notes,
+        });
+      } else {
+        await api.post('/payments', {
+          project_id: entityId,
+          amount: amt,
+          payment_date: new Date(paymentDate).toISOString(),
+          notes,
+        });
+      }
       onSaved?.();
       onClose();
     } catch (err) {
@@ -50,20 +66,20 @@ const RecordPaymentModal = ({ open, onClose, defaultProjectId, onSaved }) => {
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Record Payment" testId="record-payment-modal">
+    <Modal open={open} onClose={onClose} title={isAudit ? 'Record Audit Payment' : 'Record Payment'} testId="record-payment-modal">
       <form onSubmit={handleSave} className="space-y-4">
         <div>
-          <label className="label">Project *</label>
+          <label className="label">{isAudit ? 'Audit *' : 'Project *'}</label>
           <select
             className="select"
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
+            value={entityId}
+            onChange={(e) => setEntityId(e.target.value)}
             data-testid="payment-project-select"
           >
-            <option value="">-- Select a project --</option>
-            {projects.map((p) => (
+            <option value="">-- Select {isAudit ? 'an audit' : 'a project'} --</option>
+            {items.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.project_code} — {p.name} ({p.client_name || 'No client'}) • Outstanding {formatINR(p.outstanding_amount)}
+                {labelCode(p)} — {labelName(p)} ({p.client_name || 'No client'}) • Outstanding {formatINR(p.outstanding_amount)}
               </option>
             ))}
           </select>
@@ -71,7 +87,7 @@ const RecordPaymentModal = ({ open, onClose, defaultProjectId, onSaved }) => {
 
         {selected && (
           <div className="rounded-lg border p-3 text-sm" style={{ background: 'var(--cc-surface)', borderColor: 'var(--cc-border)' }}>
-            <div className="flex justify-between"><span className="text-gray-600">Quoted</span><span className="font-mono-data">{formatINR(selected.quoted_amount)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-600">{quotedLabel}</span><span className="font-mono-data">{formatINR(selected[quotedKey])}</span></div>
             <div className="flex justify-between"><span className="text-gray-600">Received</span><span className="font-mono-data">{formatINR(selected.received_amount)}</span></div>
             <div className="flex justify-between font-semibold" style={{ color: 'var(--cc-dark-green)' }}><span>Outstanding</span><span className="font-mono-data">{formatINR(selected.outstanding_amount)}</span></div>
           </div>
