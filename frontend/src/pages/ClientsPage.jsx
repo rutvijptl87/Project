@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
-import { useAuth } from '../lib/auth';
+import { useUndo } from '../lib/undo';
 import Modal from '../components/Modal';
 import { Plus, Pencil, Trash2, Users, Phone, Mail } from 'lucide-react';
 
 const emptyClient = { name: '', phone: '', email: '', company: '', address: '' };
 
 const ClientsPage = () => {
-  const { forceVerify } = useAuth();
+  const { schedule } = useUndo();
   const [clients, setClients] = useState([]);
+  const [hiddenIds, setHiddenIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -51,13 +52,27 @@ const ClientsPage = () => {
     } finally { setSaving(false); }
   };
 
-  const handleDelete = async (c) => {
-    if (!window.confirm(`Are you sure you want to delete client "${c.name}"?\n\nAny projects linked to them will be unlinked (but not deleted).`)) return;
-    const ok = await forceVerify();
-    if (!ok) return;
-    await api.delete(`/clients/${c.id}`);
-    load();
+  const handleDelete = (c) => {
+    if (!window.confirm(`Are you sure you want to delete client "${c.name}"?\n\nAny projects linked to them will be unlinked (but not deleted).\n\nYou can undo within 60 seconds.`)) return;
+    setHiddenIds((prev) => new Set([...prev, c.id]));
+    schedule({
+      label: `Client ${c.name} deleted`,
+      onCommit: async () => {
+        try {
+          await api.delete(`/clients/${c.id}`);
+          setHiddenIds((prev) => { const n = new Set(prev); n.delete(c.id); return n; });
+          load();
+        } catch {
+          setHiddenIds((prev) => { const n = new Set(prev); n.delete(c.id); return n; });
+        }
+      },
+      onUndo: () => {
+        setHiddenIds((prev) => { const n = new Set(prev); n.delete(c.id); return n; });
+      },
+    });
   };
+
+  const visibleClients = clients.filter((c) => !hiddenIds.has(c.id));
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="clients-page">
@@ -85,13 +100,13 @@ const ClientsPage = () => {
             <tbody>
               {loading ? (
                 <tr><td colSpan={6} className="text-center py-10" style={{ color: 'var(--cc-text-muted)' }}>Loading...</td></tr>
-              ) : clients.length === 0 ? (
+              ) : visibleClients.length === 0 ? (
                 <tr><td colSpan={6} className="text-center py-12">
                   <Users size={32} className="mx-auto mb-2 text-gray-400"/>
                   <div className="font-semibold">No clients yet</div>
                   <div className="text-sm" style={{ color: 'var(--cc-text-muted)' }}>Add your first client to get started.</div>
                 </td></tr>
-              ) : clients.map((c) => (
+              ) : visibleClients.map((c) => (
                 <tr key={c.id} data-testid={`client-row-${c.id}`}>
                   <td className="font-medium">
                     <Link to={`/clients/${c.id}`} className="link-underline hover:opacity-80" data-testid={`client-link-${c.id}`}>

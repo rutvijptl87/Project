@@ -1,17 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { api, API } from '../lib/api';
-import { useAuth } from '../lib/auth';
-import { Download, Database, ExternalLink, Lock, Unlock, KeyRound, CheckCircle2, Upload } from 'lucide-react';
+import { Download, Database, ExternalLink, CheckCircle2, Upload } from 'lucide-react';
 import BackupCard from '../components/BackupCard';
 
 const SettingsPage = () => {
   const [stats, setStats] = useState(null);
-  const { passwordSet, unlocked, lock, refreshStatus } = useAuth();
-  const [curPw, setCurPw] = useState('');
-  const [newPw, setNewPw] = useState('');
-  const [confirmPw, setConfirmPw] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [pwMsg, setPwMsg] = useState(null);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState(null);
   const sqliteRef = useRef(null);
@@ -26,30 +19,6 @@ const SettingsPage = () => {
     alert(r.data.seeded ? 'Demo data added!' : 'Data already exists.');
     const s = await api.get('/dashboard/stats');
     setStats(s.data);
-  };
-
-  const changePassword = async (e) => {
-    e.preventDefault();
-    setPwMsg(null);
-    if (newPw !== confirmPw) {
-      setPwMsg({ type: 'error', text: 'New password and confirmation do not match' });
-      return;
-    }
-    if (newPw.length < 4) {
-      setPwMsg({ type: 'error', text: 'New password must be at least 4 characters' });
-      return;
-    }
-    setSaving(true);
-    try {
-      const payload = { new_password: newPw };
-      if (passwordSet) payload.current_password = curPw;
-      await api.post('/auth/set-password', payload);
-      setPwMsg({ type: 'success', text: passwordSet ? 'Password changed successfully!' : 'Password set! Edits are now protected.' });
-      setCurPw(''); setNewPw(''); setConfirmPw('');
-      refreshStatus();
-    } catch (err) {
-      setPwMsg({ type: 'error', text: err?.response?.data?.detail || 'Failed to change password' });
-    } finally { setSaving(false); }
   };
 
   const handleSqliteImport = async (e) => {
@@ -82,69 +51,7 @@ const SettingsPage = () => {
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="settings-page">
       <h1 className="font-head text-3xl md:text-4xl font-extrabold mb-1" style={{ color: 'var(--cc-dark-green)' }}>Settings</h1>
-      <p className="text-sm mb-6" style={{ color: 'var(--cc-text-muted)' }}>Manage your data, exports and security.</p>
-
-      {/* Security */}
-      <div className="card p-6 mb-4" data-testid="security-card">
-        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <h2 className="font-head text-xl font-bold flex items-center gap-2" style={{ color: 'var(--cc-dark-green)' }}>
-            <KeyRound size={18}/> Edit Password
-          </h2>
-          <div className="flex items-center gap-2">
-            {passwordSet ? (
-              unlocked ? (
-                <>
-                  <span className="badge badge-settled" data-testid="lock-status-unlocked"><Unlock size={10}/> Unlocked</span>
-                  <button onClick={lock} className="btn btn-outline btn-sm" data-testid="btn-lock-now"><Lock size={12}/> Lock Now</button>
-                </>
-              ) : (
-                <span className="badge badge-outstanding" data-testid="lock-status-locked"><Lock size={10}/> Locked</span>
-              )
-            ) : (
-              <span className="badge badge-outstanding" data-testid="lock-status-not-set">Not Set</span>
-            )}
-          </div>
-        </div>
-        <p className="text-sm mb-4" style={{ color: 'var(--cc-text-muted)' }}>
-          {passwordSet
-            ? 'A password is already set. It protects all edit, create, delete, convert and payment actions. Unlock persists until you close the tab.'
-            : 'No password set yet. Edit actions are currently OPEN. Set one below to protect your data.'}
-        </p>
-
-        <form onSubmit={changePassword} className="space-y-3 max-w-md" data-testid="change-password-form">
-          {passwordSet && (
-            <div>
-              <label className="label">Current Password *</label>
-              <input type="password" className="input" value={curPw} onChange={(e) => setCurPw(e.target.value)} placeholder="Enter current password" data-testid="current-password-input" autoComplete="current-password" />
-            </div>
-          )}
-          <div>
-            <label className="label">{passwordSet ? 'New Password *' : 'Set Password *'}</label>
-            <input type="password" className="input" value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder="Min 4 characters" data-testid="new-password-input" autoComplete="new-password" />
-          </div>
-          <div>
-            <label className="label">Confirm {passwordSet ? 'New ' : ''}Password *</label>
-            <input type="password" className="input" value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} placeholder="Re-enter password" data-testid="confirm-password-input" autoComplete="new-password" />
-          </div>
-
-          {pwMsg && (
-            <div
-              className="text-sm rounded-md p-2.5 flex items-center gap-2"
-              style={pwMsg.type === 'error'
-                ? { background: '#FEF2F2', color: '#991B1B', border: '1px solid #FCA5A5' }
-                : { background: '#D1FAE5', color: '#065F46', border: '1px solid #34D399' }}
-              data-testid="password-message"
-            >
-              {pwMsg.type === 'success' && <CheckCircle2 size={14}/>}
-              {pwMsg.text}
-            </div>
-          )}
-
-          <button type="submit" disabled={saving} className="btn btn-primary" data-testid="btn-change-password">
-            {saving ? 'Saving...' : (passwordSet ? 'Change Password' : 'Set Password')}
-          </button>
-        </form>
-      </div>
+      <p className="text-sm mb-6" style={{ color: 'var(--cc-text-muted)' }}>Manage your data, backups and imports.</p>
 
       {/* Google Drive Auto-Backup */}
       <BackupCard />

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
-import { useAuth } from '../lib/auth';
+import { useUndo } from '../lib/undo';
 import { formatINR, formatDate } from '../lib/format';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import {
@@ -22,7 +22,7 @@ const actionStyle = (action) => {
 const ProjectDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { forceVerify } = useAuth();
+  const { schedule } = useUndo();
   const [project, setProject] = useState(null);
   const [payments, setPayments] = useState([]);
   const [revisions, setRevisions] = useState([]);
@@ -49,11 +49,16 @@ const ProjectDetailPage = () => {
 
   if (!project) return <div className="max-w-5xl mx-auto p-8">Loading...</div>;
 
-  const handleDelete = async () => {
-    if (!window.confirm(`Are you sure you want to permanently DELETE project ${project.project_code}?\n\nThis will also delete all its payments, quote revisions and activity history. This cannot be undone.\n\nTip: Use Archive instead to keep history.`)) return;
-    const ok = await forceVerify();
-    if (!ok) return;
-    await api.delete(`/projects/${id}`);
+  const handleDelete = () => {
+    const code = project.project_code;
+    if (!window.confirm(`Are you sure you want to permanently DELETE project ${code}?\n\nThis will also delete all its payments, quote revisions and activity history.\n\nYou can undo within 60 seconds.\n\nTip: Use Archive instead to keep history.`)) return;
+    schedule({
+      label: `Project ${code} deleted`,
+      onCommit: async () => {
+        try { await api.delete(`/projects/${id}`); } catch { /* silent */ }
+      },
+      onUndo: () => { /* nothing to restore — API not yet called and we navigated away */ },
+    });
     navigate('/');
   };
 
@@ -67,12 +72,17 @@ const ProjectDetailPage = () => {
   const downloadExcel = () => window.open(`${API}/projects/${id}/export`, '_blank');
   const downloadReceipt = (paymentId) => window.open(`${API}/payments/${paymentId}/receipt`, '_blank');
 
-  const handleDeletePayment = async (paymentId) => {
-    if (!window.confirm('Are you sure you want to delete this payment?\n\nProject totals will be recalculated. This cannot be undone.')) return;
-    const ok = await forceVerify();
-    if (!ok) return;
-    await api.delete(`/payments/${paymentId}`);
-    load();
+  const handleDeletePayment = (paymentId) => {
+    if (!window.confirm('Are you sure you want to delete this payment?\n\nProject totals will be recalculated.\n\nYou can undo within 60 seconds.')) return;
+    // Optimistically hide the payment row
+    setPayments((prev) => prev.filter((p) => p.id !== paymentId));
+    schedule({
+      label: 'Payment deleted',
+      onCommit: async () => {
+        try { await api.delete(`/payments/${paymentId}`); load(); } catch { load(); }
+      },
+      onUndo: () => { load(); },
+    });
   };
 
   const handleRevise = async (e) => {

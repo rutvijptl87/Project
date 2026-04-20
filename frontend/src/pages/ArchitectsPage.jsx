@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
-import { useAuth } from '../lib/auth';
+import { useUndo } from '../lib/undo';
 import Modal from '../components/Modal';
 import { Plus, Pencil, Trash2, Compass, Phone, Mail } from 'lucide-react';
 
 const emptyA = { name: '', phone: '', email: '', firm: '' };
 
 const ArchitectsPage = () => {
-  const { forceVerify } = useAuth();
+  const { schedule } = useUndo();
   const [items, setItems] = useState([]);
+  const [hiddenIds, setHiddenIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -45,13 +46,27 @@ const ArchitectsPage = () => {
     } finally { setSaving(false); }
   };
 
-  const handleDelete = async (a) => {
-    if (!window.confirm(`Are you sure you want to delete architect "${a.name}"?\n\nAny projects linked to them will be unlinked (but not deleted).`)) return;
-    const ok = await forceVerify();
-    if (!ok) return;
-    await api.delete(`/architects/${a.id}`);
-    load();
+  const handleDelete = (a) => {
+    if (!window.confirm(`Are you sure you want to delete architect "${a.name}"?\n\nAny projects linked to them will be unlinked (but not deleted).\n\nYou can undo within 60 seconds.`)) return;
+    setHiddenIds((prev) => new Set([...prev, a.id]));
+    schedule({
+      label: `Architect ${a.name} deleted`,
+      onCommit: async () => {
+        try {
+          await api.delete(`/architects/${a.id}`);
+          setHiddenIds((prev) => { const n = new Set(prev); n.delete(a.id); return n; });
+          load();
+        } catch {
+          setHiddenIds((prev) => { const n = new Set(prev); n.delete(a.id); return n; });
+        }
+      },
+      onUndo: () => {
+        setHiddenIds((prev) => { const n = new Set(prev); n.delete(a.id); return n; });
+      },
+    });
   };
+
+  const visibleItems = items.filter((a) => !hiddenIds.has(a.id));
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="architects-page">
@@ -78,12 +93,12 @@ const ArchitectsPage = () => {
             <tbody>
               {loading ? (
                 <tr><td colSpan={5} className="text-center py-10" style={{ color: 'var(--cc-text-muted)' }}>Loading...</td></tr>
-              ) : items.length === 0 ? (
+              ) : visibleItems.length === 0 ? (
                 <tr><td colSpan={5} className="text-center py-12">
                   <Compass size={32} className="mx-auto mb-2 text-gray-400"/>
                   <div className="font-semibold">No architects yet</div>
                 </td></tr>
-              ) : items.map((a) => (
+              ) : visibleItems.map((a) => (
                 <tr key={a.id} data-testid={`architect-row-${a.id}`}>
                   <td className="font-medium">
                     <Link to={`/architects/${a.id}`} className="link-underline hover:opacity-80" data-testid={`architect-link-${a.id}`}>

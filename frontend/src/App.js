@@ -13,13 +13,15 @@ import ProjectFormPage from './pages/ProjectFormPage';
 import ProjectDetailPage from './pages/ProjectDetailPage';
 import SettingsPage from './pages/SettingsPage';
 import { AuthProvider } from './lib/auth';
+import { UndoProvider } from './lib/undo';
 
 function App() {
   const [showPayModal, setShowPayModal] = useState(false);
 
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <UndoProvider>
+        <BrowserRouter>
         <div className="min-h-screen" style={{ background: '#FBFCFB' }}>
           <Navbar onRecordPayment={() => setShowPayModal(true)} />
 
@@ -43,6 +45,7 @@ function App() {
           />
         </div>
       </BrowserRouter>
+      </UndoProvider>
     </AuthProvider>
   );
 }

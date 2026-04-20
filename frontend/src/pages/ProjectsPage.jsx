@@ -4,7 +4,7 @@ import { api, API } from '../lib/api';
 import { formatINR } from '../lib/format';
 import DashboardKPI from '../components/DashboardKPI';
 import RecordPaymentModal from '../components/RecordPaymentModal';
-import { useAuth } from '../lib/auth';
+import { useUndo } from '../lib/undo';
 import {
   Plus, Search, Download, Upload, Eye, Pencil, Trash2, IndianRupee,
   FileText, Archive, ArchiveRestore, ArrowUpDown, ArrowUp, ArrowDown,
@@ -23,7 +23,7 @@ const SORTABLE_COLUMNS = {
 
 const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
   const navigate = useNavigate();
-  const { forceVerify } = useAuth();
+  const { schedule } = useUndo();
   const [projects, setProjects] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -34,6 +34,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
   const [showArchived, setShowArchived] = useState(false);
   const [sortBy, setSortBy] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
+  const [hiddenIds, setHiddenIds] = useState(new Set());
   const fileInputRef = useRef(null);
 
   const load = async () => {
@@ -58,8 +59,9 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [showArchived]);
 
   const sortedProjects = useMemo(() => {
-    if (!sortBy) return projects;
-    const arr = [...projects];
+    const visible = projects.filter((p) => !hiddenIds.has(p.id));
+    if (!sortBy) return visible;
+    const arr = [...visible];
     arr.sort((a, b) => {
       const va = a[sortBy];
       const vb = b[sortBy];
@@ -72,7 +74,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return arr;
-  }, [projects, sortBy, sortDir]);
+  }, [projects, sortBy, sortDir, hiddenIds]);
 
   const toggleSort = (col) => {
     if (sortBy === col) {
@@ -112,15 +114,27 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
     } catch { showToast('Failed to restore', 'error'); }
   };
 
-  const handleDelete = async (id, code) => {
-    if (!window.confirm(`Are you sure you want to permanently DELETE project ${code}?\n\nThis will also delete all its payments, quote revisions and activity history. This cannot be undone.`)) return;
-    const ok = await forceVerify();
-    if (!ok) return;
-    try {
-      await api.delete(`/projects/${id}`);
-      showToast('Project deleted permanently');
-      load();
-    } catch { showToast('Delete failed', 'error'); }
+  const handleDelete = (id, code) => {
+    if (!window.confirm(`Are you sure you want to permanently DELETE project ${code}?\n\nThis will also delete all its payments, quote revisions and activity history.\n\nYou can undo within 60 seconds.`)) return;
+    // Optimistically hide the row
+    setHiddenIds((prev) => new Set([...prev, id]));
+    schedule({
+      label: `Project ${code} deleted`,
+      onCommit: async () => {
+        try {
+          await api.delete(`/projects/${id}`);
+          setHiddenIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+          load();
+        } catch {
+          setHiddenIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+          showToast('Delete failed', 'error');
+        }
+      },
+      onUndo: () => {
+        setHiddenIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+        showToast(`Project ${code} restored`);
+      },
+    });
   };
 
   const openPay = (id) => { setPayTargetId(id); setShowPayModal(true); };

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, API } from '../lib/api';
-import { useAuth } from '../lib/auth';
+import { useUndo } from '../lib/undo';
 import { formatINR } from '../lib/format';
 import Modal from '../components/Modal';
 import RecordPaymentModal from '../components/RecordPaymentModal';
@@ -32,7 +32,7 @@ const emptyAudit = {
 };
 
 const AuditsPage = () => {
-  const { forceVerify } = useAuth();
+  const { schedule } = useUndo();
   const [audits, setAudits] = useState([]);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -40,6 +40,7 @@ const AuditsPage = () => {
   const [showArchived, setShowArchived] = useState(false);
   const [sortBy, setSortBy] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
+  const [hiddenIds, setHiddenIds] = useState(new Set());
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -70,7 +71,8 @@ const AuditsPage = () => {
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [showArchived]);
 
   const sortedAudits = useMemo(() => {
-    const arr = [...audits];
+    const visible = audits.filter((a) => !hiddenIds.has(a.id));
+    const arr = [...visible];
     arr.sort((a, b) => {
       const va = a[sortBy];
       const vb = b[sortBy];
@@ -83,7 +85,7 @@ const AuditsPage = () => {
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return arr;
-  }, [audits, sortBy, sortDir]);
+  }, [audits, sortBy, sortDir, hiddenIds]);
 
   const toggleSort = (col) => {
     if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -142,15 +144,26 @@ const AuditsPage = () => {
     } finally { setSaving(false); }
   };
 
-  const handleDelete = async (a) => {
-    if (!window.confirm(`Are you sure you want to permanently DELETE audit ${a.audit_code}?\n\nThis will also delete all its payments and activity history. This cannot be undone.`)) return;
-    const ok = await forceVerify();
-    if (!ok) return;
-    try {
-      await api.delete(`/audits/${a.id}`);
-      showToast('Audit deleted permanently');
-      load();
-    } catch { showToast('Delete failed', 'error'); }
+  const handleDelete = (a) => {
+    if (!window.confirm(`Are you sure you want to permanently DELETE audit ${a.audit_code}?\n\nThis will also delete all its payments and activity history.\n\nYou can undo within 60 seconds.`)) return;
+    setHiddenIds((prev) => new Set([...prev, a.id]));
+    schedule({
+      label: `Audit ${a.audit_code} deleted`,
+      onCommit: async () => {
+        try {
+          await api.delete(`/audits/${a.id}`);
+          setHiddenIds((prev) => { const n = new Set(prev); n.delete(a.id); return n; });
+          load();
+        } catch {
+          setHiddenIds((prev) => { const n = new Set(prev); n.delete(a.id); return n; });
+          showToast('Delete failed', 'error');
+        }
+      },
+      onUndo: () => {
+        setHiddenIds((prev) => { const n = new Set(prev); n.delete(a.id); return n; });
+        showToast(`Audit ${a.audit_code} restored`);
+      },
+    });
   };
 
   const handleArchive = async (a) => {
