@@ -85,23 +85,23 @@ async def _load_credentials() -> Optional[Credentials]:
         token_uri=doc["token_uri"],
         client_id=doc["client_id"],
         client_secret=doc["client_secret"],
-        scopes=doc.get("scopes") or SCOPES,
+        scopes=None,  # omit on refresh — Google reuses originally-granted scopes
     )
-    # Refresh if needed
-    if not creds.valid:
-        try:
-            creds.refresh(GoogleRequest())
-            await _db.google_drive_config.update_one(
-                {"_key": CONFIG_DOC_ID},
-                {"$set": {
-                    "access_token": creds.token,
-                    "expiry": creds.expiry.isoformat() if creds.expiry else None,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                }},
-            )
-        except Exception as e:
-            logger.error(f"Token refresh failed: {e}")
-            return None
+    # Force a fresh access token on every load (simpler for a 6-hour cron)
+    try:
+        creds.refresh(GoogleRequest())
+    except Exception as e:
+        logger.error(f"Token refresh failed: {e}")
+        return None
+    # Persist the refreshed token
+    await _db.google_drive_config.update_one(
+        {"_key": CONFIG_DOC_ID},
+        {"$set": {
+            "access_token": creds.token,
+            "expiry": creds.expiry.isoformat() if creds.expiry else None,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
     return creds
 
 
