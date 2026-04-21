@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 const Modal = ({ open, onClose, title, children, maxWidth = '560px', testId = 'modal' }) => {
@@ -10,7 +11,9 @@ const Modal = ({ open, onClose, title, children, maxWidth = '560px', testId = 'm
   }, [open, onClose]);
 
   if (!open) return null;
-  return (
+  // Render into document.body so the modal isn't a DOM descendant of any parent <form>.
+  // This avoids invalid nested-form behaviour where the child form's submit bubbles up.
+  return createPortal(
     <div className="modal-overlay" onClick={onClose} data-testid={`${testId}-overlay`}>
       <div className="modal-content" style={{ maxWidth }} onClick={(e) => e.stopPropagation()} data-testid={testId}>
         <div className="flex items-start justify-between p-5 border-b" style={{ borderColor: 'var(--cc-border)' }}>
@@ -21,7 +24,8 @@ const Modal = ({ open, onClose, title, children, maxWidth = '560px', testId = 'm
         </div>
         <div className="p-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 

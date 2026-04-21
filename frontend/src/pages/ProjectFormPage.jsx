@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { ArrowLeft, Save } from 'lucide-react';
+import InlinePicker from '../components/InlinePicker';
 
 const ProjectFormPage = () => {
   const { id } = useParams();
@@ -98,19 +99,25 @@ const ProjectFormPage = () => {
         <div className="grid md:grid-cols-2 gap-4">
           <div>
             <label className="label">Client</label>
-            <select className="select" value={form.client_id} onChange={(e) => update('client_id', e.target.value)} data-testid="form-client">
-              <option value="">None</option>
-              {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-            <Link to="/clients" className="text-xs mt-1 inline-block" style={{ color: 'var(--cc-accent)' }}>+ Manage clients</Link>
+            <InlinePicker
+              entityType="client"
+              value={form.client_id}
+              onChange={(v) => update('client_id', v)}
+              items={clients}
+              onItemsChange={setClients}
+              testIdPrefix="project-form-client-"
+            />
           </div>
           <div>
             <label className="label">Architect</label>
-            <select className="select" value={form.architect_id} onChange={(e) => update('architect_id', e.target.value)} data-testid="form-architect">
-              <option value="">None</option>
-              {architects.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
-            <Link to="/architects" className="text-xs mt-1 inline-block" style={{ color: 'var(--cc-accent)' }}>+ Manage architects</Link>
+            <InlinePicker
+              entityType="architect"
+              value={form.architect_id}
+              onChange={(v) => update('architect_id', v)}
+              items={architects}
+              onItemsChange={setArchitects}
+              testIdPrefix="project-form-architect-"
+            />
           </div>
         </div>
 

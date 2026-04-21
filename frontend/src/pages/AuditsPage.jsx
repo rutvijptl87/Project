@@ -5,6 +5,7 @@ import { useUndo } from '../lib/undo';
 import { formatINR } from '../lib/format';
 import Modal from '../components/Modal';
 import RecordPaymentModal from '../components/RecordPaymentModal';
+import InlinePicker from '../components/InlinePicker';
 import {
   Plus, Search, Eye, Pencil, Trash2, IndianRupee, FileText, Archive, ArchiveRestore,
   ArrowUpDown, ArrowUp, ArrowDown, Phone, Mail, ClipboardCheck,
@@ -306,15 +307,14 @@ const AuditsPage = () => {
           </div>
           <div>
             <label className="label">Name (Client)</label>
-            <select className="select" value={form.client_id} onChange={(e) => update('client_id', e.target.value)} data-testid="audit-form-client">
-              <option value="">— No client linked —</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}{c.phone ? ` (${c.phone})` : ''}</option>
-              ))}
-            </select>
-            <p className="text-xs mt-1" style={{ color: 'var(--cc-text-muted)' }}>
-              Client not listed? Add them first on the <Link to="/clients" className="link-underline">Clients page</Link>.
-            </p>
+            <InlinePicker
+              entityType="client"
+              value={form.client_id}
+              onChange={(v) => update('client_id', v)}
+              items={clients}
+              onItemsChange={setClients}
+              testIdPrefix="audit-form-client-"
+            />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
