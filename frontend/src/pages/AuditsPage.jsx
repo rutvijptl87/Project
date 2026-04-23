@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { useUndo } from '../lib/undo';
 import { formatINR } from '../lib/format';
+import { downloadFile } from '../lib/download';
 import Modal from '../components/Modal';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import InlinePicker from '../components/InlinePicker';
@@ -179,7 +180,7 @@ const AuditsPage = () => {
   };
 
   const openPay = (id) => { setPayAuditId(id); setPayOpen(true); };
-  const downloadInvoice = (id) => window.open(`${API}/audits/${id}/invoice`, '_blank');
+  const downloadInvoice = (id) => downloadFile(`${API}/audits/${id}/invoice`);
 
   const contactCell = (a) => (
     <div className="text-xs space-y-0.5">

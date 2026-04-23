@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { useUndo } from '../lib/undo';
 import { formatINR, formatDate } from '../lib/format';
+import { downloadFile } from '../lib/download';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import {
   ArrowLeft, Pencil, Trash2, FileText, Download, Archive, Folder, Copy,
@@ -68,9 +69,9 @@ const ProjectDetailPage = () => {
     navigate('/');
   };
 
-  const downloadInvoice = () => window.open(`${API}/projects/${id}/invoice`, '_blank');
-  const downloadExcel = () => window.open(`${API}/projects/${id}/export`, '_blank');
-  const downloadReceipt = (paymentId) => window.open(`${API}/payments/${paymentId}/receipt`, '_blank');
+  const downloadInvoice = () => downloadFile(`${API}/projects/${id}/invoice`);
+  const downloadExcel = () => downloadFile(`${API}/projects/${id}/export`);
+  const downloadReceipt = (paymentId) => downloadFile(`${API}/payments/${paymentId}/receipt`);
 
   const handleDeletePayment = (paymentId) => {
     if (!window.confirm('Are you sure you want to delete this payment?\n\nProject totals will be recalculated.\n\nYou can undo within 60 seconds.')) return;

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api, API } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { downloadFile } from '../lib/download';
 import {
   Cloud, CloudOff, CheckCircle2, AlertCircle, RefreshCcw, Download,
   History, Link as LinkIcon, Play, Unlink,
@@ -106,8 +107,7 @@ const BackupCard = () => {
   };
 
   const handleDownload = () => {
-    // Use full API URL so browser downloads directly
-    window.open(`${API}/backup/download-latest`, '_blank');
+    downloadFile(`${API}/backup/download-latest`);
   };
 
   const toggleHistory = async () => {

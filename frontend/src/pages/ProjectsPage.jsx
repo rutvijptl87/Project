@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { formatINR } from '../lib/format';
+import { downloadFile } from '../lib/download';
 import DashboardKPI from '../components/DashboardKPI';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import { useUndo } from '../lib/undo';
@@ -144,8 +145,8 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
     setTimeout(() => setToast(null), 2500);
   };
 
-  const handleExport = () => window.open(`${API}/export/excel`, '_blank');
-  const handleInvoice = (id) => window.open(`${API}/projects/${id}/invoice`, '_blank');
+  const handleExport = () => downloadFile(`${API}/export/excel`);
+  const handleInvoice = (id) => downloadFile(`${API}/projects/${id}/invoice`);
 
   const handleImportClick = () => fileInputRef.current?.click();
   const handleImport = async (e) => {
