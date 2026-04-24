@@ -7,7 +7,7 @@ import { downloadFile } from '../lib/download';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import {
   ArrowLeft, Pencil, Trash2, FileText, Download, Archive, Folder, Copy,
-  Plus, MapPin, CreditCard, ClipboardList, Clock, Phone, Mail,
+  Plus, MapPin, CreditCard, ClipboardList, Clock, Phone, Mail, StickyNote, Save, X,
 } from 'lucide-react';
 
 const actionStyle = (action) => {
@@ -32,6 +32,42 @@ const ProjectDetailPage = () => {
   const [newQuote, setNewQuote] = useState('');
   const [reviseReason, setReviseReason] = useState('');
   const [revising, setRevising] = useState(false);
+
+  // Inline notes editing
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
+
+  const startEditNotes = () => {
+    setNotesDraft(project?.notes || '');
+    setEditingNotes(true);
+  };
+
+  const cancelEditNotes = () => {
+    setEditingNotes(false);
+    setNotesDraft('');
+  };
+
+  const saveNotes = async () => {
+    setSavingNotes(true);
+    try {
+      await api.put(`/projects/${id}`, {
+        name: project.name,
+        client_id: project.client_id || null,
+        architect_id: project.architect_id || null,
+        site_location: project.site_location || '',
+        quoted_amount: project.quoted_amount || 0,
+        status: project.status || 'Outstanding',
+        notes: notesDraft,
+      });
+      setProject((p) => ({ ...p, notes: notesDraft }));
+      setEditingNotes(false);
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Failed to save notes');
+    } finally {
+      setSavingNotes(false);
+    }
+  };
 
   const load = useCallback(async () => {
     const [p, pay, rev, act] = await Promise.all([
@@ -178,6 +214,62 @@ const ProjectDetailPage = () => {
           )}
         </div>
       )}
+
+      {/* Notes */}
+      <div className="card p-5 mb-6" data-testid="project-notes-card">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-head text-lg font-bold flex items-center gap-2" style={{ color: 'var(--cc-dark-green)' }}>
+            <StickyNote size={18}/> Notes
+          </h2>
+          {!editingNotes && (
+            <button
+              onClick={startEditNotes}
+              className="btn btn-outline btn-sm"
+              data-testid="btn-edit-notes"
+            >
+              <Pencil size={13}/> {project.notes ? 'Edit' : 'Add notes'}
+            </button>
+          )}
+        </div>
+        {editingNotes ? (
+          <div className="space-y-2" data-testid="project-notes-editor">
+            <textarea
+              className="textarea"
+              rows={5}
+              value={notesDraft}
+              onChange={(e) => setNotesDraft(e.target.value)}
+              placeholder="Write anything — scope change, site visit notes, client preferences, material decisions..."
+              data-testid="project-notes-textarea"
+              autoFocus
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={cancelEditNotes} className="btn btn-outline" data-testid="btn-cancel-notes">
+                <X size={14}/> Cancel
+              </button>
+              <button
+                onClick={saveNotes}
+                disabled={savingNotes}
+                className="btn btn-primary"
+                data-testid="btn-save-notes"
+              >
+                <Save size={14}/> {savingNotes ? 'Saving…' : 'Save Notes'}
+              </button>
+            </div>
+          </div>
+        ) : project.notes ? (
+          <div
+            className="whitespace-pre-wrap text-sm leading-relaxed"
+            style={{ color: 'var(--cc-text)' }}
+            data-testid="project-notes-text"
+          >
+            {project.notes}
+          </div>
+        ) : (
+          <div className="text-sm italic" style={{ color: 'var(--cc-text-muted)' }} data-testid="project-notes-empty">
+            No notes yet. Click "Add notes" to jot down scope changes, site observations, or any important reminders.
+          </div>
+        )}
+      </div>
 
       {/* Linked offer */}
       {project.offer_code && (
