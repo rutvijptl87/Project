@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel
 
@@ -425,3 +425,241 @@ async def download_latest():
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{latest.name}"'},
     )
+
+
+# ------------------------ RESTORE (merge, add-missing) ------------------------
+
+# Keys used to decide whether a document already exists.
+# Every collection is keyed by "id" except `counters` which uses "_id".
+RESTORE_KEYS = {
+    "projects": "id",
+    "clients": "id",
+    "architects": "id",
+    "payments": "id",
+    "audits": "id",
+    "audit_payments": "id",
+    "offers": "id",
+    "activity_log": "id",
+    "quote_revisions": "id",
+    "counters": "_id",
+}
+
+
+async def _preview_payload(payload: dict) -> dict:
+    """Return counts of how many records would be added vs already exist, per collection."""
+    collections = payload.get("collections") or {}
+    preview = {"total_would_add": 0, "total_already_exists": 0, "per_collection": {}}
+    for col, docs in collections.items():
+        if col not in RESTORE_KEYS or not isinstance(docs, list):
+            continue
+        key = RESTORE_KEYS[col]
+        would_add = 0
+        existing = 0
+        for d in docs:
+            kval = d.get(key)
+            if kval is None:
+                continue
+            # In the counters collection the key field is `_id` (Mongo's natural key)
+            query = {key: kval}
+            found = await _db[col].find_one(query, {"_id": 1})
+            if found:
+                existing += 1
+            else:
+                would_add += 1
+        preview["per_collection"][col] = {
+            "in_backup": len(docs),
+            "would_add": would_add,
+            "already_exists": existing,
+        }
+        preview["total_would_add"] += would_add
+        preview["total_already_exists"] += existing
+    preview["generated_at"] = payload.get("generated_at")
+    preview["app"] = payload.get("app")
+    return preview
+
+
+async def _merge_restore(payload: dict) -> dict:
+    """Apply merge-restore: only insert documents whose key does not already exist."""
+    collections = payload.get("collections") or {}
+    result = {"added": {}, "skipped": {}, "errors": []}
+    for col, docs in collections.items():
+        if col not in RESTORE_KEYS or not isinstance(docs, list):
+            continue
+        key = RESTORE_KEYS[col]
+        added = 0
+        skipped = 0
+        for d in docs:
+            kval = d.get(key)
+            if kval is None:
+                skipped += 1
+                continue
+            exists = await _db[col].find_one({key: kval}, {"_id": 1})
+            if exists:
+                skipped += 1
+                continue
+            try:
+                # Ensure no Mongo _id slips in from exported dump (it was excluded but be safe)
+                d2 = {k: v for k, v in d.items() if k != "_id" or col == "counters"}
+                await _db[col].insert_one(d2)
+                added += 1
+            except Exception as e:
+                result["errors"].append(f"{col}: {e}")
+        result["added"][col] = added
+        result["skipped"][col] = skipped
+    return result
+
+
+@router.post("/restore/preview")
+async def restore_preview(file: UploadFile = File(...)):
+    """Parse an uploaded JSON backup and return what would be added on merge-restore."""
+    if not file.filename.lower().endswith(".json"):
+        raise HTTPException(400, "Please upload a .json backup file")
+    raw = await file.read()
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception as e:
+        raise HTTPException(400, f"Invalid JSON: {e}")
+    if not isinstance(payload, dict) or "collections" not in payload:
+        raise HTTPException(400, "Not a valid Creator Consultant backup (missing 'collections')")
+    return await _preview_payload(payload)
+
+
+@router.post("/restore")
+async def restore_backup(
+    file: UploadFile = File(...),
+    confirm: str = Form(...),
+):
+    """Merge-restore from an uploaded JSON backup.
+
+    Requires `confirm == 'RESTORE'` (case-insensitive) to guard against accidental calls.
+    """
+    if (confirm or "").strip().upper() != "RESTORE":
+        raise HTTPException(400, "Confirmation missing or incorrect. Type RESTORE to confirm.")
+    if not file.filename.lower().endswith(".json"):
+        raise HTTPException(400, "Please upload a .json backup file")
+    raw = await file.read()
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception as e:
+        raise HTTPException(400, f"Invalid JSON: {e}")
+    if not isinstance(payload, dict) or "collections" not in payload:
+        raise HTTPException(400, "Not a valid Creator Consultant backup (missing 'collections')")
+
+    # Safety snapshot — save a local copy of the current DB right before restore
+    try:
+        await _perform_backup(trigger="pre-restore")
+    except Exception as e:
+        logger.warning(f"Pre-restore safety snapshot failed: {e}")
+
+    result = await _merge_restore(payload)
+    total_added = sum(result.get("added", {}).values())
+    total_skipped = sum(result.get("skipped", {}).values())
+    logger.info(f"Restore done: added={total_added}, skipped={total_skipped}, errors={len(result.get('errors', []))}")
+    return {
+        "ok": True,
+        "source": "upload",
+        "filename": file.filename,
+        "backup_generated_at": payload.get("generated_at"),
+        "total_added": total_added,
+        "total_skipped": total_skipped,
+        "added_per_collection": result["added"],
+        "skipped_per_collection": result["skipped"],
+        "errors": result["errors"],
+    }
+
+
+@router.get("/drive/backups")
+async def list_drive_backups():
+    """List backup JSON files in the user's Drive 'Creator Consultant Backups' folder."""
+    service = await _get_drive_service()
+    if service is None:
+        raise HTTPException(400, "Google Drive is not connected")
+    try:
+        folder_id = await _get_or_create_folder(service)
+        q = f"'{folder_id}' in parents and trashed = false and mimeType = 'application/json'"
+        resp = service.files().list(
+            q=q,
+            fields="files(id, name, size, createdTime, webViewLink)",
+            orderBy="createdTime desc",
+            pageSize=200,
+        ).execute()
+        files = resp.get("files", [])
+        return [
+            {
+                "id": f.get("id"),
+                "name": f.get("name"),
+                "size": int(f.get("size") or 0),
+                "created_time": f.get("createdTime"),
+                "web_view_link": f.get("webViewLink"),
+            }
+            for f in files
+        ]
+    except HttpError as e:
+        logger.error(f"Drive list failed: {e}")
+        raise HTTPException(500, f"Drive list failed: {e}")
+
+
+async def _download_drive_file_content(service, file_id: str) -> bytes:
+    """Download a Drive file's raw bytes."""
+    from googleapiclient.http import MediaIoBaseDownload  # noqa: F811
+    req = service.files().get_media(fileId=file_id)
+    buf = io.BytesIO()
+    downloader = MediaIoBaseDownload(buf, req)
+    done = False
+    while not done:
+        _status, done = downloader.next_chunk()
+    return buf.getvalue()
+
+
+class DriveRestoreBody(BaseModel):
+    file_id: str
+    confirm: str
+
+
+@router.post("/restore/drive")
+async def restore_from_drive(body: DriveRestoreBody):
+    """Merge-restore from a Drive backup file. Requires confirm == 'RESTORE'."""
+    if (body.confirm or "").strip().upper() != "RESTORE":
+        raise HTTPException(400, "Confirmation missing or incorrect. Type RESTORE to confirm.")
+    service = await _get_drive_service()
+    if service is None:
+        raise HTTPException(400, "Google Drive is not connected")
+    try:
+        raw = await _download_drive_file_content(service, body.file_id)
+    except HttpError as e:
+        raise HTTPException(500, f"Failed to download Drive file: {e}")
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception as e:
+        raise HTTPException(400, f"Selected file is not valid JSON: {e}")
+    if not isinstance(payload, dict) or "collections" not in payload:
+        raise HTTPException(400, "Not a valid Creator Consultant backup (missing 'collections')")
+
+    # Safety snapshot
+    try:
+        await _perform_backup(trigger="pre-restore")
+    except Exception as e:
+        logger.warning(f"Pre-restore safety snapshot failed: {e}")
+
+    # Fetch file name from Drive for the response
+    try:
+        meta = service.files().get(fileId=body.file_id, fields="id, name").execute()
+        fname = meta.get("name")
+    except Exception:
+        fname = body.file_id
+
+    result = await _merge_restore(payload)
+    total_added = sum(result.get("added", {}).values())
+    total_skipped = sum(result.get("skipped", {}).values())
+    return {
+        "ok": True,
+        "source": "drive",
+        "filename": fname,
+        "backup_generated_at": payload.get("generated_at"),
+        "total_added": total_added,
+        "total_skipped": total_skipped,
+        "added_per_collection": result["added"],
+        "skipped_per_collection": result["skipped"],
+        "errors": result["errors"],
+    }
+

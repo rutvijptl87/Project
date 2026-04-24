@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { api, API } from '../lib/api';
 import { Download, Database, ExternalLink, CheckCircle2, Upload } from 'lucide-react';
 import BackupCard from '../components/BackupCard';
+import RestoreCard from '../components/RestoreCard';
 
 const SettingsPage = () => {
   const [stats, setStats] = useState(null);
@@ -55,6 +56,9 @@ const SettingsPage = () => {
 
       {/* Google Drive Auto-Backup */}
       <BackupCard />
+
+      {/* Restore from backup */}
+      <RestoreCard />
 
       <div className="card p-6 mb-4">
         <h2 className="font-head text-xl font-bold mb-3" style={{ color: 'var(--cc-dark-green)' }}>Database Summary</h2>
