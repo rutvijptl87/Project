@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form, Request
 from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel
 
@@ -53,23 +53,42 @@ def init(db, collections_to_backup: list[str]):
 
 # ---------- OAuth helpers ----------
 
-def _client_config():
+def _client_config(redirect_uri: Optional[str] = None):
     return {
         "web": {
             "client_id": os.environ["GOOGLE_CLIENT_ID"],
             "client_secret": os.environ["GOOGLE_CLIENT_SECRET"],
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": [os.environ["GOOGLE_DRIVE_REDIRECT_URI"]],
+            "redirect_uris": [redirect_uri or os.environ["GOOGLE_DRIVE_REDIRECT_URI"]],
         }
     }
 
 
-def _make_flow(scopes=None):
+def _resolve_origin(request) -> str:
+    """Detect the origin (scheme://host) the user is currently using.
+
+    Lets the OAuth flow follow whichever domain they actually opened the app on
+    (e.g. preview URL or custom domain), so the redirect URI matches.
+    """
+    fwd_proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "https"
+    fwd_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+    if fwd_host:
+        return f"{fwd_proto}://{fwd_host}"
+    return os.environ.get("FRONTEND_URL", "")
+
+
+def _redirect_uri_for(request) -> str:
+    origin = _resolve_origin(request)
+    return f"{origin}/api/backup/google/callback" if origin else os.environ["GOOGLE_DRIVE_REDIRECT_URI"]
+
+
+def _make_flow(scopes=None, redirect_uri=None):
+    redirect = redirect_uri or os.environ["GOOGLE_DRIVE_REDIRECT_URI"]
     return Flow.from_client_config(
-        _client_config(),
+        _client_config(redirect_uri=redirect),
         scopes=scopes,
-        redirect_uri=os.environ["GOOGLE_DRIVE_REDIRECT_URI"],
+        redirect_uri=redirect,
     )
 
 
@@ -304,19 +323,21 @@ async def backup_status():
 
 
 @router.get("/google/connect")
-async def google_connect():
+async def google_connect(request: Request):
     """Returns an authorization URL the frontend opens in a new tab / redirect."""
-    flow = _make_flow(scopes=SCOPES)
+    redirect_uri = _redirect_uri_for(request)
+    flow = _make_flow(scopes=SCOPES, redirect_uri=redirect_uri)
     auth_url, state = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
         prompt="consent",  # required to always get refresh_token
     )
-    # Store the PKCE verifier in a SEPARATE state-keyed document so concurrent
-    # connect attempts don't overwrite each other's verifier.
+    # Store the PKCE verifier + redirect_uri so the callback can complete the exchange.
     await _db.oauth_pending.insert_one({
         "state": state,
         "code_verifier": flow.code_verifier,
+        "redirect_uri": redirect_uri,
+        "origin": _resolve_origin(request),
         "created_at": datetime.now(timezone.utc),
     })
     # Sweep old pending docs (>30 min)
@@ -327,20 +348,26 @@ async def google_connect():
 
 
 @router.get("/google/callback")
-async def google_callback(code: str = Query(...), state: Optional[str] = Query(None), error: Optional[str] = Query(None)):
+async def google_callback(request: Request, code: str = Query(...), state: Optional[str] = Query(None), error: Optional[str] = Query(None)):
     """Google redirects here with ?code=... We exchange and store credentials, then redirect to frontend."""
-    frontend = os.environ.get("FRONTEND_URL", "/")
+    # Default frontend = the same domain the callback was hit on
+    frontend = _resolve_origin(request) or os.environ.get("FRONTEND_URL", "/")
     if error:
         return RedirectResponse(f"{frontend}/settings?drive=error&reason={error}")
 
-    # Retrieve PKCE code_verifier for THIS state
+    # Retrieve PKCE code_verifier + matching redirect URI for THIS state
     code_verifier = None
+    redirect_uri_used = _redirect_uri_for(request)
     if state:
         pending_doc = await _db.oauth_pending.find_one_and_delete({"state": state})
         if pending_doc:
             code_verifier = pending_doc.get("code_verifier")
+            if pending_doc.get("redirect_uri"):
+                redirect_uri_used = pending_doc["redirect_uri"]
+            if pending_doc.get("origin"):
+                frontend = pending_doc["origin"]
 
-    flow = _make_flow(scopes=None)  # accept all granted scopes
+    flow = _make_flow(scopes=None, redirect_uri=redirect_uri_used)
     if code_verifier:
         flow.code_verifier = code_verifier
     try:
