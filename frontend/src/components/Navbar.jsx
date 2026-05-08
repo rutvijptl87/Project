@@ -1,8 +1,10 @@
 import React from 'react';
 import { NavLink, Link } from 'react-router-dom';
-import { Plus, IndianRupee, Settings as SettingsIcon } from 'lucide-react';
+import { Plus, IndianRupee, Settings as SettingsIcon, LogOut, User } from 'lucide-react';
+import { useAuth } from '../lib/auth';
 
 const Navbar = ({ onRecordPayment }) => {
+  const { user, logout } = useAuth();
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b" style={{ borderColor: 'var(--cc-border)' }} data-testid="main-navbar">
       <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -29,6 +31,23 @@ const Navbar = ({ onRecordPayment }) => {
           <button onClick={onRecordPayment} className="btn btn-accent" data-testid="btn-nav-record-payment">
             <IndianRupee size={16} /> Record Payment
           </button>
+          {user && (
+            <>
+              <div className="hidden lg:flex items-center gap-1.5 px-2 py-1 rounded-md" style={{ background: 'var(--cc-surface)', color: 'var(--cc-text-muted)' }} data-testid="navbar-user-info">
+                <User size={12} />
+                <span className="text-xs font-mono-data">{user.username}</span>
+                {user.role === 'admin' && <span className="badge badge-settled" style={{ fontSize: '9px', padding: '1px 6px' }}>admin</span>}
+              </div>
+              <button
+                onClick={logout}
+                className="btn btn-outline btn-sm"
+                title={`Sign out ${user.username}`}
+                data-testid="btn-logout"
+              >
+                <LogOut size={13} />
+              </button>
+            </>
+          )}
         </div>
       </div>
     </header>

@@ -1,18 +1,87 @@
-import React, { createContext, useContext } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { api } from './api';
 
-// Password protection has been removed per user request.
-// This module is kept as a no-op passthrough so existing imports continue to work.
+const TOKEN_KEY = 'cc_auth_token';
+const USER_KEY = 'cc_auth_user';
 
 const AuthContext = createContext({
-  passwordSet: false,
-  unlocked: true,
-  requireUnlock: () => Promise.resolve(true),
-  forceVerify: () => Promise.resolve(true),
-  lock: () => {},
-  markUnlocked: () => {},
-  refreshStatus: () => {},
+  user: null,
+  loading: true,
+  login: async () => {},
+  logout: () => {},
+  refresh: async () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
 
-export const AuthProvider = ({ children }) => <>{children}</>;
+const installToken = (token) => {
+  if (token) {
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    localStorage.setItem(TOKEN_KEY, token);
+  } else {
+    delete api.defaults.headers.common['Authorization'];
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  }
+};
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) { setUser(null); setLoading(false); return; }
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    try {
+      const r = await api.get('/auth/me');
+      setUser(r.data);
+      localStorage.setItem(USER_KEY, JSON.stringify(r.data));
+    } catch {
+      installToken(null);
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  // Global 401 handler — clear session and force re-login
+  useEffect(() => {
+    const id = api.interceptors.response.use(
+      (r) => r,
+      (err) => {
+        if (err?.response?.status === 401) {
+          // Don't bounce on the login call itself — let the caller see the error
+          const url = err?.config?.url || '';
+          if (!url.endsWith('/auth/login')) {
+            installToken(null);
+            setUser(null);
+          }
+        }
+        return Promise.reject(err);
+      },
+    );
+    return () => api.interceptors.response.eject(id);
+  }, []);
+
+  const login = async (username, password) => {
+    const r = await api.post('/auth/login', { username, password });
+    installToken(r.data.token);
+    setUser(r.data.user);
+    localStorage.setItem(USER_KEY, JSON.stringify(r.data.user));
+    return r.data.user;
+  };
+
+  const logout = () => {
+    installToken(null);
+    setUser(null);
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, loading, login, logout, refresh }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};

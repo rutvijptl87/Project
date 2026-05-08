@@ -3,6 +3,7 @@ import { api, API } from '../lib/api';
 import { Download, Database, ExternalLink, CheckCircle2, Upload } from 'lucide-react';
 import BackupCard from '../components/BackupCard';
 import RestoreCard from '../components/RestoreCard';
+import UserManagementCard from '../components/UserManagementCard';
 
 const SettingsPage = () => {
   const [stats, setStats] = useState(null);
@@ -53,6 +54,9 @@ const SettingsPage = () => {
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="settings-page">
       <h1 className="font-head text-3xl md:text-4xl font-extrabold mb-1" style={{ color: 'var(--cc-dark-green)' }}>Settings</h1>
       <p className="text-sm mb-6" style={{ color: 'var(--cc-text-muted)' }}>Manage your data, backups and imports.</p>
+
+      {/* Account & users */}
+      <UserManagementCard />
 
       {/* Google Drive Auto-Backup */}
       <BackupCard />

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Depends
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -28,7 +28,15 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 app = FastAPI(title="Creator Consultant API")
-api_router = APIRouter(prefix="/api")
+
+# Auth: /api/auth/* — public (login) + JWT-protected (others)
+import auth as auth_module  # noqa: E402
+auth_module.init(db)
+auth_public_router = APIRouter(prefix="/api")
+auth_public_router.include_router(auth_module.router)
+
+# Main API router — every endpoint here requires a valid JWT
+api_router = APIRouter(prefix="/api", dependencies=[Depends(auth_module.get_current_user)])
 
 
 # ---------------------- MODELS ----------------------
@@ -2448,7 +2456,8 @@ backup_module.init(
 )
 api_router.include_router(backup_module.router)
 
-# Include the router
+# Include the routers
+app.include_router(auth_public_router)
 app.include_router(api_router)
 
 app.add_middleware(
@@ -2515,6 +2524,12 @@ async def on_startup():
         await backup_module.start_scheduler()
     except Exception as e:
         logger.error(f"Failed to start backup scheduler: {e}")
+
+    # Seed/refresh the admin account from .env
+    try:
+        await auth_module.seed_admin()
+    except Exception as e:
+        logger.error(f"Admin seed failed: {e}")
 
 
 @app.on_event("shutdown")
