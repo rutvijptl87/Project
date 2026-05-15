@@ -7,6 +7,7 @@ Custom username + password JWT authentication for Creator Consultant.
 """
 import os
 import logging
+from contextvars import ContextVar
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -18,6 +19,21 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 JWT_ALGORITHM = "HS256"
+
+# Per-request current user — set by get_current_user, read by other modules
+# (e.g. server.py's activity logger) without having to thread it through args.
+current_user_var: ContextVar[Optional[dict]] = ContextVar("current_user", default=None)
+
+
+def get_current_user_safe() -> Optional[dict]:
+    """Return the current request's user dict if any (None for anonymous calls)."""
+    try:
+        u = current_user_var.get()
+    except LookupError:
+        return None
+    if u and u.get("id") and u["id"] != "anonymous":
+        return u
+    return None
 
 
 def _now() -> datetime:
@@ -78,6 +94,7 @@ class UserPublic(BaseModel):
     username: str
     name: str = ""
     role: str = "staff"
+    color: str = "#0F3D2A"
     created_at: Optional[str] = None
     last_login_at: Optional[str] = None
 
@@ -87,6 +104,7 @@ class UserCreateIn(BaseModel):
     password: str = Field(..., min_length=4, max_length=128)
     name: Optional[str] = ""
     role: str = "staff"  # admin | staff
+    color: Optional[str] = None
 
 
 class ChangePasswordIn(BaseModel):
@@ -110,7 +128,9 @@ _PUBLIC_PATHS = {
 async def get_current_user(request: Request) -> dict:
     if request.url.path in _PUBLIC_PATHS:
         # Synthetic anonymous user — endpoint can ignore this
-        return {"id": "anonymous", "username": "anonymous", "role": "anonymous"}
+        u = {"id": "anonymous", "username": "anonymous", "role": "anonymous"}
+        current_user_var.set(u)
+        return u
     auth = request.headers.get("Authorization") or ""
     token = auth[7:] if auth.startswith("Bearer ") else None
     if not token:
@@ -124,6 +144,7 @@ async def get_current_user(request: Request) -> dict:
     user = await _db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    current_user_var.set(user)
     return user
 
 
@@ -131,6 +152,18 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
     return user
+
+
+# Default color palette for auto-assignment
+_USER_COLORS = ["#0F3D2A", "#0E7490", "#7C3AED", "#D97706", "#BE185D", "#1D4ED8", "#15803D", "#92400E", "#0891B2", "#A21CAF"]
+
+
+def _color_for_username(username: str) -> str:
+    """Deterministic color from username so the same user always gets the same color."""
+    if not username:
+        return _USER_COLORS[0]
+    h = sum(ord(c) for c in username)
+    return _USER_COLORS[h % len(_USER_COLORS)]
 
 
 # ---------- Seed ----------
@@ -156,11 +189,29 @@ async def seed_admin():
             "password_hash": _hash_password(password),
             "name": "Owner",
             "role": "admin",
+            "color": _color_for_username(username),
             "created_at": _now().isoformat(),
             "last_login_at": None,
         })
         logger.info(f"Seeded admin user: {username}")
+    elif not existing.get("color"):
+        # Backfill color for users created before this update
+        await _db.users.update_one(
+            {"id": existing["id"]},
+            {"$set": {"color": _color_for_username(existing["username"])}},
+        )
     # Don't auto-update password if admin already exists — they may have changed it themselves
+
+
+# Backfill colors for any user missing one (idempotent — runs once at startup)
+async def backfill_user_colors():
+    if _db is None:
+        return
+    async for u in _db.users.find({"$or": [{"color": {"$exists": False}}, {"color": None}, {"color": ""}]}, {"id": 1, "username": 1}):
+        await _db.users.update_one(
+            {"id": u["id"]},
+            {"$set": {"color": _color_for_username(u.get("username", ""))}},
+        )
 
 
 # ---------- Router ----------
@@ -220,6 +271,14 @@ async def change_username(body: ChangeUsernameIn, user: dict = Depends(get_curre
     return {"ok": True, "username": new_u}
 
 
+@router.get("/users/directory")
+async def users_directory(_: dict = Depends(get_current_user)):
+    """Lightweight list of all users (id, username, name, color) — used for showing
+    who edited what. Available to any logged-in user (not just admin)."""
+    items = await _db.users.find({}, {"_id": 0, "id": 1, "username": 1, "name": 1, "color": 1, "role": 1}).to_list(500)
+    return items
+
+
 @router.get("/users")
 async def list_users(_: dict = Depends(require_admin)):
     items = await _db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", 1).to_list(500)
@@ -239,6 +298,7 @@ async def create_user(body: UserCreateIn, _: dict = Depends(require_admin)):
         "password_hash": _hash_password(body.password),
         "name": body.name or "",
         "role": body.role,
+        "color": body.color or _color_for_username(username),
         "created_at": _now().isoformat(),
         "last_login_at": None,
     }
@@ -252,6 +312,7 @@ class UserUpdateIn(BaseModel):
     name: Optional[str] = None
     role: Optional[str] = None
     password: Optional[str] = None  # admin can reset
+    color: Optional[str] = None
 
 
 @router.put("/users/{user_id}")
@@ -273,6 +334,8 @@ async def update_user(user_id: str, body: UserUpdateIn, current: dict = Depends(
         update["role"] = body.role
     if body.password:
         update["password_hash"] = _hash_password(body.password)
+    if body.color is not None and body.color.strip():
+        update["color"] = body.color.strip()
     if update:
         await _db.users.update_one({"id": user_id}, {"$set": update})
     return {"ok": True}

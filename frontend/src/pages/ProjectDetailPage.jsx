@@ -4,6 +4,8 @@ import { api, API } from '../lib/api';
 import { useUndo } from '../lib/undo';
 import { formatINR, formatDate } from '../lib/format';
 import { downloadFile } from '../lib/download';
+import { useUserDirectory } from '../lib/userDirectory';
+import InitialsBadge from '../components/InitialsBadge';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import {
   ArrowLeft, Pencil, Trash2, FileText, Download, Archive, Folder, Copy,
@@ -24,6 +26,7 @@ const ProjectDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { schedule } = useUndo();
+  const { byUsername } = useUserDirectory();
   const [project, setProject] = useState(null);
   const [payments, setPayments] = useState([]);
   const [revisions, setRevisions] = useState([]);
@@ -170,6 +173,21 @@ const ProjectDetailPage = () => {
             {project.site_location && <><span>·</span><span className="inline-flex items-center gap-1"><MapPin size={12}/> {project.site_location}</span></>}
             <span>·</span>
             <span>Created {formatDate(project.created_at)}</span>
+            {project.last_edited_by_username && (
+              <>
+                <span>·</span>
+                <span className="inline-flex items-center gap-1.5" data-testid="detail-last-edited-by">
+                  <span>Last edited by</span>
+                  <InitialsBadge
+                    username={project.last_edited_by_username}
+                    color={byUsername(project.last_edited_by_username)?.color}
+                    size="xs"
+                  />
+                  <span className="font-mono-data text-xs">{project.last_edited_by_username}</span>
+                  {project.last_edited_at && <span>· {formatDate(project.last_edited_at)}</span>}
+                </span>
+              </>
+            )}
             <span className={`badge ml-2 ${project.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`}>{project.status}</span>
           </div>
         </div>
@@ -402,8 +420,17 @@ const ProjectDetailPage = () => {
         <div className="p-5 space-y-3" data-testid="activity-list">
           {activity.length === 0 ? (
             <div className="text-center py-4 text-sm" style={{ color: 'var(--cc-text-muted)' }}>No activity yet.</div>
-          ) : activity.map((a) => (
+          ) : activity.map((a) => {
+            const u = byUsername(a.username);
+            return (
             <div key={a.id} className="flex items-start gap-3" data-testid={`activity-${a.id}`}>
+              <InitialsBadge
+                username={a.username}
+                color={u?.color}
+                title={u ? `${u.username}${u.name ? ` (${u.name})` : ''} — ${a.action}` : (a.username || 'system')}
+                size="sm"
+                testId={`activity-user-${a.id}`}
+              />
               <span className="text-xs font-bold px-2 py-1 rounded whitespace-nowrap" style={actionStyle(a.action)}>
                 {a.action}
               </span>
@@ -412,7 +439,8 @@ const ProjectDetailPage = () => {
                 <div className="text-xs font-mono-data mt-0.5" style={{ color: 'var(--cc-text-muted)' }}>{formatDate(a.created_at)}</div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 

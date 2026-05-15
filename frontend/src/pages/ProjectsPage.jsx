@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { formatINR } from '../lib/format';
 import { downloadFile } from '../lib/download';
+import { useUserDirectory } from '../lib/userDirectory';
+import InitialsBadge from '../components/InitialsBadge';
 import DashboardKPI from '../components/DashboardKPI';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import { useUndo } from '../lib/undo';
@@ -25,6 +27,7 @@ const SORTABLE_COLUMNS = {
 const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
   const navigate = useNavigate();
   const { schedule } = useUndo();
+  const { byUsername } = useUserDirectory();
   const [projects, setProjects] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -235,6 +238,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
                 <th onClick={() => toggleSort('received_amount')} className="cursor-pointer select-none text-right" data-testid="sort-received_amount">Received (₹)<SortIcon col="received_amount"/></th>
                 <th onClick={() => toggleSort('outstanding_amount')} className="cursor-pointer select-none text-right" data-testid="sort-outstanding_amount">Outstanding (₹)<SortIcon col="outstanding_amount"/></th>
                 <th onClick={() => toggleSort('status')} className="cursor-pointer select-none" data-testid="sort-status">Status<SortIcon col="status"/></th>
+                <th>Edited By</th>
                 <th className="text-right">Actions</th>
               </tr>
             </thead>

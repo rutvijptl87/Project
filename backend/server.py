@@ -51,6 +51,9 @@ class ClientIn(BaseModel):
 class Client(ClientIn):
     model_config = ConfigDict(extra="ignore")
     id: str
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
     created_at: str
 
 
@@ -64,6 +67,9 @@ class ArchitectIn(BaseModel):
 class Architect(ArchitectIn):
     model_config = ConfigDict(extra="ignore")
     id: str
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
     created_at: str
 
 
@@ -102,6 +108,10 @@ class Project(BaseModel):
     offer_code: Optional[str] = ""
     offer_type: Optional[str] = ""
     offer_file_path: Optional[str] = ""
+    # Edit tracking
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
     created_at: str
 
 
@@ -184,6 +194,9 @@ class Payment(BaseModel):
     amount: float
     payment_date: str
     notes: str = ""
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
     created_at: str
 
 
@@ -300,6 +313,7 @@ async def create_client(data: ClientIn):
     doc = data.model_dump()
     doc["id"] = _new_id()
     doc["created_at"] = _now()
+    _stamp_edit(doc)
     await db.clients.insert_one(doc.copy())
     doc.pop("_id", None)
     return doc
@@ -307,9 +321,11 @@ async def create_client(data: ClientIn):
 
 @api_router.put("/clients/{client_id}", response_model=Client)
 async def update_client(client_id: str, data: ClientIn):
+    update = data.model_dump()
+    _stamp_edit(update)
     result = await db.clients.find_one_and_update(
         {"id": client_id},
-        {"$set": data.model_dump()},
+        {"$set": update},
         return_document=True,
         projection={"_id": 0},
     )
@@ -398,6 +414,7 @@ async def create_architect(data: ArchitectIn):
     doc = data.model_dump()
     doc["id"] = _new_id()
     doc["created_at"] = _now()
+    _stamp_edit(doc)
     await db.architects.insert_one(doc.copy())
     doc.pop("_id", None)
     return doc
@@ -405,9 +422,11 @@ async def create_architect(data: ArchitectIn):
 
 @api_router.put("/architects/{architect_id}", response_model=Architect)
 async def update_architect(architect_id: str, data: ArchitectIn):
+    update = data.model_dump()
+    _stamp_edit(update)
     result = await db.architects.find_one_and_update(
         {"id": architect_id},
-        {"$set": data.model_dump()},
+        {"$set": update},
         return_document=True,
         projection={"_id": 0},
     )
@@ -469,6 +488,7 @@ async def create_project(data: ProjectIn):
     doc["project_code"] = await _next_project_code()
     doc["received_amount"] = 0.0
     doc["created_at"] = _now()
+    _stamp_edit(doc)
     await _enrich_project(doc)
     await db.projects.insert_one(doc.copy())
     await _log_activity(
@@ -488,6 +508,7 @@ async def update_project(project_id: str, data: ProjectIn):
     old_quoted = existing.get("quoted_amount", 0)
     update = data.model_dump()
     existing.update(update)
+    _stamp_edit(existing)
     await _enrich_project(existing)
     await db.projects.update_one({"id": project_id}, {"$set": existing})
     await _log_activity(
@@ -553,6 +574,7 @@ async def create_payment(data: PaymentIn):
         "notes": data.notes or "",
         "created_at": _now(),
     }
+    _stamp_edit(doc)
     await db.payments.insert_one(doc.copy())
     # Update project's received amount
     new_received = float(project.get("received_amount", 0)) + float(data.amount)
@@ -655,14 +677,40 @@ async def revise_quote(project_id: str, data: QuoteRevisionIn):
 
 
 # ---------------------- ACTIVITY LOG ----------------------
+def _current_user_stamp() -> dict:
+    """Returns user_id + username from the current request, or empty placeholders for system."""
+    try:
+        u = auth_module.get_current_user_safe()
+    except Exception:
+        u = None
+    if u and u.get("id") and u["id"] != "anonymous":
+        return {
+            "user_id": u["id"],
+            "username": u.get("username", ""),
+        }
+    return {"user_id": None, "username": "system"}
+
+
+def _stamp_edit(doc: dict) -> dict:
+    """Add last_edited_by + last_edited_at to a document. Mutates and returns it."""
+    s = _current_user_stamp()
+    doc["last_edited_by_user_id"] = s["user_id"]
+    doc["last_edited_by_username"] = s["username"]
+    doc["last_edited_at"] = _now().isoformat() if hasattr(_now(), "isoformat") else _now()
+    return doc
+
+
 async def _log_activity(project_id: str, project_code: str, action: str, detail: str = ""):
     try:
+        s = _current_user_stamp()
         await db.activity_log.insert_one({
             "id": _new_id(),
             "project_id": project_id,
             "project_code": project_code,
             "action": action,
             "detail": detail,
+            "user_id": s["user_id"],
+            "username": s["username"],
             "created_at": _now(),
         })
     except Exception as e:
@@ -1095,6 +1143,9 @@ class Audit(BaseModel):
     status: str = "Outstanding"
     notes: str = ""
     archived: bool = False
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
     created_at: str
 
 
@@ -1146,6 +1197,7 @@ async def _enrich_audit(a: dict) -> dict:
 
 async def _log_audit_activity(audit_id: str, audit_code: str, action: str, detail: str = ""):
     try:
+        s = _current_user_stamp()
         await db.activity_log.insert_one({
             "id": _new_id(),
             "audit_id": audit_id,
@@ -1154,6 +1206,8 @@ async def _log_audit_activity(audit_id: str, audit_code: str, action: str, detai
             "project_code": "",
             "action": action,
             "detail": detail,
+            "user_id": s["user_id"],
+            "username": s["username"],
             "created_at": _now(),
         })
     except Exception as e:
@@ -1196,6 +1250,7 @@ async def create_audit(data: AuditIn):
     doc["received_amount"] = 0.0
     doc["archived"] = False
     doc["created_at"] = _now()
+    _stamp_edit(doc)
     await _enrich_audit(doc)
     await db.audits.insert_one(doc.copy())
     await _log_audit_activity(
@@ -1219,6 +1274,7 @@ async def update_audit(audit_id: str, data: AuditIn):
     if not (update.get("report_id") or "").strip():
         update["report_id"] = existing.get("report_id", "")
     existing.update(update)
+    _stamp_edit(existing)
     await _enrich_audit(existing)
     await db.audits.update_one({"id": audit_id}, {"$set": existing})
     await _log_audit_activity(
@@ -1275,6 +1331,9 @@ class AuditPayment(BaseModel):
     amount: float
     payment_date: str
     notes: str = ""
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
     created_at: str
 
 
@@ -1301,6 +1360,7 @@ async def create_audit_payment(data: AuditPaymentIn):
         "notes": data.notes or "",
         "created_at": _now(),
     }
+    _stamp_edit(doc)
     await db.audit_payments.insert_one(doc.copy())
     new_received = float(audit.get("received_amount", 0)) + float(data.amount)
     audit["received_amount"] = new_received
@@ -2528,6 +2588,7 @@ async def on_startup():
     # Seed/refresh the admin account from .env
     try:
         await auth_module.seed_admin()
+        await auth_module.backfill_user_colors()
     except Exception as e:
         logger.error(f"Admin seed failed: {e}")
 
