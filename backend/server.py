@@ -1291,6 +1291,7 @@ async def delete_audit(audit_id: str):
     if res.deleted_count == 0:
         raise HTTPException(404, "Audit not found")
     await db.audit_payments.delete_many({"audit_id": audit_id})
+    await db.audit_quote_revisions.delete_many({"audit_id": audit_id})
     await db.activity_log.delete_many({"audit_id": audit_id})
     return {"ok": True}
 
@@ -1476,6 +1477,130 @@ async def audit_payment_receipt_pdf(payment_id: str):
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ---- Audit quote revisions ----
+class AuditQuoteRevisionIn(BaseModel):
+    new_amount: float
+    reason: Optional[str] = ""
+
+
+@api_router.get("/audits/{audit_id}/revisions")
+async def list_audit_revisions(audit_id: str):
+    items = await db.audit_quote_revisions.find({"audit_id": audit_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return items
+
+
+@api_router.post("/audits/{audit_id}/revise-quote")
+async def revise_audit_quote(audit_id: str, data: AuditQuoteRevisionIn):
+    audit = await db.audits.find_one({"id": audit_id}, {"_id": 0})
+    if not audit:
+        raise HTTPException(404, "Audit not found")
+    old_amount = float(audit.get("total_amount", 0) or 0)
+    new_amount = float(data.new_amount)
+    if new_amount < 0:
+        raise HTTPException(400, "Amount must be >= 0")
+    rev = {
+        "id": _new_id(),
+        "audit_id": audit_id,
+        "audit_code": audit.get("audit_code", ""),
+        "old_amount": old_amount,
+        "new_amount": new_amount,
+        "reason": data.reason or "",
+        "created_at": _now(),
+    }
+    await db.audit_quote_revisions.insert_one(rev.copy())
+    audit["total_amount"] = new_amount
+    await _enrich_audit(audit)
+    await db.audits.update_one(
+        {"id": audit_id},
+        {"$set": {
+            "total_amount": new_amount,
+            "outstanding_amount": audit["outstanding_amount"],
+            "status": audit["status"],
+        }},
+    )
+    await _log_audit_activity(
+        audit_id, audit.get("audit_code", ""),
+        "QUOTE REVISED",
+        f"Old: Rs. {old_amount:,.2f} -> New: Rs. {new_amount:,.2f} | Reason: {data.reason or '-'}",
+    )
+    rev.pop("_id", None)
+    return rev
+
+
+# ---- Per-audit Excel export ----
+@api_router.get("/audits/{audit_id}/export")
+async def export_audit_excel(audit_id: str):
+    audit = await db.audits.find_one({"id": audit_id}, {"_id": 0})
+    if not audit:
+        raise HTTPException(404, "Audit not found")
+    await _enrich_audit(audit)
+    payments = await db.audit_payments.find({"audit_id": audit_id}, {"_id": 0}).sort("payment_date", 1).to_list(5000)
+    revisions = await db.audit_quote_revisions.find({"audit_id": audit_id}, {"_id": 0}).sort("created_at", 1).to_list(5000)
+    activity = await db.activity_log.find({"audit_id": audit_id}, {"_id": 0}).sort("created_at", 1).to_list(5000)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Audit Info"
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="061A11")
+
+    info_rows = [
+        ("Audit ID", audit.get("audit_code", "")),
+        ("Audit Offer", audit.get("audit_offer", "")),
+        ("Report ID", audit.get("report_id", "")),
+        ("Client", audit.get("client_name", "")),
+        ("Current Total (INR)", audit.get("total_amount", 0)),
+        ("Received (INR)", audit.get("received_amount", 0)),
+        ("Outstanding (INR)", audit.get("outstanding_amount", 0)),
+        ("Status", audit.get("status", "")),
+        ("Notes", audit.get("notes", "")),
+        ("Created", audit.get("created_at", "")),
+    ]
+    for label, value in info_rows:
+        ws.append([label, value])
+    for r in range(1, len(info_rows) + 1):
+        ws.cell(row=r, column=1).font = Font(bold=True)
+    ws.column_dimensions["A"].width = 22
+    ws.column_dimensions["B"].width = 50
+
+    ws2 = wb.create_sheet("Payments")
+    ws2.append(["#", "Date", "Amount (INR)", "Notes"])
+    for col in range(1, 5):
+        c = ws2.cell(row=1, column=col)
+        c.font = header_font
+        c.fill = header_fill
+    for i, p in enumerate(payments, 1):
+        ws2.append([i, p.get("payment_date", ""), float(p.get("amount", 0)), p.get("notes", "")])
+
+    ws3 = wb.create_sheet("Quote Revisions")
+    ws3.append(["#", "Old Amount (INR)", "New Amount (INR)", "Reason", "Date"])
+    for col in range(1, 6):
+        c = ws3.cell(row=1, column=col)
+        c.font = header_font
+        c.fill = header_fill
+    for i, r in enumerate(revisions, 1):
+        ws3.append([i, float(r.get("old_amount", 0)), float(r.get("new_amount", 0)), r.get("reason", ""), r.get("created_at", "")])
+
+    ws4 = wb.create_sheet("Activity")
+    ws4.append(["#", "Action", "Detail", "Date"])
+    for col in range(1, 5):
+        c = ws4.cell(row=1, column=col)
+        c.font = header_font
+        c.fill = header_fill
+    for i, a in enumerate(activity, 1):
+        ws4.append([i, a.get("action", ""), a.get("detail", ""), a.get("created_at", "")])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"audit_{audit.get('audit_code', 'export')}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
@@ -2510,7 +2635,7 @@ backup_module.init(
     db,
     collections_to_backup=[
         "projects", "clients", "architects", "payments",
-        "audits", "audit_payments",
+        "audits", "audit_payments", "audit_quote_revisions",
         "offers", "activity_log", "quote_revisions", "counters",
     ],
 )
