@@ -255,7 +255,7 @@ const AuditsPage = () => {
                 </td></tr>
               ) : sortedAudits.map((a) => (
                 <tr key={a.id} data-testid={`audit-row-${a.audit_code}`}>
-                  <td className="font-mono-data text-xs font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{a.audit_code}</td>
+                  <td className="font-mono-data text-xs font-semibold" style={{ color: 'var(--cc-dark-green)' }}><Link to={`/audits/${a.id}`} className="link-underline" data-testid={`audit-code-link-${a.audit_code}`}>{a.audit_code}</Link></td>
                   <td className="font-medium">{a.audit_offer || '—'}</td>
                   <td className="font-mono-data text-xs">{a.report_id || '—'}</td>
                   <td>{a.client_name ? <Link to={`/clients/${a.client_id}`} className="link-underline">{a.client_name}</Link> : <span className="text-gray-400">—</span>}</td>
@@ -269,6 +269,7 @@ const AuditsPage = () => {
                   <td className="text-xs max-w-[160px]"><div className="line-clamp-2">{a.notes || '—'}</div></td>
                   <td>
                     <div className="flex gap-1 justify-end flex-wrap">
+                      <Link to={`/audits/${a.id}`} className="btn btn-outline btn-sm" title="View details" data-testid={`btn-view-audit-${a.audit_code}`}><Eye size={13}/></Link>
                       <button onClick={() => downloadInvoice(a.id)} className="btn btn-outline btn-sm" title="Download Invoice PDF" data-testid={`btn-invoice-audit-${a.audit_code}`}><FileText size={13}/></button>
                       {!a.archived && (
                         <button onClick={() => openPay(a.id)} className="btn btn-accent btn-sm" title="Record Payment" data-testid={`btn-pay-audit-${a.audit_code}`}><IndianRupee size={13}/> Pay</button>

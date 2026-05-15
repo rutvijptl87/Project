@@ -9,6 +9,7 @@ import ArchitectsPage from './pages/ArchitectsPage';
 import ArchitectDetailPage from './pages/ArchitectDetailPage';
 import ClientDetailPage from './pages/ClientDetailPage';
 import AuditsPage from './pages/AuditsPage';
+import AuditDetailPage from './pages/AuditDetailPage';
 import ProjectFormPage from './pages/ProjectFormPage';
 import ProjectDetailPage from './pages/ProjectDetailPage';
 import SettingsPage from './pages/SettingsPage';
@@ -44,6 +45,7 @@ const ProtectedApp = () => {
                 <Routes>
                   <Route path="/" element={<ProjectsPage showPayModal={showPayModal} setShowPayModal={setShowPayModal} />} />
                   <Route path="/audits" element={<AuditsPage />} />
+                  <Route path="/audits/:id" element={<AuditDetailPage />} />
                   <Route path="/clients" element={<ClientsPage />} />
                   <Route path="/clients/:id" element={<ClientDetailPage />} />
                   <Route path="/architects" element={<ArchitectsPage />} />
