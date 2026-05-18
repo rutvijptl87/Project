@@ -6,6 +6,7 @@ import { downloadFile } from '../lib/download';
 import { useUserDirectory } from '../lib/userDirectory';
 import InitialsBadge from '../components/InitialsBadge';
 import DashboardKPI from '../components/DashboardKPI';
+import MonthlyRevenueChart from '../components/MonthlyRevenueChart';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import { useUndo } from '../lib/undo';
 import {
@@ -206,6 +207,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
       </div>
 
       {!showArchived && <DashboardKPI stats={stats} />}
+      {!showArchived && <MonthlyRevenueChart />}
 
       <form onSubmit={handleSearch} className="card p-3 mb-4 flex gap-2" data-testid="search-form">
         <div className="flex-1 relative">

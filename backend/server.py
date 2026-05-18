@@ -2164,6 +2164,54 @@ async def dashboard_stats():
     }
 
 
+@api_router.get("/dashboard/monthly-revenue")
+async def dashboard_monthly_revenue(months: int = 12):
+    """Aggregate received payments (projects + audits) per month for the last `months` months."""
+    months = max(1, min(int(months or 12), 36))
+    from collections import OrderedDict
+    now = datetime.now(timezone.utc)
+    # Build 'YYYY-MM' buckets in chronological order
+    buckets: "OrderedDict[str, dict]" = OrderedDict()
+    year, month = now.year, now.month
+    keys = []
+    for _ in range(months):
+        keys.append(f"{year:04d}-{month:02d}")
+        month -= 1
+        if month == 0:
+            month = 12
+            year -= 1
+    for k in reversed(keys):
+        buckets[k] = {"month": k, "project_amount": 0.0, "audit_amount": 0.0, "total": 0.0, "count": 0}
+
+    def add(date_str: Optional[str], amount: float, kind: str):
+        if not date_str:
+            return
+        try:
+            # date_str is ISO string with tz "Z" or "+00:00"
+            d = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        except Exception:
+            return
+        k = f"{d.year:04d}-{d.month:02d}"
+        if k not in buckets:
+            return
+        b = buckets[k]
+        b[kind] += float(amount or 0)
+        b["total"] = round(b["project_amount"] + b["audit_amount"], 2)
+        b["count"] += 1
+
+    project_pays = await db.payments.find({}, {"_id": 0, "amount": 1, "payment_date": 1}).to_list(100000)
+    for p in project_pays:
+        add(p.get("payment_date"), p.get("amount", 0), "project_amount")
+
+    audit_pays = await db.audit_payments.find({}, {"_id": 0, "amount": 1, "payment_date": 1}).to_list(100000)
+    for p in audit_pays:
+        add(p.get("payment_date"), p.get("amount", 0), "audit_amount")
+
+    rows = list(buckets.values())
+    return {"months": rows, "total_received": round(sum(r["total"] for r in rows), 2)}
+
+
+
 # ---------------------- EXPORT / IMPORT ----------------------
 @api_router.get("/export/excel")
 async def export_excel():

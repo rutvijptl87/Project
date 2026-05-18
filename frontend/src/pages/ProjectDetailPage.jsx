@@ -9,7 +9,7 @@ import InitialsBadge from '../components/InitialsBadge';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import {
   ArrowLeft, Pencil, Trash2, FileText, Download, Archive, Folder, Copy,
-  Plus, MapPin, CreditCard, ClipboardList, Clock, Phone, Mail, StickyNote, Save, X,
+  Plus, MapPin, CreditCard, ClipboardList, Clock, Phone, Mail, MessageCircle, StickyNote, Save, X,
 } from 'lucide-react';
 
 const actionStyle = (action) => {
@@ -214,9 +214,20 @@ const ProjectDetailPage = () => {
             <div>
               <div className="text-[10px] uppercase tracking-widest mb-0.5" style={{ color: 'var(--cc-text-muted)' }}>Client</div>
               <div className="font-semibold">{project.client_name}</div>
-              <div className="flex gap-3 mt-1">
-                {project.client_phone && <a href={`tel:${project.client_phone}`} className="text-xs inline-flex items-center gap-1 link-underline"><Phone size={11}/> {project.client_phone}</a>}
-                {project.client_email && <a href={`mailto:${project.client_email}`} className="text-xs inline-flex items-center gap-1 link-underline"><Mail size={11}/> {project.client_email}</a>}
+              <div className="flex gap-3 mt-1 flex-wrap">
+                {project.client_phone && <a href={`tel:${project.client_phone}`} className="text-xs inline-flex items-center gap-1 link-underline" data-testid="detail-client-call"><Phone size={11}/> {project.client_phone}</a>}
+                {project.client_email && <a href={`mailto:${project.client_email}`} className="text-xs inline-flex items-center gap-1 link-underline" data-testid="detail-client-email"><Mail size={11}/> {project.client_email}</a>}
+                {project.client_phone && (
+                  <a
+                    href={`https://wa.me/${(project.client_phone || '').replace(/\D/g, '')}?text=${encodeURIComponent(`Hi ${project.client_name}, regarding ${project.name} (${project.project_code}) — outstanding is ${formatINR(project.outstanding_amount, { withSymbol: false })}.`)}`}
+                    target="_blank" rel="noreferrer"
+                    className="text-xs inline-flex items-center gap-1 link-underline"
+                    data-testid="detail-client-wa"
+                    style={{ color: '#15803d' }}
+                  >
+                    <MessageCircle size={11}/> WhatsApp
+                  </a>
+                )}
               </div>
             </div>
           )}
@@ -224,9 +235,20 @@ const ProjectDetailPage = () => {
             <div>
               <div className="text-[10px] uppercase tracking-widest mb-0.5" style={{ color: 'var(--cc-text-muted)' }}>Architect</div>
               <div className="font-semibold">{project.architect_name}</div>
-              <div className="flex gap-3 mt-1">
-                {project.architect_phone && <a href={`tel:${project.architect_phone}`} className="text-xs inline-flex items-center gap-1 link-underline"><Phone size={11}/> {project.architect_phone}</a>}
-                {project.architect_email && <a href={`mailto:${project.architect_email}`} className="text-xs inline-flex items-center gap-1 link-underline"><Mail size={11}/> {project.architect_email}</a>}
+              <div className="flex gap-3 mt-1 flex-wrap">
+                {project.architect_phone && <a href={`tel:${project.architect_phone}`} className="text-xs inline-flex items-center gap-1 link-underline" data-testid="detail-architect-call"><Phone size={11}/> {project.architect_phone}</a>}
+                {project.architect_email && <a href={`mailto:${project.architect_email}`} className="text-xs inline-flex items-center gap-1 link-underline" data-testid="detail-architect-email"><Mail size={11}/> {project.architect_email}</a>}
+                {project.architect_phone && (
+                  <a
+                    href={`https://wa.me/${(project.architect_phone || '').replace(/\D/g, '')}?text=${encodeURIComponent(`Hi ${project.architect_name}, regarding ${project.name} (${project.project_code}) — `)}`}
+                    target="_blank" rel="noreferrer"
+                    className="text-xs inline-flex items-center gap-1 link-underline"
+                    data-testid="detail-architect-wa"
+                    style={{ color: '#15803d' }}
+                  >
+                    <MessageCircle size={11}/> WhatsApp
+                  </a>
+                )}
               </div>
             </div>
           )}
