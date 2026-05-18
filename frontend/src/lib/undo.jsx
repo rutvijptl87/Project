@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Undo2, X } from 'lucide-react';
 
 const UndoContext = createContext(null);
@@ -75,8 +75,13 @@ export const UndoProvider = ({ children }) => {
     };
   }, []);
 
+  const contextValue = useMemo(
+    () => ({ schedule, undo, commitNow }),
+    [schedule, undo, commitNow],
+  );
+
   return (
-    <UndoContext.Provider value={{ schedule, undo, commitNow }}>
+    <UndoContext.Provider value={contextValue}>
       {children}
       <UndoBar items={items} onUndo={undo} onDismiss={commitNow} />
     </UndoContext.Provider>

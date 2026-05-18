@@ -41,6 +41,15 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
+const CHART_MARGIN = { top: 10, right: 10, left: 0, bottom: 10 };
+const AXIS_TICK = { fontSize: 11, fill: '#6B7280' };
+const AXIS_LINE = { stroke: '#E5E7EB' };
+const TOOLTIP_CURSOR = { fill: 'rgba(16, 185, 129, 0.08)' };
+const LEGEND_STYLE = { fontSize: 11 };
+const BAR_RADIUS_FLAT = [0, 0, 0, 0];
+const BAR_RADIUS_TOP = [4, 4, 0, 0];
+const CONTAINER_STYLE = { width: '100%', height: 280 };
+
 const MonthlyRevenueChart = () => {
   const [data, setData] = useState([]);
   const [total, setTotal] = useState(0);
@@ -97,7 +106,7 @@ const MonthlyRevenueChart = () => {
         </div>
       </div>
 
-      <div style={{ width: '100%', height: 280 }} data-testid="monthly-revenue-chart">
+      <div style={CONTAINER_STYLE} data-testid="monthly-revenue-chart">
         {loading ? (
           <div className="h-full flex items-center justify-center text-sm" style={{ color: 'var(--cc-text-muted)' }}>Loading…</div>
         ) : !hasAny ? (
@@ -106,14 +115,14 @@ const MonthlyRevenueChart = () => {
           </div>
         ) : (
           <ResponsiveContainer>
-            <BarChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
+            <BarChart data={data} margin={CHART_MARGIN}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={{ stroke: '#E5E7EB' }} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={{ stroke: '#E5E7EB' }} tickLine={false} tickFormatter={compactINR} width={70} />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(16, 185, 129, 0.08)' }} />
-              <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" />
-              <Bar dataKey="project_amount" stackId="a" name="Projects" fill="#10B981" radius={[0, 0, 0, 0]} />
-              <Bar dataKey="audit_amount" stackId="a" name="Audits" fill="#0A2E1F" radius={[4, 4, 0, 0]} />
+              <XAxis dataKey="label" tick={AXIS_TICK} axisLine={AXIS_LINE} tickLine={false} />
+              <YAxis tick={AXIS_TICK} axisLine={AXIS_LINE} tickLine={false} tickFormatter={compactINR} width={70} />
+              <Tooltip content={<CustomTooltip />} cursor={TOOLTIP_CURSOR} />
+              <Legend wrapperStyle={LEGEND_STYLE} iconType="circle" />
+              <Bar dataKey="project_amount" stackId="a" name="Projects" fill="#10B981" radius={BAR_RADIUS_FLAT} />
+              <Bar dataKey="audit_amount" stackId="a" name="Audits" fill="#0A2E1F" radius={BAR_RADIUS_TOP} />
             </BarChart>
           </ResponsiveContainer>
         )}

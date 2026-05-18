@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
 import { api } from './api';
 
 const TOKEN_KEY = 'cc_auth_token';
@@ -66,21 +66,26 @@ export const AuthProvider = ({ children }) => {
     return () => api.interceptors.response.eject(id);
   }, []);
 
-  const login = async (username, password) => {
+  const login = useCallback(async (username, password) => {
     const r = await api.post('/auth/login', { username, password });
     installToken(r.data.token);
     setUser(r.data.user);
     localStorage.setItem(USER_KEY, JSON.stringify(r.data.user));
     return r.data.user;
-  };
+  }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     installToken(null);
     setUser(null);
-  };
+  }, []);
+
+  const value = useMemo(
+    () => ({ user, loading, login, logout, refresh }),
+    [user, loading, login, logout, refresh],
+  );
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, refresh }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
