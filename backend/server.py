@@ -200,6 +200,62 @@ class Payment(BaseModel):
     created_at: str
 
 
+class DocumentTypeIn(BaseModel):
+    name: str
+    prefix: str  # e.g. "QT", "STAB" — used inside CC/{prefix}/{YYYY}/{counter:03}
+    description: Optional[str] = ""
+    year_reset: bool = True
+
+
+class DocumentType(DocumentTypeIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    counter: int = 0
+    last_year: int = 0
+    created_at: str
+
+
+class DocumentIn(BaseModel):
+    doc_type_id: str
+    doc_number: Optional[str] = ""  # auto-generated if blank
+    document_date: Optional[str] = None  # ISO date string
+    client_id: Optional[str] = None
+    plot_place: Optional[str] = ""
+    phase: Optional[str] = ""
+    number_field: Optional[str] = ""  # the "Number" field on the form (free-text)
+    remark: Optional[str] = ""
+    contact_person: Optional[str] = ""
+    mobile: Optional[str] = ""
+    other_comments: Optional[str] = ""
+    update_date: Optional[str] = None  # ISO date string
+
+
+class Document(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    doc_type_id: str
+    doc_type_name: str
+    doc_number: str
+    document_date: Optional[str] = None
+    client_id: Optional[str] = None
+    client_name: Optional[str] = ""
+    plot_place: str = ""
+    phase: str = ""
+    number_field: str = ""
+    remark: str = ""
+    contact_person: str = ""
+    mobile: str = ""
+    other_comments: str = ""
+    update_date: Optional[str] = None
+    archived: bool = False
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
+    created_at: str
+
+
+
+
 # ---------------------- HELPERS ----------------------
 import uuid
 
@@ -2624,6 +2680,375 @@ async def seed_demo():
     return {"ok": True, "seeded": True}
 
 
+# ---------------------- DOCUMENTS MODULE ----------------------
+
+DEFAULT_DOCUMENT_TYPES = [
+    ("Audit Offer", "AUD-OFR"),
+    ("Quotation", "QT"),
+    ("PMC Quotation", "PMC-QT"),
+    ("Inspection Report Letter", "INSP"),
+    ("Acceptance Letter", "ACC"),
+    ("Demolition Letter", "DEM"),
+    ("Supervision Certificate", "SUP"),
+    ("Stability Certificate", "STAB"),
+    ("To Whomsoever It May Concern", "TWMC"),
+    ("Earthquake Certificate", "EQ"),
+    ("Commencement Certificate", "COM"),
+    ("MCGM Certificate", "MCGM"),
+    ("Plinth Completion Certificate", "PLINTH"),
+    ("Column Location Certificate", "COL"),
+    ("Audit Report", "AUD-RPT"),
+    ("RERA Certificate", "RERA"),
+    ("Lift Certificate", "LIFT"),
+    ("General Certificate", "GEN"),
+    ("Scaffolding Certificate", "SCAF"),
+    ("Declaration Certificate", "DEC"),
+]
+
+
+async def _seed_document_types_if_missing():
+    if await db.document_types.count_documents({}) > 0:
+        return
+    now = _now()
+    docs = []
+    for name, prefix in DEFAULT_DOCUMENT_TYPES:
+        docs.append({
+            "id": _new_id(),
+            "name": name,
+            "prefix": prefix,
+            "description": "",
+            "year_reset": True,
+            "counter": 0,
+            "last_year": 0,
+            "created_at": now,
+        })
+    if docs:
+        await db.document_types.insert_many(docs)
+
+
+async def _next_document_number(doc_type: dict) -> str:
+    """Generate `CC/{prefix}/{YYYY}/{counter:03}` and atomically increment counter on the type."""
+    year = datetime.now(timezone.utc).year
+    if doc_type.get("year_reset", True) and (doc_type.get("last_year") or 0) != year:
+        await db.document_types.update_one(
+            {"id": doc_type["id"]},
+            {"$set": {"counter": 1, "last_year": year}},
+        )
+        counter = 1
+    else:
+        updated = await db.document_types.find_one_and_update(
+            {"id": doc_type["id"]},
+            {"$inc": {"counter": 1}, "$set": {"last_year": year}},
+            return_document=True,
+        )
+        counter = (updated or {}).get("counter", 1)
+    prefix = (doc_type.get("prefix") or "DOC").strip()
+    return f"CC/{prefix}/{year}/{counter:03d}"
+
+
+@api_router.get("/document-types", response_model=List[DocumentType])
+async def list_document_types():
+    rows = await db.document_types.find({}, {"_id": 0}).sort("name", 1).to_list(1000)
+    return rows
+
+
+@api_router.post("/document-types", response_model=DocumentType)
+async def create_document_type(data: DocumentTypeIn):
+    prefix = (data.prefix or "").strip().upper().replace(" ", "-")
+    if not prefix:
+        raise HTTPException(400, "Prefix is required")
+    if await db.document_types.find_one({"prefix": prefix}):
+        raise HTTPException(400, f"A document type with prefix '{prefix}' already exists")
+    doc = {
+        "id": _new_id(),
+        "name": data.name.strip(),
+        "prefix": prefix,
+        "description": data.description or "",
+        "year_reset": bool(data.year_reset),
+        "counter": 0,
+        "last_year": 0,
+        "created_at": _now(),
+    }
+    await db.document_types.insert_one(doc.copy())
+    return doc
+
+
+@api_router.put("/document-types/{type_id}", response_model=DocumentType)
+async def update_document_type(type_id: str, data: DocumentTypeIn):
+    existing = await db.document_types.find_one({"id": type_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Document type not found")
+    prefix = (data.prefix or "").strip().upper().replace(" ", "-")
+    if not prefix:
+        raise HTTPException(400, "Prefix is required")
+    dup = await db.document_types.find_one({"prefix": prefix, "id": {"$ne": type_id}})
+    if dup:
+        raise HTTPException(400, f"A document type with prefix '{prefix}' already exists")
+    update = {
+        "name": data.name.strip(),
+        "prefix": prefix,
+        "description": data.description or "",
+        "year_reset": bool(data.year_reset),
+    }
+    await db.document_types.update_one({"id": type_id}, {"$set": update})
+    merged = {**existing, **update}
+    return merged
+
+
+@api_router.put("/document-types/{type_id}/counter")
+async def reset_document_type_counter(type_id: str, counter: int = 0, last_year: Optional[int] = None):
+    existing = await db.document_types.find_one({"id": type_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Document type not found")
+    new_year = last_year if last_year is not None else (existing.get("last_year") or 0)
+    await db.document_types.update_one(
+        {"id": type_id},
+        {"$set": {"counter": max(int(counter), 0), "last_year": int(new_year)}},
+    )
+    return {"ok": True, "counter": int(counter), "last_year": int(new_year)}
+
+
+@api_router.delete("/document-types/{type_id}")
+async def delete_document_type(type_id: str):
+    count = await db.documents.count_documents({"doc_type_id": type_id})
+    if count > 0:
+        raise HTTPException(400, f"Cannot delete — {count} document(s) exist for this type. Delete them first or rename the type.")
+    res = await db.document_types.delete_one({"id": type_id})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Document type not found")
+    return {"ok": True}
+
+
+async def _enrich_document(d: dict) -> dict:
+    if d.get("client_id"):
+        c = await db.clients.find_one({"id": d["client_id"]}, {"_id": 0, "name": 1, "phone": 1, "email": 1, "address": 1})
+        if c:
+            d["client_name"] = c.get("name", "")
+            d["client_phone"] = c.get("phone", "")
+            d["client_email"] = c.get("email", "")
+            d["client_address"] = c.get("address", "")
+    return d
+
+
+@api_router.get("/documents", response_model=List[Document])
+async def list_documents(
+    type_id: Optional[str] = None,
+    client_id: Optional[str] = None,
+    archived: Optional[bool] = False,
+    search: Optional[str] = None,
+):
+    q: dict = {"archived": True} if archived else {"archived": {"$ne": True}}
+    if type_id: q["doc_type_id"] = type_id
+    if client_id: q["client_id"] = client_id
+    if search:
+        rx = {"$regex": search, "$options": "i"}
+        q["$or"] = [
+            {"doc_number": rx}, {"doc_type_name": rx}, {"client_name": rx},
+            {"plot_place": rx}, {"contact_person": rx}, {"mobile": rx}, {"remark": rx},
+        ]
+    rows = await db.documents.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    for r in rows:
+        await _enrich_document(r)
+    return rows
+
+
+@api_router.get("/documents/{doc_id}", response_model=Document)
+async def get_document(doc_id: str):
+    d = await db.documents.find_one({"id": doc_id}, {"_id": 0})
+    if not d:
+        raise HTTPException(404, "Document not found")
+    await _enrich_document(d)
+    return d
+
+
+@api_router.post("/documents", response_model=Document)
+async def create_document(data: DocumentIn):
+    dt = await db.document_types.find_one({"id": data.doc_type_id}, {"_id": 0})
+    if not dt:
+        raise HTTPException(400, "Invalid document type")
+    doc_number = (data.doc_number or "").strip() or await _next_document_number(dt)
+    doc = {
+        "id": _new_id(),
+        "doc_type_id": dt["id"],
+        "doc_type_name": dt["name"],
+        "doc_number": doc_number,
+        "document_date": data.document_date or _now(),
+        "client_id": data.client_id or None,
+        "client_name": "",
+        "plot_place": data.plot_place or "",
+        "phase": data.phase or "",
+        "number_field": data.number_field or "",
+        "remark": data.remark or "",
+        "contact_person": data.contact_person or "",
+        "mobile": data.mobile or "",
+        "other_comments": data.other_comments or "",
+        "update_date": data.update_date or None,
+        "archived": False,
+        "created_at": _now(),
+    }
+    _stamp_edit(doc)
+    await _enrich_document(doc)
+    await db.documents.insert_one(doc.copy())
+    return doc
+
+
+@api_router.put("/documents/{doc_id}", response_model=Document)
+async def update_document(doc_id: str, data: DocumentIn):
+    existing = await db.documents.find_one({"id": doc_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Document not found")
+    dt = await db.document_types.find_one({"id": data.doc_type_id}, {"_id": 0})
+    if not dt:
+        raise HTTPException(400, "Invalid document type")
+    update = {
+        "doc_type_id": dt["id"],
+        "doc_type_name": dt["name"],
+        "doc_number": (data.doc_number or existing.get("doc_number") or "").strip(),
+        "document_date": data.document_date or existing.get("document_date"),
+        "client_id": data.client_id or None,
+        "plot_place": data.plot_place or "",
+        "phase": data.phase or "",
+        "number_field": data.number_field or "",
+        "remark": data.remark or "",
+        "contact_person": data.contact_person or "",
+        "mobile": data.mobile or "",
+        "other_comments": data.other_comments or "",
+        "update_date": data.update_date or existing.get("update_date"),
+    }
+    _stamp_edit(update)
+    await db.documents.update_one({"id": doc_id}, {"$set": update})
+    merged = {**existing, **update}
+    await _enrich_document(merged)
+    return merged
+
+
+@api_router.delete("/documents/{doc_id}")
+async def delete_document(doc_id: str):
+    res = await db.documents.delete_one({"id": doc_id})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Document not found")
+    return {"ok": True}
+
+
+@api_router.post("/documents/{doc_id}/archive")
+async def archive_document(doc_id: str):
+    res = await db.documents.update_one({"id": doc_id}, {"$set": {"archived": True}})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Document not found")
+    return {"ok": True}
+
+
+@api_router.post("/documents/{doc_id}/unarchive")
+async def unarchive_document(doc_id: str):
+    res = await db.documents.update_one({"id": doc_id}, {"$set": {"archived": False}})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Document not found")
+    return {"ok": True}
+
+
+@api_router.get("/documents/{doc_id}/pdf")
+async def document_pdf(doc_id: str):
+    d = await db.documents.find_one({"id": doc_id}, {"_id": 0})
+    if not d:
+        raise HTTPException(404, "Document not found")
+    await _enrich_document(d)
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    margin = 18 * mm
+
+    # Branded header
+    c.setFillColor(colors.HexColor("#0A2E1F"))
+    c.rect(0, height - 28 * mm, width, 28 * mm, fill=1, stroke=0)
+    c.setFillColor(colors.white)
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(margin, height - 14 * mm, "CREATOR RCC CONSULTANT LLP")
+    c.setFont("Helvetica", 9)
+    c.drawString(margin, height - 20 * mm, "Structural Audits • RCC / Steel Design • PMC • Retrofitting")
+    c.drawString(margin, height - 25 * mm, "Navi Mumbai • info@creatorconsultant.online")
+    c.setFillColor(colors.HexColor("#10B981"))
+    c.setFont("Helvetica-Bold", 11)
+    c.drawRightString(width - margin, height - 14 * mm, d.get("doc_type_name", "Document").upper())
+    c.setFillColor(colors.white)
+    c.setFont("Helvetica-Bold", 10)
+    c.drawRightString(width - margin, height - 20 * mm, d.get("doc_number", ""))
+
+    y = height - 38 * mm
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica", 10)
+    c.drawRightString(width - margin, y, f"Date: {(d.get('document_date') or _now())[:10]}")
+    y -= 10 * mm
+
+    # TO block
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(margin, y, "TO,")
+    y -= 5 * mm
+    c.setFont("Helvetica", 10)
+    if d.get("client_name"):
+        c.drawString(margin, y, d.get("client_name", "")); y -= 5 * mm
+    if d.get("contact_person") and d.get("contact_person") != d.get("client_name"):
+        c.drawString(margin, y, f"Kind Attn.: {d.get('contact_person')}"); y -= 5 * mm
+    if d.get("plot_place"):
+        c.drawString(margin, y, d.get("plot_place", "")); y -= 5 * mm
+    if d.get("mobile"):
+        c.drawString(margin, y, f"Mobile: {d.get('mobile')}"); y -= 5 * mm
+
+    y -= 4 * mm
+    c.setFont("Helvetica-Bold", 11)
+    c.setFillColor(colors.HexColor("#0A2E1F"))
+    c.drawString(margin, y, f"Subject: {d.get('doc_type_name', 'Document')}")
+    c.setFillColor(colors.black)
+    y -= 8 * mm
+
+    rows = [
+        ("Phase", d.get("phase")),
+        ("Number", d.get("number_field")),
+        ("Remark", d.get("remark")),
+        ("Other Comments", d.get("other_comments")),
+        ("Update Date", (d.get("update_date") or "")[:10] if d.get("update_date") else ""),
+    ]
+    styles = getSampleStyleSheet()
+    body_style = ParagraphStyle("body", parent=styles["Normal"], fontName="Helvetica", fontSize=10, leading=14)
+    label_x = margin
+    value_x = margin + 38 * mm
+    for label, val in rows:
+        if not val:
+            continue
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(label_x, y, f"{label}:")
+        para = Paragraph(str(val).replace("\n", "<br/>"), body_style)
+        avail_w = width - value_x - margin
+        w, h = para.wrap(avail_w, 100 * mm)
+        para.drawOn(c, value_x, y - h + 11)
+        y -= max(h + 3, 6 * mm)
+        if y < 40 * mm:
+            c.showPage(); y = height - margin
+
+    y = max(y - 18 * mm, 40 * mm)
+    c.setFont("Helvetica", 10)
+    c.drawString(margin, y, "For Creator RCC Consultant LLP")
+    y -= 14 * mm
+    c.drawString(margin, y, "____________________________")
+    y -= 5 * mm
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(margin, y, "Mr. Rutvij Patel")
+    y -= 5 * mm
+    c.setFont("Helvetica", 9)
+    c.drawString(margin, y, "Consulting Structural Engineer")
+
+    c.showPage(); c.save()
+    pdf_bytes = buf.getvalue(); buf.close()
+    fname = f"{d.get('doc_number','document').replace('/', '_')}.pdf"
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+
+
 @api_router.get("/")
 async def root():
     return {"message": "Creator Consultant API", "status": "ok"}
@@ -2637,6 +3062,7 @@ backup_module.init(
         "projects", "clients", "architects", "payments",
         "audits", "audit_payments", "audit_quote_revisions",
         "offers", "activity_log", "quote_revisions", "counters",
+        "documents", "document_types",
     ],
 )
 api_router.include_router(backup_module.router)
@@ -2703,6 +3129,12 @@ async def on_startup():
                     await db.offers.insert_one(od.copy())
     except Exception as e:
         logger.error(f"Seed error: {e}")
+
+    # Seed default document types if missing
+    try:
+        await _seed_document_types_if_missing()
+    except Exception as e:
+        logger.error(f"Document types seed error: {e}")
 
     # Start Google Drive auto-backup scheduler
     try:

@@ -4,6 +4,7 @@ import { Download, Database, ExternalLink, CheckCircle2, Upload } from 'lucide-r
 import BackupCard from '../components/BackupCard';
 import RestoreCard from '../components/RestoreCard';
 import UserManagementCard from '../components/UserManagementCard';
+import DocumentTypesCard from '../components/DocumentTypesCard';
 
 const SettingsPage = () => {
   const [stats, setStats] = useState(null);
@@ -63,6 +64,9 @@ const SettingsPage = () => {
 
       {/* Restore from backup */}
       <RestoreCard />
+
+      {/* Document number series management */}
+      <div className="mb-4"><DocumentTypesCard /></div>
 
       <div className="card p-6 mb-4">
         <h2 className="font-head text-xl font-bold mb-3" style={{ color: 'var(--cc-dark-green)' }}>Database Summary</h2>

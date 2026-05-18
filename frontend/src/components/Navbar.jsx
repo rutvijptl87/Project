@@ -19,6 +19,7 @@ const Navbar = ({ onRecordPayment }) => {
         <nav className="hidden md:flex items-center gap-1">
           <NavLink to="/" end className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-projects">Projects</NavLink>
           <NavLink to="/audits" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-audits">Audits</NavLink>
+          <NavLink to="/documents" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-documents">Documents</NavLink>
           <NavLink to="/clients" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-clients">Clients</NavLink>
           <NavLink to="/architects" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-architects">Architects</NavLink>
           <NavLink to="/settings" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-settings"><SettingsIcon size={14} className="inline mr-1" />Settings</NavLink>
