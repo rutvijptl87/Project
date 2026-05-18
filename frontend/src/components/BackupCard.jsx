@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { api, API } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { downloadFile } from '../lib/download';
+import { logger } from '../lib/logger';
 import {
   Cloud, CloudOff, CheckCircle2, AlertCircle, RefreshCcw, Download,
   History, Link as LinkIcon, Play, Unlink,
@@ -35,14 +36,14 @@ const BackupCard = () => {
     try {
       const r = await api.get('/backup/status');
       setStatus(r.data);
-    } catch (e) { console.warn('Backup status fetch failed:', e?.message || e); }
+    } catch (e) { logger.warn('Backup status fetch failed:', e?.message || e); }
   }, []);
 
   const loadHistory = useCallback(async () => {
     try {
       const r = await api.get('/backup/history', { params: { limit: 30 } });
       setHistory(r.data || []);
-    } catch (e) { console.warn('Backup history fetch failed:', e?.message || e); }
+    } catch (e) { logger.warn('Backup history fetch failed:', e?.message || e); }
   }, []);
 
   useEffect(() => {

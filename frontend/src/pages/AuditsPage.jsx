@@ -7,6 +7,7 @@ import { downloadFile } from '../lib/download';
 import Modal from '../components/Modal';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import InlinePicker from '../components/InlinePicker';
+import { logger } from '../lib/logger';
 import {
   Plus, Search, Eye, Pencil, Trash2, IndianRupee, FileText, Archive, ArchiveRestore,
   ArrowUpDown, ArrowUp, ArrowDown, Phone, Mail, ClipboardCheck,
@@ -66,7 +67,7 @@ const AuditsPage = () => {
       ]);
       setAudits(a.data);
       setClients(c.data);
-    } catch (e) { console.error(e); }
+    } catch (e) { logger.error('Audits load failed:', e); }
     finally { setLoading(false); }
   };
 

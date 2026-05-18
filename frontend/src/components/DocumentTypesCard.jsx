@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { logger } from '../lib/logger';
 import { FileSignature, Plus, Pencil, Trash2, RotateCcw, Save, X } from 'lucide-react';
 
 const blankType = { name: '', prefix: '', description: '', year_reset: true };
@@ -17,7 +18,7 @@ const DocumentTypesCard = () => {
   const load = async () => {
     setLoading(true);
     try { const r = await api.get('/document-types'); setTypes(r.data); }
-    catch (e) { console.error(e); }
+    catch (e) { logger.error('Document types load failed:', e); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);

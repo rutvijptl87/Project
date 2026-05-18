@@ -5,6 +5,7 @@ import { useUndo } from '../lib/undo';
 import { formatINR, formatDate } from '../lib/format';
 import { downloadFile } from '../lib/download';
 import { useUserDirectory } from '../lib/userDirectory';
+import { logger } from '../lib/logger';
 import InitialsBadge from '../components/InitialsBadge';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import {
@@ -95,7 +96,7 @@ const ProjectDetailPage = () => {
     schedule({
       label: `Project ${code} deleted`,
       onCommit: async () => {
-        try { await api.delete(`/projects/${id}`); } catch (e) { console.error('Project delete failed:', e); }
+        try { await api.delete(`/projects/${id}`); } catch (e) { logger.error('Project delete failed:', e); }
       },
       onUndo: () => { /* nothing to restore — API not yet called and we navigated away */ },
     });

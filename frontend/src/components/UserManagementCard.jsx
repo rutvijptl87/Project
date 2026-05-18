@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { logger } from '../lib/logger';
 import { Users, UserPlus, KeyRound, CheckCircle2, AlertCircle, Trash2, ShieldCheck, RotateCcw } from 'lucide-react';
 
 const fmtErr = (detail, fallback = 'Something went wrong') => {
@@ -48,7 +49,7 @@ const UserManagementCard = () => {
     try {
       const r = await api.get('/auth/users');
       setUsers(r.data || []);
-    } catch (e) { console.error('User list fetch failed:', e); }
+    } catch (e) { logger.error('User list fetch failed:', e); }
     finally { setLoadingUsers(false); }
   }, [isAdmin]);
 

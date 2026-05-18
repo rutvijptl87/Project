@@ -4,6 +4,7 @@ import { useUndo } from '../lib/undo';
 import { downloadFile } from '../lib/download';
 import Modal from '../components/Modal';
 import InlinePicker from '../components/InlinePicker';
+import { logger } from '../lib/logger';
 import { Plus, Search, FileText, Pencil, Trash2, Archive, ArchiveRestore, FileSignature } from 'lucide-react';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -58,7 +59,7 @@ const DocumentsPage = () => {
       setTypes(t.data);
       setClients(c.data);
       setDocs(d.data);
-    } catch (e) { console.error(e); } finally { setLoading(false); }
+    } catch (e) { logger.error('Documents load failed:', e); } finally { setLoading(false); }
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [typeFilter, showArchived]);

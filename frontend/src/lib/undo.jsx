@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Undo2, X } from 'lucide-react';
+import { logger } from './logger';
 
 const UndoContext = createContext(null);
 export const useUndo = () => useContext(UndoContext);
@@ -27,9 +28,9 @@ export const UndoProvider = ({ children }) => {
     try {
       await (t?.onCommit || item?.onCommit)?.();
     } catch (e) {
-      console.error('Undo commit failed:', e);
+      logger.error('Undo commit failed:', e);
       // If commit fails, run onUndo to restore UI and show an error via a fresh toast
-      try { await (t?.onUndo || item?.onUndo)?.(); } catch (e2) { console.warn('Undo rollback also failed:', e2); }
+      try { await (t?.onUndo || item?.onUndo)?.(); } catch (e2) { logger.warn('Undo rollback also failed:', e2); }
     } finally {
       remove(id);
     }
@@ -38,7 +39,7 @@ export const UndoProvider = ({ children }) => {
   const undo = useCallback(async (id) => {
     const t = timersRef.current.get(id);
     if (t) {
-      try { await t.onUndo?.(); } catch (e) { console.error('Undo handler error:', e); }
+      try { await t.onUndo?.(); } catch (e) { logger.error('Undo handler error:', e); }
     }
     remove(id);
   }, [remove]);

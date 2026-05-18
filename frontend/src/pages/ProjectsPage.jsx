@@ -9,6 +9,7 @@ import DashboardKPI from '../components/DashboardKPI';
 import MonthlyRevenueChart from '../components/MonthlyRevenueChart';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import { useUndo } from '../lib/undo';
+import { logger } from '../lib/logger';
 import {
   Plus, Search, Download, Upload, Eye, Pencil, Trash2, IndianRupee,
   FileText, Archive, ArchiveRestore, ArrowUpDown, ArrowUp, ArrowDown,
@@ -55,7 +56,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
       setProjects(p.data);
       setStats(s.data);
     } catch (e) {
-      console.error(e);
+      logger.error('Projects load failed:', e);
     } finally {
       setLoading(false);
     }

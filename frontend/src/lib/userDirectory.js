@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from './api';
+import { logger } from './logger';
 
 let _cache = null;
 let _cacheAt = 0;
@@ -22,7 +23,7 @@ export const useUserDirectory = () => {
       setTick((t) => t + 1);
     } catch (e) {
       // Non-critical: user directory is best-effort; AuthProvider handles 401s elsewhere.
-      console.warn('User directory fetch failed:', e?.message || e);
+      logger.warn('User directory fetch failed:', e?.message || e);
     }
   }, []);
 
