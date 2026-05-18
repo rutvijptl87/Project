@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Modal from './Modal';
 import { api } from '../lib/api';
 import { formatINR } from '../lib/format';
-import { IndianRupee } from 'lucide-react';
+import { IndianRupee, Search, ChevronDown, X } from 'lucide-react';
 
 const RecordPaymentModal = ({ open, onClose, defaultProjectId, defaultAuditId, entityType = 'project', onSaved }) => {
   const isAudit = entityType === 'audit';
@@ -14,6 +14,13 @@ const RecordPaymentModal = ({ open, onClose, defaultProjectId, defaultAuditId, e
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // Combobox state
+  const [search, setSearch] = useState('');
+  const [openList, setOpenList] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const wrapRef = useRef(null);
+  const inputRef = useRef(null);
+
   useEffect(() => {
     if (open) {
       const url = isAudit ? '/audits' : '/projects';
@@ -22,9 +29,22 @@ const RecordPaymentModal = ({ open, onClose, defaultProjectId, defaultAuditId, e
       setAmount('');
       setNotes('');
       setError('');
+      setSearch('');
+      setOpenList(false);
+      setHighlight(0);
       setPaymentDate(new Date().toISOString().slice(0, 10));
     }
   }, [open, defaultProjectId, defaultAuditId, isAudit]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!openList) return;
+    const onDocClick = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpenList(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [openList]);
 
   const selected = items.find((p) => p.id === entityId);
 
@@ -32,6 +52,50 @@ const RecordPaymentModal = ({ open, onClose, defaultProjectId, defaultAuditId, e
   const labelName = (p) => (isAudit ? (p.audit_offer || 'Audit') : p.name);
   const quotedKey = isAudit ? 'total_amount' : 'quoted_amount';
   const quotedLabel = isAudit ? 'Total' : 'Quoted';
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((p) => {
+      const hay = [
+        labelCode(p),
+        labelName(p),
+        p.client_name,
+        p.architect_name,
+        p.location,
+      ].filter(Boolean).join(' ').toLowerCase();
+      // match if any token in haystack starts with q OR substring match
+      return hay.includes(q) || hay.split(/\s+/).some((tok) => tok.startsWith(q));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, search, isAudit]);
+
+  useEffect(() => { setHighlight(0); }, [search, openList]);
+
+  const pick = (p) => {
+    setEntityId(p.id);
+    setOpenList(false);
+    setSearch('');
+  };
+
+  const clearPick = () => {
+    setEntityId('');
+    setSearch('');
+    setOpenList(true);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const onKeyDown = (e) => {
+    if (!openList && (e.key === 'ArrowDown' || e.key === 'Enter')) { setOpenList(true); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight((h) => Math.min(h + 1, filtered.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight((h) => Math.max(h - 1, 0)); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      const p = filtered[highlight];
+      if (p) pick(p);
+    }
+    else if (e.key === 'Escape') { setOpenList(false); }
+  };
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -65,24 +129,93 @@ const RecordPaymentModal = ({ open, onClose, defaultProjectId, defaultAuditId, e
     }
   };
 
+  const placeholder = isAudit
+    ? 'Search audit by ID, offer or client name…'
+    : 'Search project by code, name, client, architect or location…';
+
   return (
     <Modal open={open} onClose={onClose} title={isAudit ? 'Record Audit Payment' : 'Record Payment'} testId="record-payment-modal">
       <form onSubmit={handleSave} className="space-y-4">
-        <div>
+        <div ref={wrapRef} className="relative">
           <label className="label">{isAudit ? 'Audit *' : 'Project *'}</label>
-          <select
-            className="select"
-            value={entityId}
-            onChange={(e) => setEntityId(e.target.value)}
-            data-testid="payment-project-select"
-          >
-            <option value="">-- Select {isAudit ? 'an audit' : 'a project'} --</option>
-            {items.map((p) => (
-              <option key={p.id} value={p.id}>
-                {labelCode(p)} — {labelName(p)} ({p.client_name || 'No client'}) • Outstanding ₹ {Number(p.outstanding_amount || 0).toLocaleString('en-IN')}
-              </option>
-            ))}
-          </select>
+
+          {selected && !openList ? (
+            <button
+              type="button"
+              onClick={() => { setOpenList(true); setSearch(''); setTimeout(() => inputRef.current?.focus(), 0); }}
+              className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border text-left hover:bg-gray-50"
+              style={{ borderColor: 'var(--cc-border)', background: '#fff' }}
+              data-testid="payment-project-selected"
+            >
+              <span className="flex flex-col min-w-0">
+                <span className="text-sm font-semibold truncate" style={{ color: 'var(--cc-dark-green)' }}>
+                  <span className="font-mono-data">{labelCode(selected)}</span> — {labelName(selected)}
+                </span>
+                <span className="text-xs truncate" style={{ color: 'var(--cc-text-muted)' }}>
+                  {selected.client_name || 'No client'} • Outstanding {formatINR(selected.outstanding_amount)}
+                </span>
+              </span>
+              <span className="flex items-center gap-1">
+                <X size={14} className="opacity-60 hover:opacity-100" onClick={(e) => { e.stopPropagation(); clearPick(); }} data-testid="payment-project-clear" />
+                <ChevronDown size={14} className="opacity-60" />
+              </span>
+            </button>
+          ) : (
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-3 text-gray-400" />
+              <input
+                ref={inputRef}
+                className="input pl-9"
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setOpenList(true); }}
+                onFocus={() => setOpenList(true)}
+                onKeyDown={onKeyDown}
+                placeholder={placeholder}
+                autoComplete="off"
+                data-testid="payment-project-search"
+              />
+            </div>
+          )}
+
+          {openList && (
+            <div
+              className="absolute z-30 mt-1 w-full rounded-lg border shadow-lg max-h-72 overflow-auto"
+              style={{ background: '#fff', borderColor: 'var(--cc-border)' }}
+              data-testid="payment-project-list"
+            >
+              {filtered.length === 0 ? (
+                <div className="px-3 py-4 text-sm text-center" style={{ color: 'var(--cc-text-muted)' }}>
+                  No matches for "{search}"
+                </div>
+              ) : filtered.map((p, idx) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onMouseEnter={() => setHighlight(idx)}
+                  onClick={() => pick(p)}
+                  className="w-full text-left px-3 py-2 border-b last:border-b-0 flex items-center justify-between gap-3"
+                  style={{
+                    borderColor: 'var(--cc-border)',
+                    background: idx === highlight ? 'var(--cc-surface)' : '#fff',
+                  }}
+                  data-testid={`payment-project-option-${labelCode(p)}`}
+                >
+                  <span className="flex flex-col min-w-0">
+                    <span className="text-sm font-medium truncate">
+                      <span className="font-mono-data text-xs font-semibold" style={{ color: 'var(--cc-accent)' }}>{labelCode(p)}</span>
+                      <span className="ml-2">{labelName(p)}</span>
+                    </span>
+                    <span className="text-xs truncate" style={{ color: 'var(--cc-text-muted)' }}>
+                      {p.client_name || 'No client'}{p.location ? ` • ${p.location}` : ''}
+                    </span>
+                  </span>
+                  <span className="text-xs font-mono-data whitespace-nowrap" style={{ color: Number(p.outstanding_amount || 0) > 0 ? '#DC2626' : '#065F46' }}>
+                    {formatINR(p.outstanding_amount)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {selected && (
