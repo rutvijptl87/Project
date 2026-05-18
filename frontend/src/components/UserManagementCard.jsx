@@ -48,7 +48,7 @@ const UserManagementCard = () => {
     try {
       const r = await api.get('/auth/users');
       setUsers(r.data || []);
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error('User list fetch failed:', e); }
     finally { setLoadingUsers(false); }
   }, [isAdmin]);
 

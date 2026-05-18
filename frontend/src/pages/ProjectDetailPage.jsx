@@ -95,7 +95,7 @@ const ProjectDetailPage = () => {
     schedule({
       label: `Project ${code} deleted`,
       onCommit: async () => {
-        try { await api.delete(`/projects/${id}`); } catch { /* silent */ }
+        try { await api.delete(`/projects/${id}`); } catch (e) { console.error('Project delete failed:', e); }
       },
       onUndo: () => { /* nothing to restore — API not yet called and we navigated away */ },
     });

@@ -35,14 +35,14 @@ const BackupCard = () => {
     try {
       const r = await api.get('/backup/status');
       setStatus(r.data);
-    } catch { /* ignore */ }
+    } catch (e) { console.warn('Backup status fetch failed:', e?.message || e); }
   }, []);
 
   const loadHistory = useCallback(async () => {
     try {
       const r = await api.get('/backup/history', { params: { limit: 30 } });
       setHistory(r.data || []);
-    } catch { /* ignore */ }
+    } catch (e) { console.warn('Backup history fetch failed:', e?.message || e); }
   }, []);
 
   useEffect(() => {
@@ -230,7 +230,7 @@ const BackupCard = () => {
                 <tr><td colSpan={5} className="text-center py-4" style={{ color: 'var(--cc-text-muted)' }}>No backups yet.</td></tr>
               )}
               {history.map((h, i) => (
-                <tr key={i} style={{ borderTop: '1px solid var(--cc-border)' }} data-testid={`backup-history-row-${i}`}>
+                <tr key={h.id || h.finished_at || h.created_at || `bk-${i}`} style={{ borderTop: '1px solid var(--cc-border)' }} data-testid={`backup-history-row-${i}`}>
                   <td className="px-3 py-2 font-mono-data text-xs">{fmtDate(h.finished_at || h.created_at)}</td>
                   <td className="px-3 py-2 capitalize">{h.trigger || 'manual'}</td>
                   <td className="px-3 py-2 font-mono-data text-xs">{fmtBytes(h.size_bytes)}</td>

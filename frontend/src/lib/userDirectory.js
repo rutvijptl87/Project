@@ -20,7 +20,10 @@ export const useUserDirectory = () => {
       _cacheAt = Date.now();
       setUsers(_cache);
       setTick((t) => t + 1);
-    } catch { /* ignore — likely 401, AuthProvider will deal */ }
+    } catch (e) {
+      // Non-critical: user directory is best-effort; AuthProvider handles 401s elsewhere.
+      console.warn('User directory fetch failed:', e?.message || e);
+    }
   }, []);
 
   useEffect(() => {

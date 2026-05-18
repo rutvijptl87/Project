@@ -94,7 +94,7 @@ const AuditDetailPage = () => {
     if (!window.confirm(`Are you sure you want to permanently DELETE audit ${code}?\n\nThis will also delete all its payments, revisions and activity history.\n\nYou can undo within 60 seconds.\n\nTip: Use Archive instead to keep history.`)) return;
     schedule({
       label: `Audit ${code} deleted`,
-      onCommit: async () => { try { await api.delete(`/audits/${id}`); } catch { /* silent */ } },
+      onCommit: async () => { try { await api.delete(`/audits/${id}`); } catch (e) { console.error('Audit delete failed:', e); } },
       onUndo: () => { /* nothing to restore — we navigated away before API */ },
     });
     navigate('/audits');

@@ -29,7 +29,7 @@ export const UndoProvider = ({ children }) => {
     } catch (e) {
       console.error('Undo commit failed:', e);
       // If commit fails, run onUndo to restore UI and show an error via a fresh toast
-      try { await (t?.onUndo || item?.onUndo)?.(); } catch { /* ignore */ }
+      try { await (t?.onUndo || item?.onUndo)?.(); } catch (e2) { console.warn('Undo rollback also failed:', e2); }
     } finally {
       remove(id);
     }

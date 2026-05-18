@@ -5,7 +5,7 @@ import requests
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/') or 'https://beginner-coder-hub-2.preview.emergentagent.com'
 API = f"{BASE_URL}/api"
-EDIT_PASSWORD = "test1234"
+EDIT_PASSWORD = os.environ.get('CC_TEST_EDIT_PASSWORD', '')
 
 
 @pytest.fixture(scope="module")
@@ -13,10 +13,11 @@ def session():
     s = requests.Session()
     s.headers.update({"Content-Type": "application/json"})
     # Verify password so POST/PUT/DELETE requests are allowed (if middleware requires)
-    try:
-        s.post(f"{API}/auth/verify", json={"password": EDIT_PASSWORD}, timeout=15)
-    except Exception:
-        pass
+    if EDIT_PASSWORD:
+        try:
+            s.post(f"{API}/auth/verify", json={"password": EDIT_PASSWORD}, timeout=15)
+        except Exception:
+            pass
     return s
 
 
