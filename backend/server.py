@@ -220,6 +220,7 @@ class DocumentIn(BaseModel):
     doc_number: Optional[str] = ""  # auto-generated if blank
     document_date: Optional[str] = None  # ISO date string
     client_id: Optional[str] = None
+    architect_id: Optional[str] = None
     plot_place: Optional[str] = ""
     phase: Optional[str] = ""
     number_field: Optional[str] = ""  # the "Number" field on the form (free-text)
@@ -239,6 +240,8 @@ class Document(BaseModel):
     document_date: Optional[str] = None
     client_id: Optional[str] = None
     client_name: Optional[str] = ""
+    architect_id: Optional[str] = None
+    architect_name: Optional[str] = ""
     plot_place: str = ""
     phase: str = ""
     number_field: str = ""
@@ -420,6 +423,12 @@ async def get_architect_detail(architect_id: str):
         raise HTTPException(404, "Architect not found")
     projects = await db.projects.find({"architect_id": architect_id}, {"_id": 0}).sort("created_at", -1).to_list(5000)
     await _enrich_projects_batch(projects)
+    documents = await db.documents.find(
+        {"architect_id": architect_id, "archived": {"$ne": True}}, {"_id": 0}
+    ).sort("created_at", -1).to_list(2000)
+    for d in documents:
+        # client_name already enriched on write; architect_name fill so card is self-contained
+        d.setdefault("architect_name", architect.get("name", ""))
     total_quoted = sum(p.get("quoted_amount", 0) for p in projects)
     total_received = sum(p.get("received_amount", 0) for p in projects)
     total_outstanding = round(total_quoted - total_received, 2)
@@ -428,8 +437,10 @@ async def get_architect_detail(architect_id: str):
     return {
         "architect": architect,
         "projects": projects,
+        "documents": documents,
         "stats": {
             "total_projects": len(projects),
+            "total_documents": len(documents),
             "total_quoted": round(total_quoted, 2),
             "total_received": round(total_received, 2),
             "total_outstanding": total_outstanding,
@@ -446,6 +457,11 @@ async def get_client_detail(client_id: str):
         raise HTTPException(404, "Client not found")
     projects = await db.projects.find({"client_id": client_id}, {"_id": 0}).sort("created_at", -1).to_list(5000)
     await _enrich_projects_batch(projects)
+    documents = await db.documents.find(
+        {"client_id": client_id, "archived": {"$ne": True}}, {"_id": 0}
+    ).sort("created_at", -1).to_list(2000)
+    for d in documents:
+        d.setdefault("client_name", client_doc.get("name", ""))
     total_quoted = sum(p.get("quoted_amount", 0) for p in projects)
     total_received = sum(p.get("received_amount", 0) for p in projects)
     total_outstanding = round(total_quoted - total_received, 2)
@@ -454,8 +470,10 @@ async def get_client_detail(client_id: str):
     return {
         "client": client_doc,
         "projects": projects,
+        "documents": documents,
         "stats": {
             "total_projects": len(projects),
+            "total_documents": len(documents),
             "total_quoted": round(total_quoted, 2),
             "total_received": round(total_received, 2),
             "total_outstanding": total_outstanding,
@@ -2875,6 +2893,13 @@ async def _enrich_document(d: dict) -> dict:
             d["client_phone"] = c.get("phone", "")
             d["client_email"] = c.get("email", "")
             d["client_address"] = c.get("address", "")
+    if d.get("architect_id"):
+        a = await db.architects.find_one({"id": d["architect_id"]}, {"_id": 0, "name": 1, "phone": 1, "email": 1, "firm": 1})
+        if a:
+            d["architect_name"] = a.get("name", "")
+            d["architect_phone"] = a.get("phone", "")
+            d["architect_email"] = a.get("email", "")
+            d["architect_firm"] = a.get("firm", "")
     return d
 
 
@@ -2882,16 +2907,18 @@ async def _enrich_document(d: dict) -> dict:
 async def list_documents(
     type_id: Optional[str] = None,
     client_id: Optional[str] = None,
+    architect_id: Optional[str] = None,
     archived: Optional[bool] = False,
     search: Optional[str] = None,
 ):
     q: dict = {"archived": True} if archived else {"archived": {"$ne": True}}
     if type_id: q["doc_type_id"] = type_id
     if client_id: q["client_id"] = client_id
+    if architect_id: q["architect_id"] = architect_id
     if search:
         rx = {"$regex": search, "$options": "i"}
         q["$or"] = [
-            {"doc_number": rx}, {"doc_type_name": rx}, {"client_name": rx},
+            {"doc_number": rx}, {"doc_type_name": rx}, {"client_name": rx}, {"architect_name": rx},
             {"plot_place": rx}, {"contact_person": rx}, {"mobile": rx}, {"remark": rx},
         ]
     rows = await db.documents.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
@@ -2923,6 +2950,8 @@ async def create_document(data: DocumentIn):
         "document_date": data.document_date or _now(),
         "client_id": data.client_id or None,
         "client_name": "",
+        "architect_id": data.architect_id or None,
+        "architect_name": "",
         "plot_place": data.plot_place or "",
         "phase": data.phase or "",
         "number_field": data.number_field or "",
@@ -2954,6 +2983,7 @@ async def update_document(doc_id: str, data: DocumentIn):
         "doc_number": (data.doc_number or existing.get("doc_number") or "").strip(),
         "document_date": data.document_date or existing.get("document_date"),
         "client_id": data.client_id or None,
+        "architect_id": data.architect_id or None,
         "plot_place": data.plot_place or "",
         "phase": data.phase or "",
         "number_field": data.number_field or "",

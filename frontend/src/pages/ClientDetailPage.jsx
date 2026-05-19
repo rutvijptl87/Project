@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { formatINR } from '../lib/format';
-import { ArrowLeft, Phone, Mail, Eye, FileText, Users, Building2 } from 'lucide-react';
+import { ArrowLeft, Phone, Mail, Eye, FileText, Users, Building2, FileSignature } from 'lucide-react';
+import { downloadFile } from '../lib/download';
 
 const ClientDetailPage = () => {
   const { id } = useParams();
@@ -26,6 +27,7 @@ const ClientDetailPage = () => {
   if (!data) return null;
 
   const { client: c, projects, stats } = data;
+  const documents = data.documents || [];
   const waPhone = c.phone ? String(c.phone).replace(/[^0-9]/g, '') : '';
 
   return (
@@ -120,6 +122,50 @@ const ClientDetailPage = () => {
                       <a href={`${API}/projects/${p.id}/invoice`} target="_blank" rel="noreferrer" className="btn btn-outline btn-sm" title="Invoice PDF">
                         <FileText size={13}/>
                       </a>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Documents linked to this client */}
+      <div className="card overflow-hidden mt-6" data-testid="client-documents-card">
+        <div className="p-5 border-b flex items-center justify-between flex-wrap gap-2" style={{ borderColor: 'var(--cc-border)' }}>
+          <h2 className="font-head text-xl font-bold flex items-center gap-2" style={{ color: 'var(--cc-dark-green)' }}>
+            <FileSignature size={18}/> Documents linked to {c.name} ({documents.length})
+          </h2>
+          <Link to="/documents" className="btn btn-outline btn-sm" data-testid="client-go-to-documents">Manage Documents</Link>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="cc-table" data-testid="client-documents-table">
+            <thead>
+              <tr>
+                <th>Document No.</th>
+                <th>Type</th>
+                <th>Architect</th>
+                <th>Plot / Place</th>
+                <th>Date</th>
+                <th className="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {documents.length === 0 ? (
+                <tr><td colSpan={6} className="text-center py-8" style={{ color: 'var(--cc-text-muted)' }}>No documents linked to this client yet.</td></tr>
+              ) : documents.map((d) => (
+                <tr key={d.id} data-testid={`client-doc-row-${d.id}`}>
+                  <td className="font-mono-data text-xs font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{d.doc_number}</td>
+                  <td className="text-sm">{d.doc_type_name}</td>
+                  <td className="text-sm">{d.architect_name || <span className="text-gray-400">—</span>}</td>
+                  <td className="text-sm max-w-[220px]"><div className="line-clamp-2">{d.plot_place || '—'}</div></td>
+                  <td className="text-xs font-mono-data">{(d.document_date || '').slice(0, 10) || '—'}</td>
+                  <td>
+                    <div className="flex gap-1 justify-end">
+                      <button onClick={() => downloadFile(`${API}/documents/${d.id}/pdf`)} className="btn btn-outline btn-sm" title="Download PDF" data-testid={`client-doc-pdf-${d.id}`}>
+                        <FileText size={13}/>
+                      </button>
                     </div>
                   </td>
                 </tr>

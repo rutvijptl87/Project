@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { formatINR } from '../lib/format';
-import { ArrowLeft, Phone, Mail, Pencil, FileText, Eye, Compass, IndianRupee, Briefcase } from 'lucide-react';
+import { ArrowLeft, Phone, Mail, Pencil, FileText, Eye, Compass, IndianRupee, Briefcase, FileSignature } from 'lucide-react';
+import { downloadFile } from '../lib/download';
 
 const ArchitectDetailPage = () => {
   const { id } = useParams();
@@ -26,6 +27,7 @@ const ArchitectDetailPage = () => {
   if (!data) return null;
 
   const { architect: a, projects, stats } = data;
+  const documents = data.documents || [];
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="architect-detail-page">
@@ -112,6 +114,50 @@ const ArchitectDetailPage = () => {
                       <a href={`${API}/projects/${p.id}/invoice`} target="_blank" rel="noreferrer" className="btn btn-outline btn-sm" title="Invoice PDF">
                         <FileText size={13}/>
                       </a>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Documents linked to this architect */}
+      <div className="card overflow-hidden mt-6" data-testid="architect-documents-card">
+        <div className="p-5 border-b flex items-center justify-between flex-wrap gap-2" style={{ borderColor: 'var(--cc-border)' }}>
+          <h2 className="font-head text-xl font-bold flex items-center gap-2" style={{ color: 'var(--cc-dark-green)' }}>
+            <FileSignature size={18}/> Documents linked to {a.name} ({documents.length})
+          </h2>
+          <Link to="/documents" className="btn btn-outline btn-sm" data-testid="architect-go-to-documents">Manage Documents</Link>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="cc-table" data-testid="architect-documents-table">
+            <thead>
+              <tr>
+                <th>Document No.</th>
+                <th>Type</th>
+                <th>Client</th>
+                <th>Plot / Place</th>
+                <th>Date</th>
+                <th className="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {documents.length === 0 ? (
+                <tr><td colSpan={6} className="text-center py-8" style={{ color: 'var(--cc-text-muted)' }}>No documents linked to this architect yet.</td></tr>
+              ) : documents.map((d) => (
+                <tr key={d.id} data-testid={`architect-doc-row-${d.id}`}>
+                  <td className="font-mono-data text-xs font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{d.doc_number}</td>
+                  <td className="text-sm">{d.doc_type_name}</td>
+                  <td className="text-sm">{d.client_name || <span className="text-gray-400">—</span>}</td>
+                  <td className="text-sm max-w-[220px]"><div className="line-clamp-2">{d.plot_place || '—'}</div></td>
+                  <td className="text-xs font-mono-data">{(d.document_date || '').slice(0, 10) || '—'}</td>
+                  <td>
+                    <div className="flex gap-1 justify-end">
+                      <button onClick={() => downloadFile(`${API}/documents/${d.id}/pdf`)} className="btn btn-outline btn-sm" title="Download PDF" data-testid={`architect-doc-pdf-${d.id}`}>
+                        <FileText size={13}/>
+                      </button>
                     </div>
                   </td>
                 </tr>

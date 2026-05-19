@@ -14,6 +14,7 @@ const emptyDoc = {
   doc_number: '',
   document_date: todayISO(),
   client_id: '',
+  architect_id: '',
   plot_place: '',
   phase: '',
   number_field: '',
@@ -28,6 +29,7 @@ const DocumentsPage = () => {
   const { schedule } = useUndo();
   const [types, setTypes] = useState([]);
   const [clients, setClients] = useState([]);
+  const [architects, setArchitects] = useState([]);
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -51,13 +53,15 @@ const DocumentsPage = () => {
       if (typeFilter) params.type_id = typeFilter;
       if (search) params.search = search;
       if (showArchived) params.archived = true;
-      const [t, c, d] = await Promise.all([
+      const [t, c, ar, d] = await Promise.all([
         api.get('/document-types'),
         api.get('/clients'),
+        api.get('/architects'),
         api.get('/documents', { params }),
       ]);
       setTypes(t.data);
       setClients(c.data);
+      setArchitects(ar.data);
       setDocs(d.data);
     } catch (e) { logger.error('Documents load failed:', e); } finally { setLoading(false); }
   };
@@ -85,6 +89,7 @@ const DocumentsPage = () => {
       doc_number: d.doc_number || '',
       document_date: (d.document_date || '').slice(0, 10) || todayISO(),
       client_id: d.client_id || '',
+      architect_id: d.architect_id || '',
       plot_place: d.plot_place || '',
       phase: d.phase || '',
       number_field: d.number_field || '',
@@ -111,6 +116,7 @@ const DocumentsPage = () => {
         document_date: form.document_date ? new Date(form.document_date).toISOString() : null,
         update_date: form.update_date ? new Date(form.update_date).toISOString() : null,
         client_id: form.client_id || null,
+        architect_id: form.architect_id || null,
       };
       if (editing) {
         await api.put(`/documents/${editing.id}`, payload);
@@ -204,6 +210,7 @@ const DocumentsPage = () => {
                 <th>Document No.</th>
                 <th>Type</th>
                 <th>Client</th>
+                <th>Architect</th>
                 <th>Plot / Place</th>
                 <th>Contact</th>
                 <th>Date</th>
@@ -212,9 +219,9 @@ const DocumentsPage = () => {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} className="text-center py-10" style={{ color: 'var(--cc-text-muted)' }}>Loading…</td></tr>
+                <tr><td colSpan={8} className="text-center py-10" style={{ color: 'var(--cc-text-muted)' }}>Loading…</td></tr>
               ) : visible.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-12">
+                <tr><td colSpan={8} className="text-center py-12">
                   <FileSignature size={32} className="mx-auto mb-2 text-gray-400"/>
                   <div className="font-semibold">{showArchived ? 'No archived documents' : 'No documents yet'}</div>
                   <div className="text-sm" style={{ color: 'var(--cc-text-muted)' }}>Click "New Document" to generate your first one.</div>
@@ -224,6 +231,7 @@ const DocumentsPage = () => {
                   <td className="font-mono-data text-xs font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{d.doc_number}</td>
                   <td className="text-sm">{d.doc_type_name}</td>
                   <td className="text-sm">{d.client_name || <span className="text-gray-400">—</span>}</td>
+                  <td className="text-sm">{d.architect_name || <span className="text-gray-400">—</span>}</td>
                   <td className="text-sm max-w-[220px]"><div className="line-clamp-2">{d.plot_place || '—'}</div></td>
                   <td className="text-xs">
                     {d.contact_person && <div>{d.contact_person}</div>}
@@ -280,6 +288,18 @@ const DocumentsPage = () => {
               items={clients}
               onItemsChange={setClients}
               testIdPrefix="document-form-client-"
+            />
+          </div>
+
+          <div>
+            <label className="label">Architect</label>
+            <InlinePicker
+              entityType="architect"
+              value={form.architect_id}
+              onChange={(v) => update('architect_id', v)}
+              items={architects}
+              onItemsChange={setArchitects}
+              testIdPrefix="document-form-architect-"
             />
           </div>
 
