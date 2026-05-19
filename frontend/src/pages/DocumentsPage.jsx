@@ -164,7 +164,7 @@ const DocumentsPage = () => {
 
   const selectedType = typeById[form.doc_type_id];
   const previewNextNumber = selectedType
-    ? `CC/${selectedType.prefix}/${new Date().getFullYear()}/${String(((selectedType.last_year === new Date().getFullYear()) ? selectedType.counter : 0) + 1).padStart(3, '0')}`
+    ? `STR/${selectedType.prefix}/${new Date().getFullYear()}/${String(((selectedType.last_year === new Date().getFullYear()) ? selectedType.counter : 0) + 1).padStart(3, '0')}`
     : '';
 
   return (

@@ -202,7 +202,7 @@ class Payment(BaseModel):
 
 class DocumentTypeIn(BaseModel):
     name: str
-    prefix: str  # e.g. "QT", "STAB" — used inside CC/{prefix}/{YYYY}/{counter:03}
+    prefix: str  # e.g. "QT", "STAB" — used inside STR/{prefix}/{YYYY}/{counter:03}
     description: Optional[str] = ""
     year_reset: bool = True
 
@@ -2793,7 +2793,7 @@ async def _seed_document_types_if_missing():
 
 
 async def _next_document_number(doc_type: dict) -> str:
-    """Generate `CC/{prefix}/{YYYY}/{counter:03}` and atomically increment counter on the type."""
+    """Generate `STR/{prefix}/{YYYY}/{counter:03}` and atomically increment counter on the type."""
     year = datetime.now(timezone.utc).year
     if doc_type.get("year_reset", True) and (doc_type.get("last_year") or 0) != year:
         await db.document_types.update_one(
@@ -2809,7 +2809,7 @@ async def _next_document_number(doc_type: dict) -> str:
         )
         counter = (updated or {}).get("counter", 1)
     prefix = (doc_type.get("prefix") or "DOC").strip()
-    return f"CC/{prefix}/{year}/{counter:03d}"
+    return f"STR/{prefix}/{year}/{counter:03d}"
 
 
 @api_router.get("/document-types", response_model=List[DocumentType])

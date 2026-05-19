@@ -36,7 +36,7 @@ const DocumentTypesCard = () => {
   const handleSave = async () => {
     setError('');
     if (!draft.name.trim()) return setError('Name is required');
-    if (!draft.prefix.trim()) return setError('Prefix is required (used in CC/PREFIX/YYYY/001)');
+    if (!draft.prefix.trim()) return setError('Prefix is required (used in STR/PREFIX/YYYY/001)');
     setSaving(true);
     try {
       if (editing === 'new') {
@@ -79,14 +79,14 @@ const DocumentTypesCard = () => {
       setLastUsed((p) => ({ ...p, [t.id]: '' }));
       load();
       const nextN = num + 1;
-      showToast(`Next ${t.name} will be CC/${t.prefix}/${new Date().getFullYear()}/${String(nextN).padStart(3, '0')}`);
+      showToast(`Next ${t.name} will be STR/${t.prefix}/${new Date().getFullYear()}/${String(nextN).padStart(3, '0')}`);
     } catch (e) {
       showToast(e?.response?.data?.detail || 'Failed to update', 'error');
     } finally { setSavingLast(null); }
   };
 
   // "Start From" — user types the next document number to issue (e.g. 51 means the
-  // next document will be CC/PREFIX/YYYY/051). We persist that as counter = N-1.
+  // next document will be STR/PREFIX/YYYY/051). We persist that as counter = N-1.
   const nextNumberFor = (t) => (t.counter > 0 ? (t.counter + 1) : 1);
 
   const applyStartFrom = async (t) => {
@@ -113,7 +113,7 @@ const DocumentTypesCard = () => {
       });
       setStartFrom((p) => ({ ...p, [t.id]: '' }));
       load();
-      showToast(`Next ${t.name} number will be CC/${t.prefix}/${new Date().getFullYear()}/${String(num).padStart(3, '0')}`);
+      showToast(`Next ${t.name} number will be STR/${t.prefix}/${new Date().getFullYear()}/${String(num).padStart(3, '0')}`);
     } catch (e) {
       showToast(e?.response?.data?.detail || 'Failed to update', 'error');
     } finally { setSavingStart(null); }
@@ -127,7 +127,7 @@ const DocumentTypesCard = () => {
             <FileSignature size={18}/> Document Number Series
           </h3>
           <p className="text-xs mt-1" style={{ color: 'var(--cc-text-muted)' }}>
-            Each document type has its own auto-incrementing number. Format: <span className="font-mono-data">CC/PREFIX/YYYY/001</span>
+            Each document type has its own auto-incrementing number. Format: <span className="font-mono-data">STR/PREFIX/YYYY/001</span>
             <br/>
             <span className="text-[11px]">Tip: edit "<b>Last Number Used</b>" to manually set the counter (next document will be that number + 1). Or use "<b>Start From</b>" to specify exactly what the next document should be.</span>
           </p>
@@ -187,7 +187,7 @@ const DocumentTypesCard = () => {
                   <tr key={t.id} data-testid={`doc-type-row-${t.prefix}-edit`}>
                     <td><input className="input" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} data-testid={`doc-type-edit-name-${t.prefix}`}/></td>
                     <td><input className="input font-mono-data" value={draft.prefix} onChange={(e) => setDraft({ ...draft, prefix: e.target.value.toUpperCase() })} data-testid={`doc-type-edit-prefix-${t.prefix}`}/></td>
-                    <td className="font-mono-data text-xs">CC/{draft.prefix || t.prefix}/{t.last_year || new Date().getFullYear()}/{String(t.counter || 0).padStart(3, '0')}</td>
+                    <td className="font-mono-data text-xs">STR/{draft.prefix || t.prefix}/{t.last_year || new Date().getFullYear()}/{String(t.counter || 0).padStart(3, '0')}</td>
                     <td className="font-mono-data text-xs text-gray-400">—</td>
                     <td><input type="checkbox" checked={draft.year_reset} onChange={(e) => setDraft({ ...draft, year_reset: e.target.checked })} /></td>
                     <td>
@@ -208,7 +208,7 @@ const DocumentTypesCard = () => {
                   <td>
                     <div className="flex items-center gap-1">
                       <span className="font-mono-data text-xs whitespace-nowrap text-gray-500">
-                        CC/{t.prefix}/{t.last_year || new Date().getFullYear()}/
+                        STR/{t.prefix}/{t.last_year || new Date().getFullYear()}/
                       </span>
                       <input
                         type="number"
