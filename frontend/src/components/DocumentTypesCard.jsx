@@ -13,6 +13,8 @@ const DocumentTypesCard = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [toast, setToast] = useState(null);
+  const [startFrom, setStartFrom] = useState({}); // map of typeId -> string input value
+  const [savingStart, setSavingStart] = useState(null); // typeId being saved
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 2500); };
 
   const load = async () => {
@@ -68,6 +70,40 @@ const DocumentTypesCard = () => {
     } catch (e) { alert(e?.response?.data?.detail || 'Failed'); }
   };
 
+  // "Start From" — user types the next document number to issue (e.g. 51 means the
+  // next document will be CC/PREFIX/YYYY/051). We persist that as counter = N-1.
+  const nextNumberFor = (t) => (t.counter > 0 ? (t.counter + 1) : 1);
+
+  const applyStartFrom = async (t) => {
+    const raw = startFrom[t.id];
+    if (raw === undefined || raw === '') return;
+    const num = parseInt(raw, 10);
+    if (Number.isNaN(num) || num < 1) {
+      showToast('Enter a number ≥ 1', 'error');
+      return;
+    }
+    const wouldOverwrite = t.counter > 0 && num <= t.counter;
+    if (wouldOverwrite) {
+      const ok = window.confirm(
+        `Heads up: this type has already used up to #${t.counter}.\n` +
+        `Setting "Start From" to ${num} means the next document will reuse number ${num}, ` +
+        `which may clash with an existing one.\n\nProceed anyway?`
+      );
+      if (!ok) return;
+    }
+    setSavingStart(t.id);
+    try {
+      await api.put(`/document-types/${t.id}/counter`, null, {
+        params: { counter: num - 1, last_year: new Date().getFullYear() },
+      });
+      setStartFrom((p) => ({ ...p, [t.id]: '' }));
+      load();
+      showToast(`Next ${t.name} number will be CC/${t.prefix}/${new Date().getFullYear()}/${String(num).padStart(3, '0')}`);
+    } catch (e) {
+      showToast(e?.response?.data?.detail || 'Failed to update', 'error');
+    } finally { setSavingStart(null); }
+  };
+
   return (
     <div className="card p-6" data-testid="document-types-card">
       <div className="flex items-center justify-between mb-4">
@@ -77,6 +113,8 @@ const DocumentTypesCard = () => {
           </h3>
           <p className="text-xs mt-1" style={{ color: 'var(--cc-text-muted)' }}>
             Each document type has its own auto-incrementing number. Format: <span className="font-mono-data">CC/PREFIX/YYYY/001</span>
+            <br/>
+            <span className="text-[11px]">Tip: enter a number in "Start From" to change what the next document will be numbered as (e.g. type <span className="font-mono-data">51</span> to issue <span className="font-mono-data">CC/QT/{new Date().getFullYear()}/051</span> next).</span>
           </p>
         </div>
         {editing !== 'new' && (
@@ -117,15 +155,16 @@ const DocumentTypesCard = () => {
               <th>Name</th>
               <th>Prefix</th>
               <th>Last Number Used</th>
+              <th>Start From (Next Number)</th>
               <th>Reset yearly?</th>
               <th className="text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={5} className="text-center py-6" style={{ color: 'var(--cc-text-muted)' }}>Loading…</td></tr>
+              <tr><td colSpan={6} className="text-center py-6" style={{ color: 'var(--cc-text-muted)' }}>Loading…</td></tr>
             ) : types.length === 0 ? (
-              <tr><td colSpan={5} className="text-center py-6" style={{ color: 'var(--cc-text-muted)' }}>No document types yet.</td></tr>
+              <tr><td colSpan={6} className="text-center py-6" style={{ color: 'var(--cc-text-muted)' }}>No document types yet.</td></tr>
             ) : types.map((t) => {
               const isEd = editing === t.id;
               if (isEd) {
@@ -134,6 +173,7 @@ const DocumentTypesCard = () => {
                     <td><input className="input" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} data-testid={`doc-type-edit-name-${t.prefix}`}/></td>
                     <td><input className="input font-mono-data" value={draft.prefix} onChange={(e) => setDraft({ ...draft, prefix: e.target.value.toUpperCase() })} data-testid={`doc-type-edit-prefix-${t.prefix}`}/></td>
                     <td className="font-mono-data text-xs">CC/{draft.prefix || t.prefix}/{t.last_year || new Date().getFullYear()}/{String(t.counter || 0).padStart(3, '0')}</td>
+                    <td className="font-mono-data text-xs text-gray-400">—</td>
                     <td><input type="checkbox" checked={draft.year_reset} onChange={(e) => setDraft({ ...draft, year_reset: e.target.checked })} /></td>
                     <td>
                       <div className="flex gap-1 justify-end">
@@ -145,6 +185,7 @@ const DocumentTypesCard = () => {
                   </tr>
                 );
               }
+              const placeholder = String(nextNumberFor(t)).padStart(3, '0');
               return (
                 <tr key={t.id} data-testid={`doc-type-row-${t.prefix}`}>
                   <td className="text-sm font-medium">{t.name}</td>
@@ -154,10 +195,34 @@ const DocumentTypesCard = () => {
                       ? `CC/${t.prefix}/${t.last_year}/${String(t.counter).padStart(3, '0')}`
                       : <span className="text-gray-400">— unused —</span>}
                   </td>
+                  <td>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min={1}
+                        className="input font-mono-data"
+                        style={{ width: 90, padding: '4px 8px' }}
+                        placeholder={placeholder}
+                        value={startFrom[t.id] ?? ''}
+                        onChange={(e) => setStartFrom((p) => ({ ...p, [t.id]: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === 'Enter') applyStartFrom(t); }}
+                        data-testid={`doc-type-startfrom-${t.prefix}`}
+                      />
+                      <button
+                        onClick={() => applyStartFrom(t)}
+                        disabled={savingStart === t.id || !startFrom[t.id]}
+                        className="btn btn-primary btn-sm"
+                        title="Set next number"
+                        data-testid={`doc-type-startfrom-save-${t.prefix}`}
+                      >
+                        <Save size={11}/>
+                      </button>
+                    </div>
+                  </td>
                   <td className="text-xs">{t.year_reset ? 'Yes' : 'No'}</td>
                   <td>
                     <div className="flex gap-1 justify-end">
-                      <button onClick={() => resetCounter(t)} className="btn btn-outline btn-sm" title="Reset counter" data-testid={`doc-type-reset-${t.prefix}`}><RotateCcw size={12}/></button>
+                      <button onClick={() => resetCounter(t)} className="btn btn-outline btn-sm" title="Reset counter to 0" data-testid={`doc-type-reset-${t.prefix}`}><RotateCcw size={12}/></button>
                       <button onClick={() => startEdit(t)} className="btn btn-outline btn-sm" title="Edit prefix/name" data-testid={`doc-type-edit-${t.prefix}`}><Pencil size={12}/></button>
                       <button onClick={() => handleDelete(t)} className="btn btn-danger btn-sm" title="Delete" data-testid={`doc-type-delete-${t.prefix}`}><Trash2 size={12}/></button>
                     </div>
