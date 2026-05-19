@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { logger } from '../lib/logger';
-import { FileSignature, Plus, Pencil, Trash2, RotateCcw, Save, X } from 'lucide-react';
+import { FileSignature, Plus, Pencil, Trash2, Save, X } from 'lucide-react';
 
 const blankType = { name: '', prefix: '', description: '', year_reset: true };
 
@@ -58,16 +58,31 @@ const DocumentTypesCard = () => {
     catch (e) { alert(e?.response?.data?.detail || 'Failed to delete'); }
   };
 
-  const resetCounter = async (t) => {
-    const v = window.prompt(`Reset counter for "${t.name}".\nCurrent: ${t.counter} (year ${t.last_year || '—'})\n\nEnter new counter value (0 = start fresh next time):`, String(t.counter || 0));
-    if (v === null) return;
-    const num = parseInt(v, 10);
-    if (Number.isNaN(num) || num < 0) return alert('Enter a non-negative integer');
+  // Edit the auto-increment counter directly (= "Last Number Used"). After
+  // saving counter=N, the next generated number will be N+1.
+  const [lastUsed, setLastUsed] = useState({}); // typeId -> string input value
+  const [savingLast, setSavingLast] = useState(null);
+
+  const applyLastUsed = async (t) => {
+    const raw = lastUsed[t.id];
+    if (raw === undefined || raw === '') return;
+    const num = parseInt(raw, 10);
+    if (Number.isNaN(num) || num < 0) {
+      showToast('Enter a non-negative number', 'error');
+      return;
+    }
+    setSavingLast(t.id);
     try {
-      await api.put(`/document-types/${t.id}/counter`, null, { params: { counter: num, last_year: new Date().getFullYear() } });
+      await api.put(`/document-types/${t.id}/counter`, null, {
+        params: { counter: num, last_year: new Date().getFullYear() },
+      });
+      setLastUsed((p) => ({ ...p, [t.id]: '' }));
       load();
-      showToast('Counter reset');
-    } catch (e) { alert(e?.response?.data?.detail || 'Failed'); }
+      const nextN = num + 1;
+      showToast(`Next ${t.name} will be CC/${t.prefix}/${new Date().getFullYear()}/${String(nextN).padStart(3, '0')}`);
+    } catch (e) {
+      showToast(e?.response?.data?.detail || 'Failed to update', 'error');
+    } finally { setSavingLast(null); }
   };
 
   // "Start From" — user types the next document number to issue (e.g. 51 means the
@@ -114,7 +129,7 @@ const DocumentTypesCard = () => {
           <p className="text-xs mt-1" style={{ color: 'var(--cc-text-muted)' }}>
             Each document type has its own auto-incrementing number. Format: <span className="font-mono-data">CC/PREFIX/YYYY/001</span>
             <br/>
-            <span className="text-[11px]">Tip: enter a number in "Start From" to change what the next document will be numbered as (e.g. type <span className="font-mono-data">51</span> to issue <span className="font-mono-data">CC/QT/{new Date().getFullYear()}/051</span> next).</span>
+            <span className="text-[11px]">Tip: edit "<b>Last Number Used</b>" to manually set the counter (next document will be that number + 1). Or use "<b>Start From</b>" to specify exactly what the next document should be.</span>
           </p>
         </div>
         {editing !== 'new' && (
@@ -190,10 +205,37 @@ const DocumentTypesCard = () => {
                 <tr key={t.id} data-testid={`doc-type-row-${t.prefix}`}>
                   <td className="text-sm font-medium">{t.name}</td>
                   <td className="font-mono-data text-xs" style={{ color: 'var(--cc-accent)' }}>{t.prefix}</td>
-                  <td className="font-mono-data text-xs">
-                    {t.counter > 0
-                      ? `CC/${t.prefix}/${t.last_year}/${String(t.counter).padStart(3, '0')}`
-                      : <span className="text-gray-400">— unused —</span>}
+                  <td>
+                    <div className="flex items-center gap-1">
+                      <span className="font-mono-data text-xs whitespace-nowrap text-gray-500">
+                        CC/{t.prefix}/{t.last_year || new Date().getFullYear()}/
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        className="input font-mono-data"
+                        style={{ width: 80, padding: '4px 8px' }}
+                        placeholder={String(t.counter || 0).padStart(3, '0')}
+                        value={lastUsed[t.id] ?? ''}
+                        onChange={(e) => setLastUsed((p) => ({ ...p, [t.id]: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === 'Enter') applyLastUsed(t); }}
+                        data-testid={`doc-type-lastused-${t.prefix}`}
+                      />
+                      <button
+                        onClick={() => applyLastUsed(t)}
+                        disabled={savingLast === t.id || lastUsed[t.id] === undefined || lastUsed[t.id] === ''}
+                        className="btn btn-primary btn-sm"
+                        title="Save last used number"
+                        data-testid={`doc-type-lastused-save-${t.prefix}`}
+                      >
+                        <Save size={11}/>
+                      </button>
+                    </div>
+                    {t.counter > 0 && (
+                      <div className="text-[10px] mt-1" style={{ color: 'var(--cc-text-muted)' }}>
+                        currently <span className="font-mono-data">{String(t.counter).padStart(3, '0')}</span>
+                      </div>
+                    )}
                   </td>
                   <td>
                     <div className="flex items-center gap-1">
@@ -222,7 +264,6 @@ const DocumentTypesCard = () => {
                   <td className="text-xs">{t.year_reset ? 'Yes' : 'No'}</td>
                   <td>
                     <div className="flex gap-1 justify-end">
-                      <button onClick={() => resetCounter(t)} className="btn btn-outline btn-sm" title="Reset counter to 0" data-testid={`doc-type-reset-${t.prefix}`}><RotateCcw size={12}/></button>
                       <button onClick={() => startEdit(t)} className="btn btn-outline btn-sm" title="Edit prefix/name" data-testid={`doc-type-edit-${t.prefix}`}><Pencil size={12}/></button>
                       <button onClick={() => handleDelete(t)} className="btn btn-danger btn-sm" title="Delete" data-testid={`doc-type-delete-${t.prefix}`}><Trash2 size={12}/></button>
                     </div>
