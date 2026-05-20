@@ -3080,11 +3080,9 @@ async def document_pdf(doc_id: str):
     y -= 8 * mm
 
     rows = [
-        ("Phase", d.get("phase")),
-        ("Number", d.get("number_field")),
-        ("Remark", d.get("remark")),
+        ("Location", d.get("phase")),
+        ("Path of Folder", d.get("remark")),
         ("Other Comments", d.get("other_comments")),
-        ("Update Date", (d.get("update_date") or "")[:10] if d.get("update_date") else ""),
     ]
     styles = getSampleStyleSheet()
     body_style = ParagraphStyle("body", parent=styles["Normal"], fontName="Helvetica", fontSize=10, leading=14)

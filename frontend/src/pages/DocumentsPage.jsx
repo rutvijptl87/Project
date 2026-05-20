@@ -309,25 +309,14 @@ const DocumentsPage = () => {
               <input className="input" value={form.plot_place} onChange={(e) => update('plot_place', e.target.value)} placeholder="e.g. 5874/44D Chandigarh" data-testid="document-form-plot" />
             </div>
             <div>
-              <label className="label">Phase</label>
-              <input className="input" value={form.phase} onChange={(e) => update('phase', e.target.value)} placeholder="e.g. Phase 1" data-testid="document-form-phase" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="label">Number</label>
-              <input className="input font-mono-data" value={form.number_field} onChange={(e) => update('number_field', e.target.value)} placeholder="e.g. CLC/2546/kjh/451" data-testid="document-form-number-field" />
-            </div>
-            <div>
-              <label className="label">Update Date</label>
-              <input type="date" className="input" value={form.update_date} onChange={(e) => update('update_date', e.target.value)} data-testid="document-form-update-date" />
+              <label className="label">Location</label>
+              <input className="input" value={form.phase} onChange={(e) => update('phase', e.target.value)} placeholder="e.g. Andheri West, Mumbai" data-testid="document-form-location" />
             </div>
           </div>
 
           <div>
-            <label className="label">Remark</label>
-            <input className="input" value={form.remark} onChange={(e) => update('remark', e.target.value)} placeholder="Short note shown on PDF" data-testid="document-form-remark" />
+            <label className="label">Path of Folder</label>
+            <input className="input font-mono-data" value={form.remark} onChange={(e) => update('remark', e.target.value)} placeholder="e.g. D:/Projects/2026/ACCP-003" data-testid="document-form-folder-path" />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
