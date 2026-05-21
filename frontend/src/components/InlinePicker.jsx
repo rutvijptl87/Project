@@ -84,6 +84,7 @@ const InlinePicker = ({ entityType, value, onChange, items, onItemsChange, testI
 
   const handleSave = async (e) => {
     e.preventDefault();
+    e.stopPropagation();  // don't let the submit bubble to a parent <form> via React tree (modals are portaled)
     if (!form.name.trim()) { setErr('Name is required'); return; }
     setSaving(true);
     try {
