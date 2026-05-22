@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { formatINR } from '../lib/format';
-import { ArrowLeft, Phone, Mail, Pencil, FileText, Eye, Compass, IndianRupee, Briefcase, FileSignature, Trash2, ArrowRightLeft } from 'lucide-react';
+import { ArrowLeft, Phone, Mail, Pencil, FileText, Eye, Compass, IndianRupee, Briefcase, FileSignature, Trash2, ArrowRightLeft, Save, X } from 'lucide-react';
 import { downloadFile } from '../lib/download';
 import { useUndo } from '../lib/undo';
 import Modal from '../components/Modal';
@@ -19,6 +19,10 @@ const ArchitectDetailPage = () => {
   const [allArchitects, setAllArchitects] = useState([]);
   const [moveQuery, setMoveQuery] = useState('');
   const [moveBusy, setMoveBusy] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ name: '', phone: '', email: '', firm: '' });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -86,6 +90,46 @@ const ArchitectDetailPage = () => {
       })
     : moveTargets;
 
+  const openEdit = () => {
+    setEditForm({ name: a.name || '', phone: a.phone || '', email: a.email || '', firm: a.firm || '' });
+    setEditError('');
+    setEditOpen(true);
+  };
+
+  const submitEdit = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!editForm.name.trim()) { setEditError('Name is required'); return; }
+    setEditSaving(true);
+    try {
+      await api.put(`/architects/${a.id}`, editForm);
+      setEditOpen(false);
+      load();
+    } catch (err) {
+      setEditError(err?.response?.data?.detail || 'Failed to save');
+    } finally { setEditSaving(false); }
+  };
+
+  const deleteArchitect = async () => {
+    const linked = projects.length + documents.length;
+    const lines = [
+      `Are you sure you want to delete architect "${a.name}"?`,
+      '',
+      linked > 0
+        ? `${projects.length} project(s) and ${documents.length} document(s) will be unlinked (not deleted).`
+        : 'No projects or documents are linked to this architect.',
+      '',
+      'This cannot be undone from the architects list.',
+    ];
+    if (!window.confirm(lines.join('\n'))) return;
+    try {
+      await api.delete(`/architects/${a.id}`);
+      navigate('/architects');
+    } catch (err) {
+      alert(err?.response?.data?.detail || 'Failed to delete architect');
+    }
+  };
+
   return (
     <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="architect-detail-page">
       <Link to="/architects" className="inline-flex items-center gap-1 text-sm mb-4 nav-link pl-2 pr-3" data-testid="btn-back">
@@ -114,6 +158,14 @@ const ArchitectDetailPage = () => {
               )}
             </div>
           </div>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={openEdit} className="btn btn-outline" data-testid="btn-edit-architect">
+            <Pencil size={14}/> Edit
+          </button>
+          <button onClick={deleteArchitect} className="btn btn-danger" data-testid="btn-delete-architect">
+            <Trash2 size={14}/> Delete
+          </button>
         </div>
       </div>
 
@@ -282,6 +334,62 @@ const ArchitectDetailPage = () => {
           </div>
           {moveBusy && <div className="text-xs text-center" style={{ color: 'var(--cc-text-muted)' }}>Moving…</div>}
         </div>
+      </Modal>
+
+      <Modal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        title={`Edit Architect — ${a.name}`}
+        testId="edit-architect-modal"
+      >
+        <form onSubmit={submitEdit} className="space-y-3">
+          <div>
+            <label className="label">Name *</label>
+            <input
+              className="input"
+              value={editForm.name}
+              onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+              autoFocus
+              data-testid="edit-architect-name"
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">Phone</label>
+              <input
+                className="input font-mono-data"
+                value={editForm.phone}
+                onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                data-testid="edit-architect-phone"
+              />
+            </div>
+            <div>
+              <label className="label">Email</label>
+              <input
+                className="input"
+                value={editForm.email}
+                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                data-testid="edit-architect-email"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="label">Firm</label>
+            <input
+              className="input"
+              value={editForm.firm}
+              onChange={(e) => setEditForm({ ...editForm, firm: e.target.value })}
+              data-testid="edit-architect-firm"
+            />
+          </div>
+          {editError && <div className="text-sm text-red-600" data-testid="edit-architect-error">{editError}</div>}
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setEditOpen(false)} className="btn btn-outline"><X size={13}/> Cancel</button>
+            <button type="submit" disabled={editSaving} className="btn btn-primary" data-testid="edit-architect-save">
+              <Save size={13}/> {editSaving ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

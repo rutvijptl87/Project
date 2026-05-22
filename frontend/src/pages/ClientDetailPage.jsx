@@ -2,26 +2,31 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { formatINR } from '../lib/format';
-import { ArrowLeft, Phone, Mail, Eye, FileText, Users, Building2, FileSignature } from 'lucide-react';
+import { ArrowLeft, Phone, Mail, Eye, FileText, Users, Building2, FileSignature, Pencil, Trash2, Save, X } from 'lucide-react';
 import { downloadFile } from '../lib/download';
+import Modal from '../components/Modal';
 
 const ClientDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ name: '', phone: '', email: '', company: '', address: '' });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const r = await api.get(`/clients/${id}`);
-        setData(r.data);
-      } catch {
-        navigate('/clients');
-      } finally { setLoading(false); }
-    })();
-  }, [id, navigate]);
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await api.get(`/clients/${id}`);
+      setData(r.data);
+    } catch {
+      navigate('/clients');
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
 
   if (loading) return <div className="max-w-5xl mx-auto p-8">Loading...</div>;
   if (!data) return null;
@@ -29,6 +34,46 @@ const ClientDetailPage = () => {
   const { client: c, projects, stats } = data;
   const documents = data.documents || [];
   const waPhone = c.phone ? String(c.phone).replace(/[^0-9]/g, '') : '';
+
+  const openEdit = () => {
+    setEditForm({ name: c.name || '', phone: c.phone || '', email: c.email || '', company: c.company || '', address: c.address || '' });
+    setEditError('');
+    setEditOpen(true);
+  };
+
+  const submitEdit = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!editForm.name.trim()) { setEditError('Name is required'); return; }
+    setEditSaving(true);
+    try {
+      await api.put(`/clients/${c.id}`, editForm);
+      setEditOpen(false);
+      load();
+    } catch (err) {
+      setEditError(err?.response?.data?.detail || 'Failed to save');
+    } finally { setEditSaving(false); }
+  };
+
+  const deleteClient = async () => {
+    const linked = projects.length + documents.length;
+    const lines = [
+      `Are you sure you want to delete client "${c.name}"?`,
+      '',
+      linked > 0
+        ? `${projects.length} project(s) and ${documents.length} document(s) will be unlinked (not deleted).`
+        : 'No projects or documents are linked to this client.',
+      '',
+      'This cannot be undone from the clients list.',
+    ];
+    if (!window.confirm(lines.join('\n'))) return;
+    try {
+      await api.delete(`/clients/${c.id}`);
+      navigate('/clients');
+    } catch (err) {
+      alert(err?.response?.data?.detail || 'Failed to delete client');
+    }
+  };
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="client-detail-page">
@@ -65,6 +110,14 @@ const ClientDetailPage = () => {
             </div>
             {c.address && <div className="text-xs mt-2" style={{ color: 'var(--cc-text-muted)' }}>{c.address}</div>}
           </div>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={openEdit} className="btn btn-outline" data-testid="btn-edit-client">
+            <Pencil size={14}/> Edit
+          </button>
+          <button onClick={deleteClient} className="btn btn-danger" data-testid="btn-delete-client">
+            <Trash2 size={14}/> Delete
+          </button>
         </div>
       </div>
 
@@ -174,6 +227,45 @@ const ClientDetailPage = () => {
           </table>
         </div>
       </div>
+
+      <Modal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        title={`Edit Client — ${c.name}`}
+        testId="edit-client-modal"
+      >
+        <form onSubmit={submitEdit} className="space-y-3">
+          <div>
+            <label className="label">Name *</label>
+            <input className="input" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} autoFocus data-testid="edit-client-name"/>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">Phone</label>
+              <input className="input font-mono-data" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} data-testid="edit-client-phone"/>
+            </div>
+            <div>
+              <label className="label">Email</label>
+              <input className="input" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} data-testid="edit-client-email"/>
+            </div>
+          </div>
+          <div>
+            <label className="label">Company</label>
+            <input className="input" value={editForm.company} onChange={(e) => setEditForm({ ...editForm, company: e.target.value })} data-testid="edit-client-company"/>
+          </div>
+          <div>
+            <label className="label">Address</label>
+            <textarea className="textarea" rows={2} value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} data-testid="edit-client-address"/>
+          </div>
+          {editError && <div className="text-sm text-red-600" data-testid="edit-client-error">{editError}</div>}
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setEditOpen(false)} className="btn btn-outline"><X size={13}/> Cancel</button>
+            <button type="submit" disabled={editSaving} className="btn btn-primary" data-testid="edit-client-save">
+              <Save size={13}/> {editSaving ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };
