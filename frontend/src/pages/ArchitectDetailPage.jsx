@@ -2,32 +2,89 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { formatINR } from '../lib/format';
-import { ArrowLeft, Phone, Mail, Pencil, FileText, Eye, Compass, IndianRupee, Briefcase, FileSignature } from 'lucide-react';
+import { ArrowLeft, Phone, Mail, Pencil, FileText, Eye, Compass, IndianRupee, Briefcase, FileSignature, Trash2, ArrowRightLeft } from 'lucide-react';
 import { downloadFile } from '../lib/download';
+import { useUndo } from '../lib/undo';
+import Modal from '../components/Modal';
+import { logger } from '../lib/logger';
 
 const ArchitectDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { schedule } = useUndo();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [hiddenIds, setHiddenIds] = useState(new Set());
+  const [moveModal, setMoveModal] = useState(null); // the project being moved, or null
+  const [allArchitects, setAllArchitects] = useState([]);
+  const [moveQuery, setMoveQuery] = useState('');
+  const [moveBusy, setMoveBusy] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const r = await api.get(`/architects/${id}`);
-        setData(r.data);
-      } catch {
-        navigate('/architects');
-      } finally { setLoading(false); }
-    })();
-  }, [id, navigate]);
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await api.get(`/architects/${id}`);
+      setData(r.data);
+    } catch {
+      navigate('/architects');
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
 
   if (loading) return <div className="max-w-5xl mx-auto p-8">Loading...</div>;
   if (!data) return null;
 
   const { architect: a, projects, stats } = data;
   const documents = data.documents || [];
+  const visibleProjects = projects.filter((p) => !hiddenIds.has(p.id));
+
+  const handleDelete = (p) => {
+    if (!window.confirm(`Permanently delete project ${p.project_code} — ${p.name}?\n\nYou can undo within 60 seconds.`)) return;
+    setHiddenIds((s) => new Set([...s, p.id]));
+    schedule({
+      label: `Project ${p.project_code} deleted`,
+      onCommit: async () => {
+        try { await api.delete(`/projects/${p.id}`); }
+        catch (e) { logger.error('Project delete failed:', e); }
+        finally { load(); }
+      },
+      onUndo: () => {
+        setHiddenIds((s) => { const n = new Set(s); n.delete(p.id); return n; });
+      },
+    });
+  };
+
+  const openMove = async (p) => {
+    setMoveModal(p);
+    setMoveQuery('');
+    if (allArchitects.length === 0) {
+      try {
+        const r = await api.get('/architects');
+        setAllArchitects(r.data);
+      } catch (e) { logger.warn('Failed to load architects for move:', e); }
+    }
+  };
+
+  const performMove = async (targetArchitectId) => {
+    if (!moveModal) return;
+    setMoveBusy(true);
+    try {
+      await api.put(`/projects/${moveModal.id}`, { ...moveModal, architect_id: targetArchitectId || null });
+      setMoveModal(null);
+      load();
+    } catch (e) {
+      alert(e?.response?.data?.detail || 'Failed to move project');
+    } finally { setMoveBusy(false); }
+  };
+
+  const moveTargets = allArchitects.filter((x) => x.id !== a.id);
+  const filteredTargets = moveQuery.trim()
+    ? moveTargets.filter((x) => {
+        const q = moveQuery.toLowerCase();
+        return ['name', 'firm', 'phone', 'email'].some((k) => (x[k] || '').toLowerCase().includes(q));
+      })
+    : moveTargets;
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="architect-detail-page">
@@ -94,7 +151,9 @@ const ArchitectDetailPage = () => {
             <tbody>
               {projects.length === 0 ? (
                 <tr><td colSpan={9} className="text-center py-10" style={{ color: 'var(--cc-text-muted)' }}>No projects linked to this architect yet.</td></tr>
-              ) : projects.map((p) => (
+              ) : visibleProjects.length === 0 ? (
+                <tr><td colSpan={9} className="text-center py-10" style={{ color: 'var(--cc-text-muted)' }}>All projects hidden — undo a recent delete or refresh.</td></tr>
+              ) : visibleProjects.map((p) => (
                 <tr key={p.id} data-testid={`arch-project-row-${p.project_code}`}>
                   <td className="font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{p.project_code}</td>
                   <td className="font-medium">{p.name}</td>
@@ -107,13 +166,19 @@ const ArchitectDetailPage = () => {
                     <span className={`badge ${p.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`}>{p.status}</span>
                   </td>
                   <td>
-                    <div className="flex gap-1 justify-end">
-                      <Link to={`/projects/${p.id}`} className="btn btn-outline btn-sm" data-testid={`arch-view-${p.project_code}`}>
-                        <Eye size={13}/> View
+                    <div className="flex gap-1 justify-end flex-wrap">
+                      <Link to={`/projects/${p.id}`} className="btn btn-outline btn-sm" data-testid={`arch-view-${p.project_code}`} title="View project">
+                        <Eye size={13}/>
                       </Link>
                       <a href={`${API}/projects/${p.id}/invoice`} target="_blank" rel="noreferrer" className="btn btn-outline btn-sm" title="Invoice PDF">
                         <FileText size={13}/>
                       </a>
+                      <button onClick={() => openMove(p)} className="btn btn-outline btn-sm" title="Move to another architect" data-testid={`arch-move-${p.project_code}`}>
+                        <ArrowRightLeft size={13}/>
+                      </button>
+                      <button onClick={() => handleDelete(p)} className="btn btn-danger btn-sm" title="Delete project (60s undo)" data-testid={`arch-delete-${p.project_code}`}>
+                        <Trash2 size={13}/>
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -166,6 +231,58 @@ const ArchitectDetailPage = () => {
           </table>
         </div>
       </div>
+
+      <Modal
+        open={!!moveModal}
+        onClose={() => setMoveModal(null)}
+        title={moveModal ? `Move ${moveModal.project_code} to another architect` : ''}
+        testId="move-project-modal"
+      >
+        <div className="space-y-3">
+          <div className="text-sm" style={{ color: 'var(--cc-text-muted)' }}>
+            Currently assigned to <span className="font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{a.name}</span>. Pick a new architect below.
+          </div>
+          <input
+            className="input"
+            value={moveQuery}
+            onChange={(e) => setMoveQuery(e.target.value)}
+            placeholder="Search architect by name, firm, phone, email…"
+            autoFocus
+            data-testid="move-project-search"
+          />
+          <div className="rounded-lg border max-h-80 overflow-y-auto" style={{ borderColor: 'var(--cc-border)' }}>
+            <button
+              type="button"
+              onClick={() => performMove(null)}
+              disabled={moveBusy}
+              className="w-full text-left px-3 py-2 text-sm italic hover:bg-gray-50 border-b"
+              style={{ color: 'var(--cc-text-muted)', borderColor: 'var(--cc-border)' }}
+              data-testid="move-project-unassign"
+            >
+              — Unassign architect (leave blank) —
+            </button>
+            {filteredTargets.length === 0 ? (
+              <div className="px-3 py-4 text-sm text-center" style={{ color: 'var(--cc-text-muted)' }}>No other architects match.</div>
+            ) : filteredTargets.map((x) => (
+              <button
+                key={x.id}
+                type="button"
+                onClick={() => performMove(x.id)}
+                disabled={moveBusy}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b last:border-b-0"
+                style={{ borderColor: 'var(--cc-border)' }}
+                data-testid={`move-project-target-${x.id}`}
+              >
+                <div className="font-medium">{x.name}{x.firm ? <span className="font-normal text-xs ml-1.5" style={{ color: 'var(--cc-text-muted)' }}>· {x.firm}</span> : null}</div>
+                {(x.phone || x.email) && (
+                  <div className="text-xs" style={{ color: 'var(--cc-text-muted)' }}>{x.phone}{x.phone && x.email ? ' · ' : ''}{x.email}</div>
+                )}
+              </button>
+            ))}
+          </div>
+          {moveBusy && <div className="text-xs text-center" style={{ color: 'var(--cc-text-muted)' }}>Moving…</div>}
+        </div>
+      </Modal>
     </div>
   );
 };
