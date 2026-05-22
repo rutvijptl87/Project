@@ -34,6 +34,10 @@ const DocumentsPage = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [clientFilter, setClientFilter] = useState('');
+  const [architectFilter, setArchitectFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [hiddenIds, setHiddenIds] = useState(new Set());
 
@@ -51,6 +55,8 @@ const DocumentsPage = () => {
     try {
       const params = {};
       if (typeFilter) params.type_id = typeFilter;
+      if (clientFilter) params.client_id = clientFilter;
+      if (architectFilter) params.architect_id = architectFilter;
       if (search) params.search = search;
       if (showArchived) params.archived = true;
       const [t, c, ar, d] = await Promise.all([
@@ -66,9 +72,31 @@ const DocumentsPage = () => {
     } catch (e) { logger.error('Documents load failed:', e); } finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [typeFilter, showArchived]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [typeFilter, clientFilter, architectFilter, showArchived]);
 
-  const visible = useMemo(() => docs.filter((d) => !hiddenIds.has(d.id)), [docs, hiddenIds]);
+  // Client-side date range filter (backend doesn't yet expose date filtering on documents)
+  const visible = useMemo(() => {
+    const fromTs = dateFrom ? new Date(dateFrom + 'T00:00:00').getTime() : null;
+    const toTs = dateTo ? new Date(dateTo + 'T23:59:59').getTime() : null;
+    return docs.filter((d) => {
+      if (hiddenIds.has(d.id)) return false;
+      if (fromTs || toTs) {
+        const ts = d.document_date ? new Date(d.document_date).getTime() : null;
+        if (!ts) return false;
+        if (fromTs && ts < fromTs) return false;
+        if (toTs && ts > toTs) return false;
+      }
+      return true;
+    });
+  }, [docs, hiddenIds, dateFrom, dateTo]);
+
+  const clearFilters = () => {
+    setSearch(''); setTypeFilter(''); setClientFilter('');
+    setArchitectFilter(''); setDateFrom(''); setDateTo('');
+    // useEffect triggers reload when filter states change
+  };
+
+  const activeFiltersCount = [search, typeFilter, clientFilter, architectFilter, dateFrom, dateTo].filter(Boolean).length;
 
   const typeById = useMemo(() => Object.fromEntries(types.map((t) => [t.id, t])), [types]);
 
@@ -190,16 +218,61 @@ const DocumentsPage = () => {
         </div>
       </div>
 
-      <form onSubmit={(e) => { e.preventDefault(); load(); }} className="mb-4 flex gap-2 flex-wrap" data-testid="documents-search-form">
-        <div className="relative flex-1 min-w-[240px]">
-          <Search size={14} className="absolute left-3 top-3 text-gray-400"/>
-          <input className="input pl-9" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by number, client, plot, contact…" data-testid="documents-search-input" />
+      <form onSubmit={(e) => { e.preventDefault(); load(); }} className="mb-4 space-y-2" data-testid="documents-search-form">
+        <div className="flex gap-2 flex-wrap">
+          <div className="relative flex-1 min-w-[240px]">
+            <Search size={14} className="absolute left-3 top-3 text-gray-400"/>
+            <input className="input pl-9" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by number, client, plot, contact…" data-testid="documents-search-input" />
+          </div>
+          <select className="select max-w-[220px]" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} data-testid="documents-type-filter">
+            <option value="">All types</option>
+            {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          <select className="select max-w-[220px]" value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} data-testid="documents-client-filter">
+            <option value="">All clients</option>
+            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select className="select max-w-[220px]" value={architectFilter} onChange={(e) => setArchitectFilter(e.target.value)} data-testid="documents-architect-filter">
+            <option value="">All architects</option>
+            {architects.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <button className="btn btn-outline" type="submit" data-testid="documents-search-btn">Search</button>
         </div>
-        <select className="select max-w-[260px]" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} data-testid="documents-type-filter">
-          <option value="">All types</option>
-          {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
-        <button className="btn btn-outline" type="submit" data-testid="documents-search-btn">Search</button>
+        <div className="flex gap-2 items-center flex-wrap text-sm">
+          <span className="text-xs uppercase tracking-widest" style={{ color: 'var(--cc-text-muted)' }}>Date range</span>
+          <input
+            type="date"
+            className="input"
+            style={{ width: 170, padding: '6px 10px' }}
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            data-testid="documents-date-from"
+          />
+          <span style={{ color: 'var(--cc-text-muted)' }}>to</span>
+          <input
+            type="date"
+            className="input"
+            style={{ width: 170, padding: '6px 10px' }}
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            data-testid="documents-date-to"
+          />
+          {activeFiltersCount > 0 && (
+            <>
+              <span className="ml-2 text-xs" style={{ color: 'var(--cc-accent)' }}>
+                {activeFiltersCount} filter{activeFiltersCount === 1 ? '' : 's'} active · showing {visible.length} of {docs.length}
+              </span>
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="btn btn-outline btn-sm"
+                data-testid="documents-clear-filters"
+              >
+                Clear filters
+              </button>
+            </>
+          )}
+        </div>
       </form>
 
       <div className="card overflow-hidden">
