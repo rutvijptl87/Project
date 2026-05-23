@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useUndo } from '../lib/undo';
 import Modal from '../components/Modal';
-import { Plus, Pencil, Trash2, Compass, Phone, Mail } from 'lucide-react';
+import { Plus, Pencil, Trash2, Compass, Phone, Mail, Search } from 'lucide-react';
 
 const emptyA = { name: '', phone: '', email: '', firm: '' };
 
@@ -12,6 +12,7 @@ const ArchitectsPage = () => {
   const [items, setItems] = useState([]);
   const [hiddenIds, setHiddenIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyA);
@@ -42,7 +43,8 @@ const ArchitectsPage = () => {
       setModalOpen(false);
       load();
     } catch (err) {
-      setError(err?.response?.data?.detail || 'Failed to save');
+      const detail = err?.response?.data?.detail || 'Failed to save';
+      setError(detail);
     } finally { setSaving(false); }
   };
 
@@ -66,7 +68,16 @@ const ArchitectsPage = () => {
     });
   };
 
-  const visibleItems = items.filter((a) => !hiddenIds.has(a.id));
+  const visibleItems = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return items.filter((a) => {
+      if (hiddenIds.has(a.id)) return false;
+      if (!q) return true;
+      return ['name', 'firm', 'phone', 'email'].some(
+        (k) => (a[k] || '').toLowerCase().includes(q)
+      );
+    });
+  }, [items, hiddenIds, search]);
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="architects-page">
@@ -76,6 +87,17 @@ const ArchitectsPage = () => {
           <p className="text-sm mt-1" style={{ color: 'var(--cc-text-muted)' }}>Manage architect contacts ({items.length} total).</p>
         </div>
         <button onClick={openNew} className="btn btn-primary" data-testid="btn-new-architect"><Plus size={15}/> New Architect</button>
+      </div>
+
+      <div className="mb-4 relative max-w-md">
+        <Search size={14} className="absolute left-3 top-3 text-gray-400"/>
+        <input
+          className="input pl-9"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search architects by name, firm, phone, or email…"
+          data-testid="architects-search-input"
+        />
       </div>
 
       <div className="card overflow-hidden">
@@ -96,7 +118,7 @@ const ArchitectsPage = () => {
               ) : visibleItems.length === 0 ? (
                 <tr><td colSpan={5} className="text-center py-12">
                   <Compass size={32} className="mx-auto mb-2 text-gray-400"/>
-                  <div className="font-semibold">No architects yet</div>
+                  <div className="font-semibold">{search ? `No architects match "${search}"` : 'No architects yet'}</div>
                 </td></tr>
               ) : visibleItems.map((a) => (
                 <tr key={a.id} data-testid={`architect-row-${a.id}`}>

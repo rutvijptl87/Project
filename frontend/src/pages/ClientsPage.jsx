@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useUndo } from '../lib/undo';
 import Modal from '../components/Modal';
-import { Plus, Pencil, Trash2, Users, Phone, Mail } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Phone, Mail, Search } from 'lucide-react';
 
 const emptyClient = { name: '', phone: '', email: '', company: '', address: '' };
 
@@ -12,6 +12,7 @@ const ClientsPage = () => {
   const [clients, setClients] = useState([]);
   const [hiddenIds, setHiddenIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyClient);
@@ -72,7 +73,16 @@ const ClientsPage = () => {
     });
   };
 
-  const visibleClients = clients.filter((c) => !hiddenIds.has(c.id));
+  const visibleClients = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return clients.filter((c) => {
+      if (hiddenIds.has(c.id)) return false;
+      if (!q) return true;
+      return ['name', 'company', 'phone', 'email', 'address'].some(
+        (k) => (c[k] || '').toLowerCase().includes(q)
+      );
+    });
+  }, [clients, hiddenIds, search]);
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="clients-page">
@@ -82,6 +92,17 @@ const ClientsPage = () => {
           <p className="text-sm mt-1" style={{ color: 'var(--cc-text-muted)' }}>Manage your client directory ({clients.length} total).</p>
         </div>
         <button onClick={openNew} className="btn btn-primary" data-testid="btn-new-client"><Plus size={15}/> New Client</button>
+      </div>
+
+      <div className="mb-4 relative max-w-md">
+        <Search size={14} className="absolute left-3 top-3 text-gray-400"/>
+        <input
+          className="input pl-9"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search clients by name, company, phone, email, or address…"
+          data-testid="clients-search-input"
+        />
       </div>
 
       <div className="card overflow-hidden">
@@ -103,7 +124,7 @@ const ClientsPage = () => {
               ) : visibleClients.length === 0 ? (
                 <tr><td colSpan={6} className="text-center py-12">
                   <Users size={32} className="mx-auto mb-2 text-gray-400"/>
-                  <div className="font-semibold">No clients yet</div>
+                  <div className="font-semibold">{search ? `No clients match "${search}"` : 'No clients yet'}</div>
                   <div className="text-sm" style={{ color: 'var(--cc-text-muted)' }}>Add your first client to get started.</div>
                 </td></tr>
               ) : visibleClients.map((c) => (

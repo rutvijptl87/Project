@@ -367,8 +367,54 @@ async def list_clients():
     return items
 
 
+def _norm(s: Optional[str]) -> str:
+    """Normalise a string for duplicate comparison (trim, lowercase, collapse spaces)."""
+    return " ".join((s or "").strip().lower().split())
+
+
+def _digits(s: Optional[str]) -> str:
+    """Keep only digits — used so '+91 98765-43210' matches '9876543210'."""
+    return "".join(ch for ch in (s or "") if ch.isdigit())
+
+
+async def _find_duplicate_contact(
+    collection,
+    name: Optional[str],
+    phone: Optional[str],
+    email: Optional[str],
+    exclude_id: Optional[str] = None,
+) -> Optional[dict]:
+    """Return an existing row that matches by name, phone digits, or email."""
+    name_n = _norm(name)
+    phone_n = _digits(phone)
+    email_n = _norm(email)
+    if not (name_n or phone_n or email_n):
+        return None
+    # Fetch and compare in Python so we can do digits-only / case-insensitive match
+    # without needing extra indexes. Collections are small (typically <1000 rows).
+    rows = await collection.find({}, {"_id": 0}).to_list(5000)
+    for r in rows:
+        if exclude_id and r.get("id") == exclude_id:
+            continue
+        if name_n and _norm(r.get("name")) == name_n:
+            return r
+        if phone_n and len(phone_n) >= 6 and _digits(r.get("phone")) == phone_n:
+            return r
+        if email_n and _norm(r.get("email")) == email_n:
+            return r
+    return None
+
+
 @api_router.post("/clients", response_model=Client)
 async def create_client(data: ClientIn):
+    dup = await _find_duplicate_contact(db.clients, data.name, data.phone, data.email)
+    if dup:
+        reason = (
+            f"name '{dup.get('name')}'" if _norm(dup.get("name")) == _norm(data.name)
+            else f"phone {dup.get('phone')}" if _digits(dup.get("phone")) == _digits(data.phone)
+            else f"email {dup.get('email')}"
+        )
+        raise HTTPException(409, f"A client with this {reason} already exists. Open '{dup.get('name')}' instead, or change the details.")
     doc = data.model_dump()
     doc["id"] = _new_id()
     doc["created_at"] = _now()
@@ -380,6 +426,14 @@ async def create_client(data: ClientIn):
 
 @api_router.put("/clients/{client_id}", response_model=Client)
 async def update_client(client_id: str, data: ClientIn):
+    dup = await _find_duplicate_contact(db.clients, data.name, data.phone, data.email, exclude_id=client_id)
+    if dup:
+        reason = (
+            f"name '{dup.get('name')}'" if _norm(dup.get("name")) == _norm(data.name)
+            else f"phone {dup.get('phone')}" if _digits(dup.get("phone")) == _digits(data.phone)
+            else f"email {dup.get('email')}"
+        )
+        raise HTTPException(409, f"Another client with this {reason} already exists.")
     update = data.model_dump()
     _stamp_edit(update)
     result = await db.clients.find_one_and_update(
@@ -485,6 +539,14 @@ async def get_client_detail(client_id: str):
 
 @api_router.post("/architects", response_model=Architect)
 async def create_architect(data: ArchitectIn):
+    dup = await _find_duplicate_contact(db.architects, data.name, data.phone, data.email)
+    if dup:
+        reason = (
+            f"name '{dup.get('name')}'" if _norm(dup.get("name")) == _norm(data.name)
+            else f"phone {dup.get('phone')}" if _digits(dup.get("phone")) == _digits(data.phone)
+            else f"email {dup.get('email')}"
+        )
+        raise HTTPException(409, f"An architect with this {reason} already exists. Open '{dup.get('name')}' instead, or change the details.")
     doc = data.model_dump()
     doc["id"] = _new_id()
     doc["created_at"] = _now()
@@ -496,6 +558,14 @@ async def create_architect(data: ArchitectIn):
 
 @api_router.put("/architects/{architect_id}", response_model=Architect)
 async def update_architect(architect_id: str, data: ArchitectIn):
+    dup = await _find_duplicate_contact(db.architects, data.name, data.phone, data.email, exclude_id=architect_id)
+    if dup:
+        reason = (
+            f"name '{dup.get('name')}'" if _norm(dup.get("name")) == _norm(data.name)
+            else f"phone {dup.get('phone')}" if _digits(dup.get("phone")) == _digits(data.phone)
+            else f"email {dup.get('email')}"
+        )
+        raise HTTPException(409, f"Another architect with this {reason} already exists.")
     update = data.model_dump()
     _stamp_edit(update)
     result = await db.architects.find_one_and_update(
