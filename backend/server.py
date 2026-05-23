@@ -251,6 +251,11 @@ class Document(BaseModel):
     other_comments: str = ""
     update_date: Optional[str] = None
     archived: bool = False
+    confirmed: bool = False
+    linked_project_id: Optional[str] = None
+    linked_project_code: Optional[str] = ""
+    linked_project_name: Optional[str] = ""
+    confirmed_at: Optional[str] = None
     last_edited_by_user_id: Optional[str] = None
     last_edited_by_username: Optional[str] = ""
     last_edited_at: Optional[str] = ""
@@ -3081,6 +3086,54 @@ async def delete_document(doc_id: str):
 @api_router.post("/documents/{doc_id}/archive")
 async def archive_document(doc_id: str):
     res = await db.documents.update_one({"id": doc_id}, {"$set": {"archived": True}})
+    if res.matched_count == 0:
+        raise HTTPException(404, "Document not found")
+    return {"ok": True}
+
+
+class ConfirmDocumentIn(BaseModel):
+    project_id: Optional[str] = None
+
+
+@api_router.post("/documents/{doc_id}/confirm")
+async def confirm_document(doc_id: str, data: ConfirmDocumentIn):
+    """Mark a document as confirmed/order-placed and optionally link it to a project."""
+    existing = await db.documents.find_one({"id": doc_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Document not found")
+    update: dict = {"confirmed": True, "confirmed_at": _now()}
+    if data.project_id:
+        proj = await db.projects.find_one(
+            {"id": data.project_id}, {"_id": 0, "project_code": 1, "name": 1}
+        )
+        if not proj:
+            raise HTTPException(404, "Project not found")
+        update["linked_project_id"] = data.project_id
+        update["linked_project_code"] = proj.get("project_code", "")
+        update["linked_project_name"] = proj.get("name", "")
+    else:
+        # User confirmed without linking — leave linked fields untouched if previously set,
+        # but explicitly clear them on a fresh confirm-without-link.
+        update["linked_project_id"] = None
+        update["linked_project_code"] = ""
+        update["linked_project_name"] = ""
+    _stamp_edit(update)
+    await db.documents.update_one({"id": doc_id}, {"$set": update})
+    return {"ok": True, **update}
+
+
+@api_router.post("/documents/{doc_id}/unconfirm")
+async def unconfirm_document(doc_id: str):
+    res = await db.documents.update_one(
+        {"id": doc_id},
+        {"$set": {
+            "confirmed": False,
+            "confirmed_at": None,
+            "linked_project_id": None,
+            "linked_project_code": "",
+            "linked_project_name": "",
+        }},
+    )
     if res.matched_count == 0:
         raise HTTPException(404, "Document not found")
     return {"ok": True}

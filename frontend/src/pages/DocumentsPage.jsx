@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { useUndo } from '../lib/undo';
 import { downloadFile } from '../lib/download';
 import Modal from '../components/Modal';
 import InlinePicker from '../components/InlinePicker';
 import { logger } from '../lib/logger';
-import { Plus, Search, FileText, Pencil, Trash2, Archive, ArchiveRestore, FileSignature } from 'lucide-react';
+import { Plus, Search, FileText, Pencil, Trash2, Archive, ArchiveRestore, FileSignature, CheckCircle2, RotateCcw, ArrowUp, ArrowDown, Link2 } from 'lucide-react';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -40,6 +41,14 @@ const DocumentsPage = () => {
   const [dateTo, setDateTo] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [hiddenIds, setHiddenIds] = useState(new Set());
+  const [sortKey, setSortKey] = useState('document_date');
+  const [sortDir, setSortDir] = useState('desc'); // 'asc' | 'desc'
+
+  // Confirm-order modal
+  const [confirmModal, setConfirmModal] = useState(null); // the document being confirmed, or null
+  const [projects, setProjects] = useState([]);
+  const [projectQuery, setProjectQuery] = useState('');
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -78,7 +87,7 @@ const DocumentsPage = () => {
   const visible = useMemo(() => {
     const fromTs = dateFrom ? new Date(dateFrom + 'T00:00:00').getTime() : null;
     const toTs = dateTo ? new Date(dateTo + 'T23:59:59').getTime() : null;
-    return docs.filter((d) => {
+    const filtered = docs.filter((d) => {
       if (hiddenIds.has(d.id)) return false;
       if (fromTs || toTs) {
         const ts = d.document_date ? new Date(d.document_date).getTime() : null;
@@ -88,7 +97,50 @@ const DocumentsPage = () => {
       }
       return true;
     });
-  }, [docs, hiddenIds, dateFrom, dateTo]);
+    const getKey = (d) => {
+      switch (sortKey) {
+        case 'doc_number': return d.doc_number || '';
+        case 'doc_type_name': return d.doc_type_name || '';
+        case 'client_name': return (d.client_name || '').toLowerCase();
+        case 'architect_name': return (d.architect_name || '').toLowerCase();
+        case 'plot_place': return (d.plot_place || '').toLowerCase();
+        case 'contact_person': return (d.contact_person || '').toLowerCase();
+        case 'document_date':
+        default:
+          return d.document_date ? new Date(d.document_date).getTime() : 0;
+      }
+    };
+    const sorted = [...filtered].sort((a, b) => {
+      const ka = getKey(a); const kb = getKey(b);
+      if (ka < kb) return sortDir === 'asc' ? -1 : 1;
+      if (ka > kb) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  }, [docs, hiddenIds, dateFrom, dateTo, sortKey, sortDir]);
+
+  const onSort = (key) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'document_date' ? 'desc' : 'asc');
+    }
+  };
+
+  const SortHeader = ({ label, sk, className = '' }) => (
+    <th
+      onClick={() => onSort(sk)}
+      className={`cursor-pointer select-none ${className}`}
+      data-testid={`documents-sort-${sk}`}
+      title={`Sort by ${label}`}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {sortKey === sk ? (sortDir === 'asc' ? <ArrowUp size={11}/> : <ArrowDown size={11}/>) : <span className="opacity-30"><ArrowDown size={11}/></span>}
+      </span>
+    </th>
+  );
 
   const clearFilters = () => {
     setSearch(''); setTypeFilter(''); setClientFilter('');
@@ -188,6 +240,53 @@ const DocumentsPage = () => {
     catch { showToast('Failed to restore', 'error'); }
   };
 
+  const openConfirm = async (d) => {
+    setConfirmModal(d);
+    setProjectQuery('');
+    if (projects.length === 0) {
+      try {
+        const r = await api.get('/projects');
+        setProjects(r.data);
+      } catch (e) { logger.warn('Failed to load projects for confirm modal:', e); }
+    }
+  };
+
+  const performConfirm = async (projectId) => {
+    if (!confirmModal) return;
+    setConfirmBusy(true);
+    try {
+      await api.post(`/documents/${confirmModal.id}/confirm`, { project_id: projectId || null });
+      setConfirmModal(null);
+      load();
+      showToast(projectId ? 'Order confirmed and linked to project' : 'Order confirmed');
+    } catch (e) {
+      showToast(e?.response?.data?.detail || 'Failed to confirm', 'error');
+    } finally { setConfirmBusy(false); }
+  };
+
+  const unconfirm = async (d) => {
+    if (!window.confirm(`Mark order for ${d.doc_number} as NOT confirmed?\n\nThis will clear the linked project.`)) return;
+    try {
+      await api.post(`/documents/${d.id}/unconfirm`);
+      load();
+      showToast('Order un-confirmed');
+    } catch (e) { showToast(e?.response?.data?.detail || 'Failed', 'error'); }
+  };
+
+  const filteredProjects = useMemo(() => {
+    if (!confirmModal) return [];
+    const q = projectQuery.trim().toLowerCase();
+    const rows = projects;
+    if (!q) return rows.slice(0, 50);
+    return rows.filter((p) => (
+      (p.project_code || '').toLowerCase().includes(q) ||
+      (p.name || '').toLowerCase().includes(q) ||
+      (p.client_name || '').toLowerCase().includes(q) ||
+      (p.architect_name || '').toLowerCase().includes(q) ||
+      (p.site_location || '').toLowerCase().includes(q)
+    )).slice(0, 50);
+  }, [projects, projectQuery, confirmModal]);
+
   const downloadPdf = (d) => downloadFile(`${API}/documents/${d.id}/pdf`);
 
   const selectedType = typeById[form.doc_type_id];
@@ -280,27 +379,32 @@ const DocumentsPage = () => {
           <table className="cc-table" data-testid="documents-table">
             <thead>
               <tr>
-                <th>Document No.</th>
-                <th>Type</th>
-                <th>Client</th>
-                <th>Architect</th>
-                <th>Plot / Place</th>
-                <th>Contact</th>
-                <th>Date</th>
+                <SortHeader label="Document No." sk="doc_number"/>
+                <SortHeader label="Type" sk="doc_type_name"/>
+                <SortHeader label="Client" sk="client_name"/>
+                <SortHeader label="Architect" sk="architect_name"/>
+                <SortHeader label="Plot / Place" sk="plot_place"/>
+                <SortHeader label="Contact" sk="contact_person"/>
+                <SortHeader label="Date" sk="document_date"/>
+                <th>Status</th>
                 <th className="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} className="text-center py-10" style={{ color: 'var(--cc-text-muted)' }}>Loading…</td></tr>
+                <tr><td colSpan={9} className="text-center py-10" style={{ color: 'var(--cc-text-muted)' }}>Loading…</td></tr>
               ) : visible.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-12">
+                <tr><td colSpan={9} className="text-center py-12">
                   <FileSignature size={32} className="mx-auto mb-2 text-gray-400"/>
                   <div className="font-semibold">{showArchived ? 'No archived documents' : 'No documents yet'}</div>
                   <div className="text-sm" style={{ color: 'var(--cc-text-muted)' }}>Click "New Document" to generate your first one.</div>
                 </td></tr>
               ) : visible.map((d) => (
-                <tr key={d.id} data-testid={`document-row-${d.doc_number.replace(/[^a-zA-Z0-9]/g, '-')}`}>
+                <tr
+                  key={d.id}
+                  data-testid={`document-row-${d.doc_number.replace(/[^a-zA-Z0-9]/g, '-')}`}
+                  style={d.confirmed ? { background: 'rgba(16, 185, 129, 0.08)' } : undefined}
+                >
                   <td className="font-mono-data text-xs font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{d.doc_number}</td>
                   <td className="text-sm">{d.doc_type_name}</td>
                   <td className="text-sm">{d.client_name || <span className="text-gray-400">—</span>}</td>
@@ -312,8 +416,31 @@ const DocumentsPage = () => {
                     {!d.contact_person && !d.mobile && <span className="text-gray-400">—</span>}
                   </td>
                   <td className="text-xs font-mono-data">{(d.document_date || '').slice(0, 10) || '—'}</td>
+                  <td className="text-xs">
+                    {d.confirmed ? (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold w-fit" style={{ background: '#D1FAE5', color: '#065F46' }} data-testid={`doc-confirmed-${d.id}`}>
+                          <CheckCircle2 size={12}/> Confirmed
+                        </span>
+                        {d.linked_project_code && (
+                          <Link to={`/projects/${d.linked_project_id}`} className="inline-flex items-center gap-1 link-underline text-[11px]" data-testid={`doc-linked-project-${d.id}`} style={{ color: 'var(--cc-accent)' }}>
+                            <Link2 size={10}/> <span className="font-mono-data">{d.linked_project_code}</span>
+                          </Link>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400">Pending</span>
+                    )}
+                  </td>
                   <td>
                     <div className="flex gap-1 justify-end flex-wrap">
+                      {d.confirmed ? (
+                        <button onClick={() => unconfirm(d)} className="btn btn-outline btn-sm" title="Un-confirm" data-testid={`btn-unconfirm-${d.id}`}><RotateCcw size={13}/></button>
+                      ) : (
+                        <button onClick={() => openConfirm(d)} className="btn btn-sm" style={{ background: '#10B981', color: '#fff', border: '1px solid #10B981' }} title="Confirm order" data-testid={`btn-confirm-${d.id}`}>
+                          <CheckCircle2 size={13}/>
+                        </button>
+                      )}
                       <button onClick={() => downloadPdf(d)} className="btn btn-outline btn-sm" title="Download PDF" data-testid={`btn-doc-pdf-${d.id}`}><FileText size={13}/></button>
                       <button onClick={() => openEdit(d)} className="btn btn-outline btn-sm" title="Edit" data-testid={`btn-doc-edit-${d.id}`}><Pencil size={13}/></button>
                       {d.archived ? (
@@ -422,6 +549,86 @@ const DocumentsPage = () => {
             <button type="submit" disabled={saving} className="btn btn-primary" data-testid="document-form-save">{saving ? 'Saving…' : (editing ? 'Save Changes' : 'Create Document')}</button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={!!confirmModal}
+        onClose={() => setConfirmModal(null)}
+        title={confirmModal ? `Confirm order for ${confirmModal.doc_number}` : ''}
+        testId="confirm-order-modal"
+        maxWidth="640px"
+      >
+        {confirmModal && (
+          <div className="space-y-3">
+            <div className="rounded-lg p-3 text-sm" style={{ background: 'var(--cc-surface)', border: '1px solid var(--cc-border)' }}>
+              <div><span style={{ color: 'var(--cc-text-muted)' }}>Document:</span> <span className="font-mono-data font-semibold">{confirmModal.doc_number}</span> · {confirmModal.doc_type_name}</div>
+              {confirmModal.client_name && <div><span style={{ color: 'var(--cc-text-muted)' }}>Client:</span> {confirmModal.client_name}</div>}
+              {confirmModal.architect_name && <div><span style={{ color: 'var(--cc-text-muted)' }}>Architect:</span> {confirmModal.architect_name}</div>}
+              {confirmModal.plot_place && <div><span style={{ color: 'var(--cc-text-muted)' }}>Plot:</span> {confirmModal.plot_place}</div>}
+            </div>
+
+            <div>
+              <label className="label">Link to which project?</label>
+              <p className="text-xs mb-2" style={{ color: 'var(--cc-text-muted)' }}>
+                Pick an existing project, or confirm without linking. The document row will turn green either way.
+              </p>
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-3 text-gray-400"/>
+                <input
+                  className="input pl-9"
+                  value={projectQuery}
+                  onChange={(e) => setProjectQuery(e.target.value)}
+                  placeholder="Search by project code, name, client, architect, location…"
+                  autoFocus
+                  data-testid="confirm-project-search"
+                />
+              </div>
+              <div className="rounded-lg border mt-2 max-h-72 overflow-y-auto" style={{ borderColor: 'var(--cc-border)' }}>
+                {filteredProjects.length === 0 ? (
+                  <div className="px-3 py-4 text-sm text-center" style={{ color: 'var(--cc-text-muted)' }}>
+                    {projects.length === 0 ? 'Loading projects…' : `No projects match "${projectQuery}"`}
+                  </div>
+                ) : filteredProjects.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => performConfirm(p.id)}
+                    disabled={confirmBusy}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b last:border-b-0 flex justify-between items-center gap-3"
+                    style={{ borderColor: 'var(--cc-border)' }}
+                    data-testid={`confirm-project-pick-${p.project_code}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium truncate">
+                        <span className="font-mono-data text-xs font-semibold" style={{ color: 'var(--cc-accent)' }}>{p.project_code}</span>
+                        <span className="ml-2">{p.name}</span>
+                      </div>
+                      <div className="text-xs truncate" style={{ color: 'var(--cc-text-muted)' }}>
+                        {p.client_name || 'No client'}{p.site_location ? ` · ${p.site_location}` : ''}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-between gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => performConfirm(null)}
+                disabled={confirmBusy}
+                className="btn btn-outline"
+                data-testid="confirm-without-link"
+              >
+                Confirm without linking
+              </button>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setConfirmModal(null)} className="btn btn-outline">Cancel</button>
+              </div>
+            </div>
+            {confirmBusy && <div className="text-xs text-center" style={{ color: 'var(--cc-text-muted)' }}>Saving…</div>}
+          </div>
+        )}
       </Modal>
 
       {toast && (
