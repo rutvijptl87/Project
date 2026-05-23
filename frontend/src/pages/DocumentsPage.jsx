@@ -47,8 +47,10 @@ const DocumentsPage = () => {
   // Confirm-order modal
   const [confirmModal, setConfirmModal] = useState(null); // the document being confirmed, or null
   const [projects, setProjects] = useState([]);
+  const [audits, setAudits] = useState([]);
   const [projectQuery, setProjectQuery] = useState('');
   const [confirmBusy, setConfirmBusy] = useState(false);
+  const [linkKind, setLinkKind] = useState('project'); // 'project' | 'audit'
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -241,31 +243,42 @@ const DocumentsPage = () => {
   };
 
   const openConfirm = async (d) => {
+    // Auto-detect: audit-related doc types default to audit picker; everything else to project.
+    const auditPrefixes = ['AUD-OFR', 'AUD-RPT'];
+    const type = types.find((t) => t.id === d.doc_type_id);
+    const isAuditDoc = type && auditPrefixes.includes((type.prefix || '').toUpperCase());
+    setLinkKind(isAuditDoc ? 'audit' : 'project');
     setConfirmModal(d);
     setProjectQuery('');
-    if (projects.length === 0) {
-      try {
-        const r = await api.get('/projects');
-        setProjects(r.data);
-      } catch (e) { logger.warn('Failed to load projects for confirm modal:', e); }
-    }
+    try {
+      const [pr, ar] = await Promise.all([
+        projects.length === 0 ? api.get('/projects') : Promise.resolve({ data: projects }),
+        audits.length === 0 ? api.get('/audits') : Promise.resolve({ data: audits }),
+      ]);
+      if (projects.length === 0) setProjects(pr.data);
+      if (audits.length === 0) setAudits(ar.data);
+    } catch (e) { logger.warn('Failed to load picker data:', e); }
   };
 
-  const performConfirm = async (projectId) => {
+  const performConfirm = async (targetId) => {
     if (!confirmModal) return;
     setConfirmBusy(true);
     try {
-      await api.post(`/documents/${confirmModal.id}/confirm`, { project_id: projectId || null });
+      const payload = targetId
+        ? (linkKind === 'audit' ? { audit_id: targetId } : { project_id: targetId })
+        : {};
+      await api.post(`/documents/${confirmModal.id}/confirm`, payload);
       setConfirmModal(null);
       load();
-      showToast(projectId ? 'Order confirmed and linked to project' : 'Order confirmed');
+      const linkLabel = targetId ? `Order confirmed and linked to ${linkKind}` : 'Order confirmed';
+      showToast(linkLabel);
     } catch (e) {
       showToast(e?.response?.data?.detail || 'Failed to confirm', 'error');
     } finally { setConfirmBusy(false); }
   };
 
   const unconfirm = async (d) => {
-    if (!window.confirm(`Mark order for ${d.doc_number} as NOT confirmed?\n\nThis will clear the linked project.`)) return;
+    if (!window.confirm(`Mark order for ${d.doc_number} as NOT confirmed?\n\nThis will clear the linked project/audit.`)) return;
     try {
       await api.post(`/documents/${d.id}/unconfirm`);
       load();
@@ -273,9 +286,19 @@ const DocumentsPage = () => {
     } catch (e) { showToast(e?.response?.data?.detail || 'Failed', 'error'); }
   };
 
-  const filteredProjects = useMemo(() => {
+  const filteredPickerItems = useMemo(() => {
     if (!confirmModal) return [];
     const q = projectQuery.trim().toLowerCase();
+    if (linkKind === 'audit') {
+      const rows = audits;
+      if (!q) return rows.slice(0, 50);
+      return rows.filter((a) => (
+        (a.audit_code || '').toLowerCase().includes(q) ||
+        (a.audit_offer || '').toLowerCase().includes(q) ||
+        (a.client_name || '').toLowerCase().includes(q) ||
+        (a.location || '').toLowerCase().includes(q)
+      )).slice(0, 50);
+    }
     const rows = projects;
     if (!q) return rows.slice(0, 50);
     return rows.filter((p) => (
@@ -285,7 +308,7 @@ const DocumentsPage = () => {
       (p.architect_name || '').toLowerCase().includes(q) ||
       (p.site_location || '').toLowerCase().includes(q)
     )).slice(0, 50);
-  }, [projects, projectQuery, confirmModal]);
+  }, [projects, audits, projectQuery, confirmModal, linkKind]);
 
   const downloadPdf = (d) => downloadFile(`${API}/documents/${d.id}/pdf`);
 
@@ -425,6 +448,11 @@ const DocumentsPage = () => {
                         {d.linked_project_code && (
                           <Link to={`/projects/${d.linked_project_id}`} className="inline-flex items-center gap-1 link-underline text-[11px]" data-testid={`doc-linked-project-${d.id}`} style={{ color: 'var(--cc-accent)' }}>
                             <Link2 size={10}/> <span className="font-mono-data">{d.linked_project_code}</span>
+                          </Link>
+                        )}
+                        {d.linked_audit_code && (
+                          <Link to={`/audits/${d.linked_audit_id}`} className="inline-flex items-center gap-1 link-underline text-[11px]" data-testid={`doc-linked-audit-${d.id}`} style={{ color: 'var(--cc-accent)' }}>
+                            <Link2 size={10}/> <span className="font-mono-data">{d.linked_audit_code}</span>
                           </Link>
                         )}
                       </div>
@@ -568,9 +596,35 @@ const DocumentsPage = () => {
             </div>
 
             <div>
-              <label className="label">Link to which project?</label>
+              <div className="flex items-center gap-2 mb-2">
+                <label className="label mb-0">Link to:</label>
+                <div className="inline-flex rounded-lg border overflow-hidden text-xs" style={{ borderColor: 'var(--cc-border)' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setLinkKind('project'); setProjectQuery(''); }}
+                    className="px-3 py-1.5"
+                    style={linkKind === 'project'
+                      ? { background: 'var(--cc-dark-green)', color: '#fff' }
+                      : { background: '#fff', color: 'var(--cc-dark-green)' }}
+                    data-testid="confirm-link-kind-project"
+                  >
+                    Project
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setLinkKind('audit'); setProjectQuery(''); }}
+                    className="px-3 py-1.5 border-l"
+                    style={linkKind === 'audit'
+                      ? { background: 'var(--cc-dark-green)', color: '#fff', borderColor: 'var(--cc-dark-green)' }
+                      : { background: '#fff', color: 'var(--cc-dark-green)', borderColor: 'var(--cc-border)' }}
+                    data-testid="confirm-link-kind-audit"
+                  >
+                    Audit
+                  </button>
+                </div>
+              </div>
               <p className="text-xs mb-2" style={{ color: 'var(--cc-text-muted)' }}>
-                Pick an existing project, or confirm without linking. The document row will turn green either way.
+                Pick an existing {linkKind}, or confirm without linking. The document row will turn green either way.
               </p>
               <div className="relative">
                 <Search size={14} className="absolute left-3 top-3 text-gray-400"/>
@@ -578,37 +632,65 @@ const DocumentsPage = () => {
                   className="input pl-9"
                   value={projectQuery}
                   onChange={(e) => setProjectQuery(e.target.value)}
-                  placeholder="Search by project code, name, client, architect, location…"
+                  placeholder={linkKind === 'audit'
+                    ? 'Search audits by code, offer, client, location…'
+                    : 'Search projects by code, name, client, architect, location…'}
                   autoFocus
                   data-testid="confirm-project-search"
                 />
               </div>
               <div className="rounded-lg border mt-2 max-h-72 overflow-y-auto" style={{ borderColor: 'var(--cc-border)' }}>
-                {filteredProjects.length === 0 ? (
+                {filteredPickerItems.length === 0 ? (
                   <div className="px-3 py-4 text-sm text-center" style={{ color: 'var(--cc-text-muted)' }}>
-                    {projects.length === 0 ? 'Loading projects…' : `No projects match "${projectQuery}"`}
+                    {(linkKind === 'audit' ? audits : projects).length === 0
+                      ? `Loading ${linkKind}s…`
+                      : `No ${linkKind}s match "${projectQuery}"`}
                   </div>
-                ) : filteredProjects.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => performConfirm(p.id)}
-                    disabled={confirmBusy}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b last:border-b-0 flex justify-between items-center gap-3"
-                    style={{ borderColor: 'var(--cc-border)' }}
-                    data-testid={`confirm-project-pick-${p.project_code}`}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium truncate">
-                        <span className="font-mono-data text-xs font-semibold" style={{ color: 'var(--cc-accent)' }}>{p.project_code}</span>
-                        <span className="ml-2">{p.name}</span>
+                ) : linkKind === 'audit' ? (
+                  filteredPickerItems.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => performConfirm(a.id)}
+                      disabled={confirmBusy}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b last:border-b-0 flex justify-between items-center gap-3"
+                      style={{ borderColor: 'var(--cc-border)' }}
+                      data-testid={`confirm-audit-pick-${a.audit_code}`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium truncate">
+                          <span className="font-mono-data text-xs font-semibold" style={{ color: 'var(--cc-accent)' }}>{a.audit_code}</span>
+                          <span className="ml-2">{a.audit_offer || 'Audit'}</span>
+                        </div>
+                        <div className="text-xs truncate" style={{ color: 'var(--cc-text-muted)' }}>
+                          {a.client_name || 'No client'}{a.location ? ` · ${a.location}` : ''}
+                        </div>
                       </div>
-                      <div className="text-xs truncate" style={{ color: 'var(--cc-text-muted)' }}>
-                        {p.client_name || 'No client'}{p.site_location ? ` · ${p.site_location}` : ''}
+                    </button>
+                  ))
+                ) : (
+                  filteredPickerItems.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => performConfirm(p.id)}
+                      disabled={confirmBusy}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b last:border-b-0 flex justify-between items-center gap-3"
+                      style={{ borderColor: 'var(--cc-border)' }}
+                      data-testid={`confirm-project-pick-${p.project_code}`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium truncate">
+                          <span className="font-mono-data text-xs font-semibold" style={{ color: 'var(--cc-accent)' }}>{p.project_code}</span>
+                          <span className="ml-2">{p.name}</span>
+                        </div>
+                        <div className="text-xs truncate" style={{ color: 'var(--cc-text-muted)' }}>
+                          {p.client_name || 'No client'}{p.site_location ? ` · ${p.site_location}` : ''}
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  ))
+                )}
               </div>
             </div>
 

@@ -255,6 +255,9 @@ class Document(BaseModel):
     linked_project_id: Optional[str] = None
     linked_project_code: Optional[str] = ""
     linked_project_name: Optional[str] = ""
+    linked_audit_id: Optional[str] = None
+    linked_audit_code: Optional[str] = ""
+    linked_audit_offer: Optional[str] = ""
     confirmed_at: Optional[str] = None
     last_edited_by_user_id: Optional[str] = None
     last_edited_by_username: Optional[str] = ""
@@ -3093,14 +3096,17 @@ async def archive_document(doc_id: str):
 
 class ConfirmDocumentIn(BaseModel):
     project_id: Optional[str] = None
+    audit_id: Optional[str] = None
 
 
 @api_router.post("/documents/{doc_id}/confirm")
 async def confirm_document(doc_id: str, data: ConfirmDocumentIn):
-    """Mark a document as confirmed/order-placed and optionally link it to a project."""
+    """Mark a document as confirmed/order-placed and optionally link it to a project or audit."""
     existing = await db.documents.find_one({"id": doc_id}, {"_id": 0})
     if not existing:
         raise HTTPException(404, "Document not found")
+    if data.project_id and data.audit_id:
+        raise HTTPException(400, "Link to either a project OR an audit, not both")
     update: dict = {"confirmed": True, "confirmed_at": _now()}
     if data.project_id:
         proj = await db.projects.find_one(
@@ -3111,12 +3117,28 @@ async def confirm_document(doc_id: str, data: ConfirmDocumentIn):
         update["linked_project_id"] = data.project_id
         update["linked_project_code"] = proj.get("project_code", "")
         update["linked_project_name"] = proj.get("name", "")
-    else:
-        # User confirmed without linking — leave linked fields untouched if previously set,
-        # but explicitly clear them on a fresh confirm-without-link.
+        update["linked_audit_id"] = None
+        update["linked_audit_code"] = ""
+    elif data.audit_id:
+        audit = await db.audits.find_one(
+            {"id": data.audit_id}, {"_id": 0, "audit_code": 1, "audit_offer": 1}
+        )
+        if not audit:
+            raise HTTPException(404, "Audit not found")
+        update["linked_audit_id"] = data.audit_id
+        update["linked_audit_code"] = audit.get("audit_code", "")
+        update["linked_audit_offer"] = audit.get("audit_offer", "")
         update["linked_project_id"] = None
         update["linked_project_code"] = ""
         update["linked_project_name"] = ""
+    else:
+        # Confirmed without linking — clear both
+        update["linked_project_id"] = None
+        update["linked_project_code"] = ""
+        update["linked_project_name"] = ""
+        update["linked_audit_id"] = None
+        update["linked_audit_code"] = ""
+        update["linked_audit_offer"] = ""
     _stamp_edit(update)
     await db.documents.update_one({"id": doc_id}, {"$set": update})
     return {"ok": True, **update}
@@ -3132,6 +3154,9 @@ async def unconfirm_document(doc_id: str):
             "linked_project_id": None,
             "linked_project_code": "",
             "linked_project_name": "",
+            "linked_audit_id": None,
+            "linked_audit_code": "",
+            "linked_audit_offer": "",
         }},
     )
     if res.matched_count == 0:
