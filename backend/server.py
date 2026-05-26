@@ -251,6 +251,7 @@ class Document(BaseModel):
     other_comments: str = ""
     update_date: Optional[str] = None
     archived: bool = False
+    status: str = "pending"  # pending | confirmed | on_hold | cancelled
     confirmed: bool = False
     linked_project_id: Optional[str] = None
     linked_project_code: Optional[str] = ""
@@ -2964,6 +2965,9 @@ async def delete_document_type(type_id: str):
 
 
 async def _enrich_document(d: dict) -> dict:
+    # Backfill status field for documents created before the status feature existed
+    if not d.get("status"):
+        d["status"] = "confirmed" if d.get("confirmed") else "pending"
     if d.get("client_id"):
         c = await db.clients.find_one({"id": d["client_id"]}, {"_id": 0, "name": 1, "phone": 1, "email": 1, "address": 1})
         if c:
@@ -3099,69 +3103,85 @@ class ConfirmDocumentIn(BaseModel):
     audit_id: Optional[str] = None
 
 
-@api_router.post("/documents/{doc_id}/confirm")
-async def confirm_document(doc_id: str, data: ConfirmDocumentIn):
-    """Mark a document as confirmed/order-placed and optionally link it to a project or audit."""
+class DocumentStatusIn(BaseModel):
+    status: str  # one of: pending | confirmed | on_hold | cancelled
+    project_id: Optional[str] = None
+    audit_id: Optional[str] = None
+
+
+_DOC_STATUSES = {"pending", "confirmed", "on_hold", "cancelled"}
+
+
+async def _apply_document_status(doc_id: str, status: str, project_id: Optional[str], audit_id: Optional[str]) -> dict:
+    if status not in _DOC_STATUSES:
+        raise HTTPException(400, f"Invalid status. Use one of: {sorted(_DOC_STATUSES)}")
     existing = await db.documents.find_one({"id": doc_id}, {"_id": 0})
     if not existing:
         raise HTTPException(404, "Document not found")
-    if data.project_id and data.audit_id:
+    if project_id and audit_id:
         raise HTTPException(400, "Link to either a project OR an audit, not both")
-    update: dict = {"confirmed": True, "confirmed_at": _now()}
-    if data.project_id:
-        proj = await db.projects.find_one(
-            {"id": data.project_id}, {"_id": 0, "project_code": 1, "name": 1}
-        )
-        if not proj:
-            raise HTTPException(404, "Project not found")
-        update["linked_project_id"] = data.project_id
-        update["linked_project_code"] = proj.get("project_code", "")
-        update["linked_project_name"] = proj.get("name", "")
-        update["linked_audit_id"] = None
-        update["linked_audit_code"] = ""
-    elif data.audit_id:
-        audit = await db.audits.find_one(
-            {"id": data.audit_id}, {"_id": 0, "audit_code": 1, "audit_offer": 1}
-        )
-        if not audit:
-            raise HTTPException(404, "Audit not found")
-        update["linked_audit_id"] = data.audit_id
-        update["linked_audit_code"] = audit.get("audit_code", "")
-        update["linked_audit_offer"] = audit.get("audit_offer", "")
-        update["linked_project_id"] = None
-        update["linked_project_code"] = ""
-        update["linked_project_name"] = ""
-    else:
-        # Confirmed without linking — clear both
-        update["linked_project_id"] = None
-        update["linked_project_code"] = ""
-        update["linked_project_name"] = ""
-        update["linked_audit_id"] = None
-        update["linked_audit_code"] = ""
-        update["linked_audit_offer"] = ""
+
+    update: dict = {"status": status}
+    is_confirmed = status == "confirmed"
+    update["confirmed"] = is_confirmed
+    update["confirmed_at"] = _now() if is_confirmed else None
+
+    if status in ("on_hold", "cancelled", "pending"):
+        # Clear links when status is not 'confirmed'
+        update.update({
+            "linked_project_id": None, "linked_project_code": "", "linked_project_name": "",
+            "linked_audit_id": None, "linked_audit_code": "", "linked_audit_offer": "",
+        })
+    elif is_confirmed:
+        if project_id:
+            proj = await db.projects.find_one({"id": project_id}, {"_id": 0, "project_code": 1, "name": 1})
+            if not proj:
+                raise HTTPException(404, "Project not found")
+            update.update({
+                "linked_project_id": project_id,
+                "linked_project_code": proj.get("project_code", ""),
+                "linked_project_name": proj.get("name", ""),
+                "linked_audit_id": None, "linked_audit_code": "", "linked_audit_offer": "",
+            })
+        elif audit_id:
+            audit = await db.audits.find_one({"id": audit_id}, {"_id": 0, "audit_code": 1, "audit_offer": 1})
+            if not audit:
+                raise HTTPException(404, "Audit not found")
+            update.update({
+                "linked_audit_id": audit_id,
+                "linked_audit_code": audit.get("audit_code", ""),
+                "linked_audit_offer": audit.get("audit_offer", ""),
+                "linked_project_id": None, "linked_project_code": "", "linked_project_name": "",
+            })
+        else:
+            # Confirmed without link → clear both
+            update.update({
+                "linked_project_id": None, "linked_project_code": "", "linked_project_name": "",
+                "linked_audit_id": None, "linked_audit_code": "", "linked_audit_offer": "",
+            })
     _stamp_edit(update)
     await db.documents.update_one({"id": doc_id}, {"$set": update})
+    return update
+
+
+@api_router.post("/documents/{doc_id}/status")
+async def set_document_status(doc_id: str, data: DocumentStatusIn):
+    update = await _apply_document_status(doc_id, data.status, data.project_id, data.audit_id)
+    return {"ok": True, **update}
+
+
+@api_router.post("/documents/{doc_id}/confirm")
+async def confirm_document(doc_id: str, data: ConfirmDocumentIn):
+    """Backward-compat: confirm + optional link. Equivalent to status='confirmed'."""
+    update = await _apply_document_status(doc_id, "confirmed", data.project_id, data.audit_id)
     return {"ok": True, **update}
 
 
 @api_router.post("/documents/{doc_id}/unconfirm")
 async def unconfirm_document(doc_id: str):
-    res = await db.documents.update_one(
-        {"id": doc_id},
-        {"$set": {
-            "confirmed": False,
-            "confirmed_at": None,
-            "linked_project_id": None,
-            "linked_project_code": "",
-            "linked_project_name": "",
-            "linked_audit_id": None,
-            "linked_audit_code": "",
-            "linked_audit_offer": "",
-        }},
-    )
-    if res.matched_count == 0:
-        raise HTTPException(404, "Document not found")
-    return {"ok": True}
+    """Backward-compat: reset to pending."""
+    update = await _apply_document_status(doc_id, "pending", None, None)
+    return {"ok": True, **update}
 
 
 @api_router.post("/documents/{doc_id}/unarchive")

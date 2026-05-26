@@ -6,7 +6,7 @@ import { downloadFile } from '../lib/download';
 import Modal from '../components/Modal';
 import InlinePicker from '../components/InlinePicker';
 import { logger } from '../lib/logger';
-import { Plus, Search, FileText, Pencil, Trash2, Archive, ArchiveRestore, FileSignature, CheckCircle2, RotateCcw, ArrowUp, ArrowDown, Link2 } from 'lucide-react';
+import { Plus, Search, FileText, Pencil, Trash2, Archive, ArchiveRestore, FileSignature, CheckCircle2, RotateCcw, ArrowUp, ArrowDown, Link2, PauseCircle, XCircle } from 'lucide-react';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -107,6 +107,12 @@ const DocumentsPage = () => {
         case 'architect_name': return (d.architect_name || '').toLowerCase();
         case 'plot_place': return (d.plot_place || '').toLowerCase();
         case 'contact_person': return (d.contact_person || '').toLowerCase();
+        case 'status': {
+          // Pending → Confirmed → On Hold → Cancelled (consistent order, easy to scan)
+          const order = { pending: 0, confirmed: 1, on_hold: 2, cancelled: 3 };
+          const s = (d.status || (d.confirmed ? 'confirmed' : 'pending')).toLowerCase();
+          return order[s] ?? 99;
+        }
         case 'document_date':
         default:
           return d.document_date ? new Date(d.document_date).getTime() : 0;
@@ -278,12 +284,39 @@ const DocumentsPage = () => {
   };
 
   const unconfirm = async (d) => {
-    if (!window.confirm(`Mark order for ${d.doc_number} as NOT confirmed?\n\nThis will clear the linked project/audit.`)) return;
+    if (!window.confirm(`Reset ${d.doc_number} to Pending?\n\nThis will clear the linked project/audit.`)) return;
     try {
-      await api.post(`/documents/${d.id}/unconfirm`);
+      await api.post(`/documents/${d.id}/status`, { status: 'pending' });
       load();
-      showToast('Order un-confirmed');
+      showToast('Reset to Pending');
     } catch (e) { showToast(e?.response?.data?.detail || 'Failed', 'error'); }
+  };
+
+  const setHold = async (d) => {
+    if (!window.confirm(`Put ${d.doc_number} ON HOLD?`)) return;
+    try {
+      await api.post(`/documents/${d.id}/status`, { status: 'on_hold' });
+      load();
+      showToast('Marked On Hold');
+    } catch (e) { showToast(e?.response?.data?.detail || 'Failed', 'error'); }
+  };
+
+  const setCancelled = async (d) => {
+    if (!window.confirm(`CANCEL ${d.doc_number}?\n\nLinked project/audit will be cleared. You can reset to Pending later.`)) return;
+    try {
+      await api.post(`/documents/${d.id}/status`, { status: 'cancelled' });
+      load();
+      showToast('Marked Cancelled');
+    } catch (e) { showToast(e?.response?.data?.detail || 'Failed', 'error'); }
+  };
+
+  const statusOf = (d) => (d.status || (d.confirmed ? 'confirmed' : 'pending')).toLowerCase();
+
+  const STATUS_STYLE = {
+    pending: { label: 'Pending', bg: '#F3F4F6', fg: '#374151', rowBg: undefined, icon: null },
+    confirmed: { label: 'Confirmed', bg: '#D1FAE5', fg: '#065F46', rowBg: 'rgba(16, 185, 129, 0.08)', icon: CheckCircle2 },
+    on_hold: { label: 'On Hold', bg: '#FEF3C7', fg: '#92400E', rowBg: 'rgba(245, 158, 11, 0.10)', icon: PauseCircle },
+    cancelled: { label: 'Cancelled', bg: '#FEE2E2', fg: '#991B1B', rowBg: 'rgba(220, 38, 38, 0.08)', icon: XCircle },
   };
 
   const filteredPickerItems = useMemo(() => {
@@ -409,7 +442,7 @@ const DocumentsPage = () => {
                 <SortHeader label="Plot / Place" sk="plot_place"/>
                 <SortHeader label="Contact" sk="contact_person"/>
                 <SortHeader label="Date" sk="document_date"/>
-                <th>Status</th>
+                <SortHeader label="Status" sk="status"/>
                 <th className="text-right">Actions</th>
               </tr>
             </thead>
@@ -422,11 +455,15 @@ const DocumentsPage = () => {
                   <div className="font-semibold">{showArchived ? 'No archived documents' : 'No documents yet'}</div>
                   <div className="text-sm" style={{ color: 'var(--cc-text-muted)' }}>Click "New Document" to generate your first one.</div>
                 </td></tr>
-              ) : visible.map((d) => (
+              ) : visible.map((d) => {
+                const st = statusOf(d);
+                const style = STATUS_STYLE[st] || STATUS_STYLE.pending;
+                const StatusIcon = style.icon;
+                return (
                 <tr
                   key={d.id}
                   data-testid={`document-row-${d.doc_number.replace(/[^a-zA-Z0-9]/g, '-')}`}
-                  style={d.confirmed ? { background: 'rgba(16, 185, 129, 0.08)' } : undefined}
+                  style={style.rowBg ? { background: style.rowBg } : undefined}
                 >
                   <td className="font-mono-data text-xs font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{d.doc_number}</td>
                   <td className="text-sm">{d.doc_type_name}</td>
@@ -440,33 +477,46 @@ const DocumentsPage = () => {
                   </td>
                   <td className="text-xs font-mono-data">{(d.document_date || '').slice(0, 10) || '—'}</td>
                   <td className="text-xs">
-                    {d.confirmed ? (
-                      <div className="flex flex-col gap-0.5">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold w-fit" style={{ background: '#D1FAE5', color: '#065F46' }} data-testid={`doc-confirmed-${d.id}`}>
-                          <CheckCircle2 size={12}/> Confirmed
-                        </span>
-                        {d.linked_project_code && (
-                          <Link to={`/projects/${d.linked_project_id}`} className="inline-flex items-center gap-1 link-underline text-[11px]" data-testid={`doc-linked-project-${d.id}`} style={{ color: 'var(--cc-accent)' }}>
-                            <Link2 size={10}/> <span className="font-mono-data">{d.linked_project_code}</span>
-                          </Link>
-                        )}
-                        {d.linked_audit_code && (
-                          <Link to={`/audits/${d.linked_audit_id}`} className="inline-flex items-center gap-1 link-underline text-[11px]" data-testid={`doc-linked-audit-${d.id}`} style={{ color: 'var(--cc-accent)' }}>
-                            <Link2 size={10}/> <span className="font-mono-data">{d.linked_audit_code}</span>
-                          </Link>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-gray-400">Pending</span>
-                    )}
+                    <div className="flex flex-col gap-0.5">
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold w-fit"
+                        style={{ background: style.bg, color: style.fg }}
+                        data-testid={`doc-status-${st}-${d.id}`}
+                      >
+                        {StatusIcon ? <StatusIcon size={12}/> : null} {style.label}
+                      </span>
+                      {st === 'confirmed' && d.linked_project_code && (
+                        <Link to={`/projects/${d.linked_project_id}`} className="inline-flex items-center gap-1 link-underline text-[11px]" data-testid={`doc-linked-project-${d.id}`} style={{ color: 'var(--cc-accent)' }}>
+                          <Link2 size={10}/> <span className="font-mono-data">{d.linked_project_code}</span>
+                        </Link>
+                      )}
+                      {st === 'confirmed' && d.linked_audit_code && (
+                        <Link to={`/audits/${d.linked_audit_id}`} className="inline-flex items-center gap-1 link-underline text-[11px]" data-testid={`doc-linked-audit-${d.id}`} style={{ color: 'var(--cc-accent)' }}>
+                          <Link2 size={10}/> <span className="font-mono-data">{d.linked_audit_code}</span>
+                        </Link>
+                      )}
+                    </div>
                   </td>
                   <td>
                     <div className="flex gap-1 justify-end flex-wrap">
-                      {d.confirmed ? (
-                        <button onClick={() => unconfirm(d)} className="btn btn-outline btn-sm" title="Un-confirm" data-testid={`btn-unconfirm-${d.id}`}><RotateCcw size={13}/></button>
-                      ) : (
+                      {st !== 'confirmed' && (
                         <button onClick={() => openConfirm(d)} className="btn btn-sm" style={{ background: '#10B981', color: '#fff', border: '1px solid #10B981' }} title="Confirm order" data-testid={`btn-confirm-${d.id}`}>
                           <CheckCircle2 size={13}/>
+                        </button>
+                      )}
+                      {st !== 'on_hold' && (
+                        <button onClick={() => setHold(d)} className="btn btn-sm" style={{ background: '#F59E0B', color: '#fff', border: '1px solid #F59E0B' }} title="Put on hold" data-testid={`btn-hold-${d.id}`}>
+                          <PauseCircle size={13}/>
+                        </button>
+                      )}
+                      {st !== 'cancelled' && (
+                        <button onClick={() => setCancelled(d)} className="btn btn-sm" style={{ background: '#DC2626', color: '#fff', border: '1px solid #DC2626' }} title="Cancel" data-testid={`btn-cancel-${d.id}`}>
+                          <XCircle size={13}/>
+                        </button>
+                      )}
+                      {st !== 'pending' && (
+                        <button onClick={() => unconfirm(d)} className="btn btn-outline btn-sm" title="Reset to Pending" data-testid={`btn-reset-${d.id}`}>
+                          <RotateCcw size={13}/>
                         </button>
                       )}
                       <button onClick={() => downloadPdf(d)} className="btn btn-outline btn-sm" title="Download PDF" data-testid={`btn-doc-pdf-${d.id}`}><FileText size={13}/></button>
@@ -480,7 +530,7 @@ const DocumentsPage = () => {
                     </div>
                   </td>
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
         </div>
