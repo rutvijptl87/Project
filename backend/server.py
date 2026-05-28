@@ -2406,7 +2406,7 @@ async def dashboard_monthly_revenue(months: int = 12):
 async def dashboard_site_visit_stats(days: int = 7):
     """Counts of site visits in the trailing `days` window, split by status, plus per-engineer breakdown.
     Used by the Projects dashboard 'Pending site visits this week' KPI card."""
-    days = max(1, min(int(days or 7), 90))
+    days = max(1, min(int(days) if days is not None else 7, 90))
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     q = {"created_at": {"$gte": cutoff}}
     rows = await db.site_visits.find(q, {"_id": 0, "id": 1, "visit_code": 1, "status": 1, "created_by_user_id": 1, "created_by_username": 1, "engineer_name": 1, "inspection_title": 1, "visit_date": 1, "project_code": 1}).sort("created_at", -1).to_list(2000)
@@ -2439,7 +2439,7 @@ async def dashboard_site_visit_stats(days: int = 7):
 async def user_activity_feed(user_id: str, limit: int = 100):
     """All activity_log events created by user_id, plus the user's own site visits.
     Used by the per-engineer activity feed in Settings."""
-    limit = max(1, min(int(limit or 100), 500))
+    limit = max(1, min(int(limit) if limit is not None else 100, 500))
 
     log_rows = await db.activity_log.find(
         {"user_id": user_id},

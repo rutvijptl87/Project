@@ -90,6 +90,13 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
   - Endpoints: `GET /api/site-visits/{vid}/activity`, `GET /api/notifications`, `POST /api/notifications/{nid}/read`, `POST /api/notifications/read-all`. New Mongo collection: `notifications` (auto-included in Drive backups in the next session).
   - Tested via iteration_11: 27/27 pytest backend (14 new + 13 regression), 100% frontend flows green.
 
+- ✅ **Dashboard SV-stats KPI + Per-Engineer Activity feed in Settings** (2026-02-28, iteration 12) — visibility for admins.
+  - New KPI card on the Projects dashboard: **"Site Visits (7d) — <draft> / <submitted>"** with subline "(N draft · N submitted, last 7 days)". Card is wrapped in a `<Link>` to `/site-visits` so it doubles as a shortcut.
+  - New endpoint `GET /api/dashboard/site-visit-stats?days=7` returns `{days, total, draft, submitted, by_engineer[10], recent_drafts[5]}`. `days` is clamped 1-90.
+  - New endpoint `GET /api/users/{user_id}/activity?limit=100` returns `{activity: [activity_log rows], visits: [site_visits owned by user]}`. Enriches missing `site_visit_code` and `project_code` on the fly. `limit` clamped 1-500.
+  - `UserActivityCard` mounted in Settings — user picker dropdown (engineers sorted to top), default-selects the first engineer, two side-by-side panels: "Recent Events" (color-coded action badges, click code to jump to visit) and "Site Visits Created By This User" (status-tagged, click to open). Both panels scroll independently capped at 380px.
+  - Tested via iteration_12: 40/40 pytest backend (13 new + 27 regression) — fixed 2 HIGH-priority clamp bugs (the `int(x or N)` short-circuit was treating 0 as None) before close. 100% frontend pass.
+
 - ✅ Excel import that auto-creates missing clients/architects by name, skips duplicates
 - ✅ Beautiful green+white UI — Cabinet Grotesk headings, IBM Plex Sans body, IBM Plex Mono for numbers
 - ✅ All pages: Projects (dashboard+table), Clients, Architects, New/Edit Project form, Project Detail + payment history, Settings

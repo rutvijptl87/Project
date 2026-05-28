@@ -31,7 +31,13 @@ const UserActivityCard = () => {
     (async () => {
       try {
         const r = await api.get('/auth/users');
-        const sorted = (r.data || []).sort((a, b) => a.username.localeCompare(b.username));
+        // Engineers at the top, then by username; preserves the spec ('engineer users at top')
+        const sorted = [...(r.data || [])].sort((a, b) => {
+          const ar = a.role === 'engineer' ? 0 : 1;
+          const br = b.role === 'engineer' ? 0 : 1;
+          if (ar !== br) return ar - br;
+          return a.username.localeCompare(b.username);
+        });
         setUsers(sorted);
         // Default to the first engineer if any, otherwise the first non-self user
         const eng = sorted.find((u) => u.role === 'engineer');
