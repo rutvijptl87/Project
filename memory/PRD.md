@@ -108,6 +108,12 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
   - **Site Visit History card on Project Detail**: renders the existing `GET /api/site-visits?project_id=<id>` as a table directly on the project page, with Open links and a "+ New Site Visit" button. Shows a friendly empty-state when no visits exist yet.
   - Tested via iteration_14: 46/46 pytest backend (6 new + 40 regression), 100% frontend pass, zero issues.
 
+- ✅ **"My Visits This Month" chart + photo watermarking** (2026-02-28, iteration 15) — visibility for engineers + tamper-evident on-site photos.
+  - **Weekly chart**: new `GET /api/dashboard/my-sv-weekly?month=YYYY-MM&engineer_id=` returns `{month, target_user_id, weeks:[W1..W5 {draft, submitted, total}], by_project[8], total}`. Days 1-7 → W1 … 29-31 → W5. Engineers are auto-scoped to themselves; admins can inspect anyone via `engineer_id`. Invalid month → 400.
+  - **MySvWeeklyChart React component** mounted on the Site Visits page above the filter pills. Recharts stacked bar (draft = amber, submitted = green) + month dropdown (last 6 months) + sub-line with total count and top project. 140px-tall card so it doesn't push the table down on mobile.
+  - **Photo watermarking**: the existing client-side `compressImage` canvas step now also burns a dark-green badge in the bottom-right corner with the engineer's name + ISO timestamp before the file is uploaded. Engineer name auto-defaults to the logged-in `user.username` so the watermark works even if the user never opens the Signatures section. Verified via PIL pixel inspection: ~8% of bottom-right ROI pixels match the watermark backdrop color (10, 46, 31). Original 5-8 MB phone JPEGs still come out ~200-400 KB.
+  - Tested via iteration_15: **55/55 pytest backend** (9 new + 46 regression), **100% frontend** (chart + month re-fetch + engineer auto-fill + watermark file verification). Only findings are 2 cosmetic console warnings from the platform's injector + recharts initial layout tick — both non-blocking and not in our code.
+
 - ✅ Excel import that auto-creates missing clients/architects by name, skips duplicates
 - ✅ Beautiful green+white UI — Cabinet Grotesk headings, IBM Plex Sans body, IBM Plex Mono for numbers
 - ✅ All pages: Projects (dashboard+table), Clients, Architects, New/Edit Project form, Project Detail + payment history, Settings
