@@ -10,7 +10,7 @@ import InitialsBadge from '../components/InitialsBadge';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import {
   ArrowLeft, Pencil, Trash2, FileText, Download, Archive, Folder, Copy,
-  Plus, MapPin, CreditCard, ClipboardList, Clock, Phone, Mail, MessageCircle, StickyNote, Save, X,
+  Plus, MapPin, CreditCard, ClipboardList, Clock, Phone, Mail, MessageCircle, StickyNote, Save, X, Pin,
 } from 'lucide-react';
 
 const actionStyle = (action) => {
@@ -437,6 +437,38 @@ const ProjectDetailPage = () => {
         </div>
       </div>
 
+      {/* Pinned site visits — admin-promoted key inspections shown front & center */}
+      {siteVisits.filter((v) => v.is_pinned).length > 0 && (
+        <div className="card p-4 mb-4" style={{ background: 'linear-gradient(135deg, #FEF3C7 0%, #FFFBEB 100%)', border: '1px solid #FCD34D' }} data-testid="project-pinned-visits-card">
+          <div className="flex items-center gap-2 mb-2">
+            <ClipboardList size={16} style={{ color: '#92400E' }} />
+            <h3 className="font-head text-sm font-bold uppercase tracking-wide" style={{ color: '#92400E' }}>Key Inspections</h3>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold uppercase" style={{ background: '#92400E', color: 'white' }}>Pinned</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {siteVisits.filter((v) => v.is_pinned).map((v) => (
+              <Link
+                key={v.id}
+                to={`/site-visits/${v.id}`}
+                className="rounded-md p-3 bg-white/80 hover:bg-white block"
+                style={{ border: '1px solid rgba(146,64,14,0.25)' }}
+                data-testid={`project-pinned-visit-${v.visit_code}`}
+              >
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className="font-mono-data text-xs font-bold" style={{ color: 'var(--cc-dark-green)' }}>{v.visit_code}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold uppercase" style={{ background: (v.status || '').toLowerCase() === 'draft' ? '#FEF3C7' : '#D1FAE5', color: (v.status || '').toLowerCase() === 'draft' ? '#92400E' : '#065F46' }}>
+                    {(v.status || 'submitted').toUpperCase()}
+                  </span>
+                  <span className="text-[11px] ml-auto" style={{ color: 'var(--cc-text-muted)' }}>{(v.visit_date || '').slice(0, 10)}</span>
+                </div>
+                <div className="font-semibold text-sm leading-tight" style={{ color: 'var(--cc-dark-green)' }}>{v.inspection_title || '—'}</div>
+                <div className="text-xs mt-0.5" style={{ color: 'var(--cc-text-muted)' }}>{v.engineer_name || v.created_by_username || '—'}</div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Site visits for this project */}
       <div className="card overflow-hidden mb-4" data-testid="project-site-visits-card">
         <div className="p-5 border-b flex items-center justify-between gap-2" style={{ borderColor: 'var(--cc-border)' }}>
@@ -467,7 +499,12 @@ const ProjectDetailPage = () => {
               <tbody>
                 {siteVisits.map((v) => (
                   <tr key={v.id} className="border-t hover:bg-emerald-50/40" style={{ borderColor: 'var(--cc-border)' }} data-testid={`project-sv-row-${v.visit_code}`}>
-                    <td className="px-3 py-2 font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{v.visit_code}</td>
+                    <td className="px-3 py-2 font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>
+                      <span className="inline-flex items-center gap-1">
+                        {v.visit_code}
+                        {v.is_pinned && <Pin size={11} style={{ color: '#92400E' }} />}
+                      </span>
+                    </td>
                     <td className="px-3 py-2">{v.inspection_title || '—'}</td>
                     <td className="px-3 py-2 text-xs font-mono-data">{(v.visit_date || '').slice(0, 10) || '—'}</td>
                     <td className="px-3 py-2 text-xs">{v.engineer_name || v.created_by_username || '—'}</td>

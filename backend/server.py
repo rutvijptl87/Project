@@ -280,6 +280,7 @@ class SiteVisit(BaseModel):
     site_person_name: str = ""
     site_person_signature: str = ""
     status: str = "submitted"
+    is_pinned: bool = False
     public_token: Optional[str] = ""
     created_by_user_id: Optional[str] = None
     created_by_username: Optional[str] = ""
@@ -3699,6 +3700,19 @@ async def list_sv_activity(vid: str):
     so FastAPI matches it first."""
     items = await db.activity_log.find({"site_visit_id": vid}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return items
+
+
+@api_router.post("/site-visits/{vid}/pin")
+async def pin_site_visit(vid: str, body: dict = None):
+    """Toggle the 'pinned' flag on a site visit. A project can have multiple pinned visits;
+    the project page surfaces them as a compact 'Key Inspections' strip at the top."""
+    pin_val = bool((body or {}).get("pinned", True))
+    existing = await db.site_visits.find_one({"id": vid}, {"_id": 0, "visit_code": 1})
+    if not existing:
+        raise HTTPException(404, "Site visit not found")
+    await db.site_visits.update_one({"id": vid}, {"$set": {"is_pinned": pin_val}})
+    await _log_sv_activity(vid, existing.get("visit_code", ""), "PINNED" if pin_val else "UNPINNED", "")
+    return {"ok": True, "is_pinned": pin_val}
 
 
 @api_router.get("/site-visits/export/excel")

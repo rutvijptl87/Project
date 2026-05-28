@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
-import { ArrowLeft, FileText, Edit3, Trash2, Share2, ImageIcon, ClipboardList, MapPin, Calendar, User } from 'lucide-react';
+import { ArrowLeft, FileText, Edit3, Trash2, Share2, ImageIcon, ClipboardList, MapPin, Calendar, User, Pin, PinOff } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useUndo } from '../lib/undo';
 import { downloadFile } from '../lib/download';
@@ -48,6 +48,18 @@ const SiteVisitDetailPage = () => {
     nav('/site-visits');
   };
 
+  const togglePin = async () => {
+    if (!v) return;
+    const next = !v.is_pinned;
+    setV({ ...v, is_pinned: next });   // optimistic
+    try {
+      await api.post(`/site-visits/${id}/pin`, { pinned: next });
+    } catch (e) {
+      setV({ ...v, is_pinned: !next }); // revert
+      alert(e?.response?.data?.detail || 'Could not toggle pin');
+    }
+  };
+
   const buildWhatsAppLink = () => {
     if (!v) return '';
     const pdfUrl = `${BACKEND}/api/site-visits/public/${v.public_token}/pdf`;
@@ -89,6 +101,11 @@ const SiteVisitDetailPage = () => {
               <span className="font-mono-data text-sm font-bold" style={{ color: 'var(--cc-dark-green)' }}>{v.visit_code}</span>
               <Pill color={v.status === 'draft' ? '#9CA3AF' : '#10B981'}>{(v.status || 'submitted').toUpperCase()}</Pill>
               {v.template_name && <Pill color="#0A2E1F">{v.template_name}</Pill>}
+              {v.is_pinned && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide" style={{ background: '#FEF3C7', color: '#92400E' }} data-testid="pinned-badge">
+                  <Pin size={10}/> Pinned
+                </span>
+              )}
             </div>
             <h1 className="font-head text-2xl sm:text-3xl font-extrabold" style={{ color: 'var(--cc-dark-green)' }}>
               {v.inspection_title || 'Site Visit'}
@@ -97,6 +114,9 @@ const SiteVisitDetailPage = () => {
           <div className="flex flex-wrap gap-2">
             <button onClick={() => downloadFile(`${API}/site-visits/${v.id}/pdf`, `${v.visit_code}.pdf`)} className="btn btn-primary" data-testid="btn-download-pdf">
               <FileText size={14}/> Download PDF
+            </button>
+            <button onClick={togglePin} className="btn btn-outline" title={v.is_pinned ? 'Unpin this visit from the project page' : 'Pin to the project page'} data-testid="btn-toggle-pin">
+              {v.is_pinned ? <><PinOff size={14}/> Unpin</> : <><Pin size={14}/> Pin to project</>}
             </button>
             <button onClick={() => setShowShare(true)} className="btn btn-accent" data-testid="btn-share-whatsapp">
               <Share2 size={14}/> Share via WhatsApp
