@@ -213,6 +213,9 @@ const SiteVisitDetailPage = () => {
         </div>
       )}
 
+      {/* Activity history */}
+      <ActivityCard visitId={v.id} />
+
       {/* WhatsApp share modal */}
       {showShare && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShowShare(false)} data-testid="share-modal">
@@ -238,3 +241,49 @@ const SiteVisitDetailPage = () => {
 };
 
 export default SiteVisitDetailPage;
+
+const ActivityCard = ({ visitId }) => {
+  const [items, setItems] = React.useState([]);
+  React.useEffect(() => {
+    api.get(`/site-visits/${visitId}/activity`).then((r) => setItems(r.data || [])).catch(() => setItems([]));
+  }, [visitId]);
+
+  if (!items.length) return null;
+  const styleForAction = (a) => {
+    const u = (a || '').toLowerCase();
+    if (u.includes('created')) return { background: '#D1FAE5', color: '#065F46', border: '1px solid #34D399' };
+    if (u.includes('deleted')) return { background: '#FEE2E2', color: '#991B1B', border: '1px solid #FCA5A5' };
+    if (u.includes('status')) return { background: '#FEF3C7', color: '#92400E', border: '1px solid #FCD34D' };
+    return { background: '#E0F2FE', color: '#075985', border: '1px solid #93C5FD' };
+  };
+
+  return (
+    <div className="card p-5 mb-4" data-testid="sv-activity-card">
+      <h2 className="font-head text-lg font-bold mb-3" style={{ color: 'var(--cc-dark-green)' }}>Activity History</h2>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr style={{ background: 'var(--cc-surface)', color: 'var(--cc-dark-green)' }}>
+              <th className="text-left px-2 py-2 w-36">When</th>
+              <th className="text-left px-2 py-2 w-32">Who</th>
+              <th className="text-left px-2 py-2">Action</th>
+              <th className="text-left px-2 py-2">Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((a) => (
+              <tr key={a.id} className="border-t" style={{ borderColor: 'var(--cc-border)' }} data-testid={`sv-activity-row-${a.action}`}>
+                <td className="px-2 py-2 text-xs font-mono-data" style={{ color: 'var(--cc-text-muted)' }}>{a.created_at ? new Date(a.created_at).toLocaleString() : '—'}</td>
+                <td className="px-2 py-2 text-xs">{a.username || 'system'}</td>
+                <td className="px-2 py-2">
+                  <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide" style={styleForAction(a.action)}>{a.action}</span>
+                </td>
+                <td className="px-2 py-2 text-xs" style={{ color: 'var(--cc-text-muted)' }}>{a.detail || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};

@@ -2,6 +2,7 @@ import React from 'react';
 import { NavLink, Link } from 'react-router-dom';
 import { Plus, IndianRupee, Settings as SettingsIcon, LogOut, User, ClipboardList } from 'lucide-react';
 import { useAuth } from '../lib/auth';
+import NotificationBell from './NotificationBell';
 
 const Navbar = ({ onRecordPayment }) => {
   const { user, logout } = useAuth();
@@ -54,6 +55,7 @@ const Navbar = ({ onRecordPayment }) => {
           )}
           {user && (
             <>
+              {user.role === 'admin' && <NotificationBell />}
               <div className="hidden lg:flex items-center gap-1.5 px-2 py-1 rounded-md" style={{ background: 'var(--cc-surface)', color: 'var(--cc-text-muted)' }} data-testid="navbar-user-info">
                 <User size={12} />
                 <span className="text-xs font-mono-data">{user.username}</span>

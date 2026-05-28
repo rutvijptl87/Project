@@ -3516,6 +3516,54 @@ async def _enrich_site_visit(v: dict) -> dict:
     return v
 
 
+async def _log_sv_activity(visit_id: str, visit_code: str, action: str, detail: str = ""):
+    """Append a site-visit activity event (parallel to project/audit activity)."""
+    try:
+        s = _current_user_stamp()
+        await db.activity_log.insert_one({
+            "id": _new_id(),
+            "site_visit_id": visit_id,
+            "site_visit_code": visit_code,
+            "action": action,
+            "detail": detail,
+            "user_id": s["user_id"],
+            "username": s["username"],
+            "created_at": _now(),
+        })
+    except Exception as e:
+        logger.error(f"sv activity log error: {e}")
+
+
+async def _notify_admins(message: str, related_visit_id: str = "", related_visit_code: str = ""):
+    """Create an in-app notification targeted at all users with role=admin.
+    The notification feed endpoint filters by `target_role` OR `target_user_id`."""
+    try:
+        s = _current_user_stamp()
+        await db.notifications.insert_one({
+            "id": _new_id(),
+            "type": "site_visit",
+            "message": message,
+            "target_role": "admin",
+            "target_user_id": None,
+            "related_visit_id": related_visit_id,
+            "related_visit_code": related_visit_code,
+            "created_by_user_id": s["user_id"],
+            "created_by_username": s["username"],
+            "read_by": [],          # list of user_ids who have dismissed it
+            "created_at": _now(),
+        })
+    except Exception as e:
+        logger.error(f"notify error: {e}")
+
+
+@api_router.get("/site-visits/{vid}/activity")
+async def list_sv_activity(vid: str):
+    """Note: this declaration sits BEFORE the catch-all /site-visits/{vid} GET (further below)
+    so FastAPI matches it first."""
+    items = await db.activity_log.find({"site_visit_id": vid}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return items
+
+
 @api_router.get("/site-visits/export/excel")
 async def export_site_visits_excel(
     month: Optional[str] = None,        # YYYY-MM
@@ -3664,6 +3712,15 @@ async def create_site_visit(data: SiteVisitIn):
     _stamp_edit(doc)
     await _enrich_site_visit(doc)
     await db.site_visits.insert_one(doc.copy())
+    await _log_sv_activity(doc["id"], doc["visit_code"], "VISIT CREATED", doc.get("inspection_title", ""))
+    if doc.get("status") == "submitted" and (user.get("role") or "") != "admin":
+        eng_name = user.get("username") or doc.get("engineer_name") or "engineer"
+        proj = f" — {doc.get('project_code')}" if doc.get("project_code") else ""
+        await _notify_admins(
+            f"{eng_name} submitted site visit {doc['visit_code']}{proj}: {doc.get('inspection_title','')}",
+            related_visit_id=doc["id"],
+            related_visit_code=doc["visit_code"],
+        )
     return doc
 
 
@@ -3696,14 +3753,33 @@ async def update_site_visit(vid: str, data: SiteVisitIn):
     await db.site_visits.update_one({"id": vid}, {"$set": update})
     merged = {**existing, **update}
     await _enrich_site_visit(merged)
+    # Activity: distinguish a "status change" from a plain edit
+    user = get_current_user_safe() or {}
+    prev_status = existing.get("status", "submitted")
+    new_status = update.get("status", prev_status)
+    if prev_status != new_status:
+        await _log_sv_activity(vid, merged.get("visit_code", ""), "STATUS CHANGED", f"{prev_status} → {new_status}")
+        if new_status == "submitted" and (user.get("role") or "") != "admin":
+            eng_name = user.get("username") or merged.get("engineer_name") or "engineer"
+            proj = f" — {merged.get('project_code')}" if merged.get("project_code") else ""
+            await _notify_admins(
+                f"{eng_name} submitted site visit {merged.get('visit_code','')}{proj}: {merged.get('inspection_title','')}",
+                related_visit_id=vid,
+                related_visit_code=merged.get("visit_code", ""),
+            )
+    else:
+        await _log_sv_activity(vid, merged.get("visit_code", ""), "VISIT UPDATED", "")
     return merged
 
 
 @api_router.delete("/site-visits/{vid}")
 async def delete_site_visit(vid: str):
+    existing = await db.site_visits.find_one({"id": vid}, {"_id": 0, "visit_code": 1})
     res = await db.site_visits.delete_one({"id": vid})
     if res.deleted_count == 0:
         raise HTTPException(404, "Site visit not found")
+    if existing:
+        await _log_sv_activity(vid, existing.get("visit_code", ""), "VISIT DELETED", "")
     return {"ok": True}
 
 
@@ -3770,6 +3846,66 @@ async def delete_site_visit_upload(filename: str):
             fpath.unlink()
         except Exception:
             pass
+    return {"ok": True}
+
+
+# ---------------------- NOTIFICATIONS (in-app feed) ----------------------
+
+def _user_can_see_notification(user: dict, n: dict) -> bool:
+    if not user:
+        return False
+    if n.get("target_user_id") and n["target_user_id"] == user.get("id"):
+        return True
+    if n.get("target_role") and n["target_role"] == user.get("role"):
+        return True
+    return False
+
+
+@api_router.get("/notifications")
+async def list_notifications(limit: int = 25, unread_only: bool = False):
+    user = get_current_user_safe() or {}
+    # Pull anything targeted at this user OR their role; sort newest first
+    q = {"$or": [
+        {"target_user_id": user.get("id")},
+        {"target_role": user.get("role")},
+    ]}
+    rows = await db.notifications.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit * 4)
+    out = []
+    for n in rows:
+        if not _user_can_see_notification(user, n):
+            continue
+        n["is_read"] = user.get("id") in (n.get("read_by") or [])
+        if unread_only and n["is_read"]:
+            continue
+        out.append(n)
+        if len(out) >= limit:
+            break
+    unread = sum(1 for n in out if not n["is_read"])
+    return {"items": out, "unread": unread}
+
+
+@api_router.post("/notifications/{nid}/read")
+async def mark_notification_read(nid: str):
+    user = get_current_user_safe() or {}
+    if not user.get("id"):
+        raise HTTPException(401, "Not authenticated")
+    await db.notifications.update_one(
+        {"id": nid},
+        {"$addToSet": {"read_by": user["id"]}},
+    )
+    return {"ok": True}
+
+
+@api_router.post("/notifications/read-all")
+async def mark_all_notifications_read():
+    user = get_current_user_safe() or {}
+    if not user.get("id"):
+        raise HTTPException(401, "Not authenticated")
+    q = {"$or": [
+        {"target_user_id": user.get("id")},
+        {"target_role": user.get("role")},
+    ]}
+    await db.notifications.update_many(q, {"$addToSet": {"read_by": user["id"]}})
     return {"ok": True}
 
 
