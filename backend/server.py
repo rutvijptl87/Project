@@ -200,6 +200,86 @@ class Payment(BaseModel):
     created_at: str
 
 
+
+# ---------------------- SITE VISIT (Engineer) MODELS ----------------------
+
+class SiteVisitTemplateIn(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    checklist: List[str] = []  # e.g. ["Size of members as per drawing", "Reinforcement - Dia, No of bars", ...]
+
+
+class SiteVisitTemplate(SiteVisitTemplateIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    created_at: str
+
+
+class ChecklistItem(BaseModel):
+    label: str
+    compliance: str = "yes"  # yes | no | na
+    remark: Optional[str] = ""
+
+
+class SiteVisitPhoto(BaseModel):
+    data_url: str  # base64 image (data:image/jpeg;base64,...)
+    caption: Optional[str] = ""
+
+
+class SiteVisitIn(BaseModel):
+    template_id: Optional[str] = None
+    template_name: Optional[str] = ""
+    job_no: Optional[str] = ""
+    project_id: Optional[str] = None
+    inspection_title: str
+    visit_date: Optional[str] = None  # ISO date
+    customer: Optional[str] = ""
+    plot_no: Optional[str] = ""
+    drg_no: Optional[str] = ""
+    revision: Optional[str] = ""
+    checklist: List[ChecklistItem] = []
+    observations: List[str] = []
+    photos: List[SiteVisitPhoto] = []
+    engineer_name: Optional[str] = ""
+    engineer_signature: Optional[str] = ""  # base64 data URL of signature pad
+    site_person_name: Optional[str] = ""
+    site_person_signature: Optional[str] = ""
+    status: str = "submitted"  # draft | submitted
+
+
+class SiteVisit(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    visit_code: str  # SV-0001
+    template_id: Optional[str] = None
+    template_name: str = ""
+    job_no: str = ""
+    project_id: Optional[str] = None
+    project_code: Optional[str] = ""
+    project_name: Optional[str] = ""
+    inspection_title: str = ""
+    visit_date: Optional[str] = None
+    customer: str = ""
+    plot_no: str = ""
+    drg_no: str = ""
+    revision: str = ""
+    checklist: List[ChecklistItem] = []
+    observations: List[str] = []
+    photos: List[SiteVisitPhoto] = []
+    engineer_name: str = ""
+    engineer_signature: str = ""
+    site_person_name: str = ""
+    site_person_signature: str = ""
+    status: str = "submitted"
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = ""
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
+    created_at: str
+
+
+
 class DocumentTypeIn(BaseModel):
     name: str
     prefix: str  # e.g. "QT", "STAB" — used inside STR/{prefix}/{YYYY}/{counter:03}
@@ -3289,6 +3369,396 @@ async def document_pdf(doc_id: str):
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
+
+
+
+# ---------------------- SITE VISIT (Engineer) ENDPOINTS ----------------------
+
+DEFAULT_SV_TEMPLATES = [
+    ("Column Inspection", "Column casting / reinforcement checks", [
+        "Size of members as per drawing",
+        "Reinforcement - Dia, No of bars",
+        "Spacing between bars, LD, Alignment of bars",
+        "Reinforcement - Rust free, dust free",
+        "Clear cover to reinforcement",
+        "Rods are tied properly with binding wire",
+        "Ties spacing, alignment, hook bend 135°",
+        "Concrete cube test result for last structural member",
+    ]),
+    ("Slab Inspection", "Slab casting / reinforcement checks", [
+        "Size and thickness of slab as per drawing",
+        "Reinforcement - Dia, No of bars",
+        "Spacing between bars, Alignment",
+        "Top & bottom bar cover",
+        "Crank bar locations",
+        "Chairs / spacers between layers",
+        "Electrical conduit & plumbing sleeves in place",
+        "Concrete cube test result for last structural member",
+    ]),
+    ("Beam Inspection", "Beam casting / reinforcement checks", [
+        "Size of beam as per drawing",
+        "Reinforcement - Dia, No of bars",
+        "Stirrups spacing, alignment, hook bend 135°",
+        "Clear cover to reinforcement",
+        "Anchorage length (LD) at supports",
+        "Lap length / position",
+        "Concrete cube test result for last structural member",
+    ]),
+    ("Foundation Inspection", "Footing / raft / pile cap checks", [
+        "Excavation level & soil bearing condition",
+        "PCC laid and level checked",
+        "Reinforcement - Dia, No, spacing as per drawing",
+        "Clear cover all sides",
+        "Dowel bars for columns properly tied",
+        "Anti-termite treatment done",
+        "Concrete cube test result for last structural member",
+    ]),
+    ("Waterproofing Inspection", "Waterproofing / membrane checks", [
+        "Surface cleaned & primer applied",
+        "Membrane laid as per spec",
+        "Overlap and seam joints sealed",
+        "Corners and outlets treated",
+        "Protection screed laid",
+        "Pond / water test done for 48 hours",
+    ]),
+]
+
+
+async def _seed_sv_templates_if_missing():
+    if await db.site_visit_templates.count_documents({}) > 0:
+        return
+    now = _now()
+    docs = []
+    for name, desc, items in DEFAULT_SV_TEMPLATES:
+        docs.append({
+            "id": _new_id(),
+            "name": name,
+            "description": desc,
+            "checklist": items,
+            "created_at": now,
+        })
+    if docs:
+        await db.site_visit_templates.insert_many(docs)
+
+
+async def _next_visit_code() -> str:
+    counter = await db.counters.find_one_and_update(
+        {"_id": "site_visit"},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=True,
+    )
+    seq = (counter or {}).get("seq", 1)
+    return f"SV-{seq:04d}"
+
+
+@api_router.get("/site-visit-templates", response_model=List[SiteVisitTemplate])
+async def list_sv_templates():
+    rows = await db.site_visit_templates.find({}, {"_id": 0}).sort("name", 1).to_list(500)
+    return rows
+
+
+@api_router.post("/site-visit-templates", response_model=SiteVisitTemplate)
+async def create_sv_template(data: SiteVisitTemplateIn):
+    doc = {
+        "id": _new_id(),
+        "name": data.name.strip(),
+        "description": data.description or "",
+        "checklist": [s.strip() for s in (data.checklist or []) if s.strip()],
+        "created_at": _now(),
+    }
+    await db.site_visit_templates.insert_one(doc.copy())
+    return doc
+
+
+@api_router.put("/site-visit-templates/{tid}", response_model=SiteVisitTemplate)
+async def update_sv_template(tid: str, data: SiteVisitTemplateIn):
+    existing = await db.site_visit_templates.find_one({"id": tid}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Template not found")
+    update = {
+        "name": data.name.strip(),
+        "description": data.description or "",
+        "checklist": [s.strip() for s in (data.checklist or []) if s.strip()],
+    }
+    await db.site_visit_templates.update_one({"id": tid}, {"$set": update})
+    return {**existing, **update}
+
+
+@api_router.delete("/site-visit-templates/{tid}")
+async def delete_sv_template(tid: str):
+    res = await db.site_visit_templates.delete_one({"id": tid})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Template not found")
+    return {"ok": True}
+
+
+async def _enrich_site_visit(v: dict) -> dict:
+    if v.get("project_id"):
+        p = await db.projects.find_one({"id": v["project_id"]}, {"_id": 0, "project_code": 1, "name": 1})
+        if p:
+            v["project_code"] = p.get("project_code", "")
+            v["project_name"] = p.get("name", "")
+    return v
+
+
+@api_router.get("/site-visits", response_model=List[SiteVisit])
+async def list_site_visits(project_id: Optional[str] = None, mine: Optional[bool] = False, search: Optional[str] = None):
+    q: dict = {}
+    if project_id: q["project_id"] = project_id
+    if mine:
+        user = get_current_user_safe()
+        if user: q["created_by_user_id"] = user["id"]
+    if search:
+        rx = {"$regex": search, "$options": "i"}
+        q["$or"] = [{"visit_code": rx}, {"inspection_title": rx}, {"job_no": rx}, {"customer": rx}, {"plot_no": rx}, {"project_code": rx}]
+    rows = await db.site_visits.find(q, {"_id": 0, "photos": 0, "engineer_signature": 0, "site_person_signature": 0}).sort("created_at", -1).to_list(2000)
+    for r in rows:
+        await _enrich_site_visit(r)
+    return rows
+
+
+@api_router.get("/site-visits/{vid}", response_model=SiteVisit)
+async def get_site_visit(vid: str):
+    v = await db.site_visits.find_one({"id": vid}, {"_id": 0})
+    if not v:
+        raise HTTPException(404, "Site visit not found")
+    await _enrich_site_visit(v)
+    return v
+
+
+@api_router.post("/site-visits", response_model=SiteVisit)
+async def create_site_visit(data: SiteVisitIn):
+    user = get_current_user_safe() or {}
+    doc = {
+        "id": _new_id(),
+        "visit_code": await _next_visit_code(),
+        "template_id": data.template_id or None,
+        "template_name": data.template_name or "",
+        "job_no": data.job_no or "",
+        "project_id": data.project_id or None,
+        "project_code": "",
+        "project_name": "",
+        "inspection_title": data.inspection_title or "",
+        "visit_date": data.visit_date or _now(),
+        "customer": data.customer or "",
+        "plot_no": data.plot_no or "",
+        "drg_no": data.drg_no or "",
+        "revision": data.revision or "",
+        "checklist": [ci.model_dump() for ci in (data.checklist or [])],
+        "observations": [o for o in (data.observations or []) if o.strip()],
+        "photos": [p.model_dump() for p in (data.photos or [])],
+        "engineer_name": data.engineer_name or user.get("username", ""),
+        "engineer_signature": data.engineer_signature or "",
+        "site_person_name": data.site_person_name or "",
+        "site_person_signature": data.site_person_signature or "",
+        "status": data.status or "submitted",
+        "created_by_user_id": user.get("id"),
+        "created_by_username": user.get("username", ""),
+        "created_at": _now(),
+    }
+    _stamp_edit(doc)
+    await _enrich_site_visit(doc)
+    await db.site_visits.insert_one(doc.copy())
+    return doc
+
+
+@api_router.put("/site-visits/{vid}", response_model=SiteVisit)
+async def update_site_visit(vid: str, data: SiteVisitIn):
+    existing = await db.site_visits.find_one({"id": vid}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Site visit not found")
+    update = {
+        "template_id": data.template_id or existing.get("template_id"),
+        "template_name": data.template_name or existing.get("template_name", ""),
+        "job_no": data.job_no or "",
+        "project_id": data.project_id or None,
+        "inspection_title": data.inspection_title or existing.get("inspection_title", ""),
+        "visit_date": data.visit_date or existing.get("visit_date"),
+        "customer": data.customer or "",
+        "plot_no": data.plot_no or "",
+        "drg_no": data.drg_no or "",
+        "revision": data.revision or "",
+        "checklist": [ci.model_dump() for ci in (data.checklist or [])],
+        "observations": [o for o in (data.observations or []) if o.strip()],
+        "photos": [p.model_dump() for p in (data.photos or [])],
+        "engineer_name": data.engineer_name or existing.get("engineer_name", ""),
+        "engineer_signature": data.engineer_signature or existing.get("engineer_signature", ""),
+        "site_person_name": data.site_person_name or existing.get("site_person_name", ""),
+        "site_person_signature": data.site_person_signature or existing.get("site_person_signature", ""),
+        "status": data.status or existing.get("status", "submitted"),
+    }
+    _stamp_edit(update)
+    await db.site_visits.update_one({"id": vid}, {"$set": update})
+    merged = {**existing, **update}
+    await _enrich_site_visit(merged)
+    return merged
+
+
+@api_router.delete("/site-visits/{vid}")
+async def delete_site_visit(vid: str):
+    res = await db.site_visits.delete_one({"id": vid})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Site visit not found")
+    return {"ok": True}
+
+
+def _base64_image_from_data_url(data_url: str) -> Optional[io.BytesIO]:
+    if not data_url or "," not in data_url:
+        return None
+    try:
+        b64 = data_url.split(",", 1)[1]
+        return io.BytesIO(base64.b64decode(b64))
+    except Exception:
+        return None
+
+
+@api_router.get("/site-visits/{vid}/pdf")
+async def site_visit_pdf(vid: str):
+    v = await db.site_visits.find_one({"id": vid}, {"_id": 0})
+    if not v:
+        raise HTTPException(404, "Site visit not found")
+    await _enrich_site_visit(v)
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    margin = 18 * mm
+
+    def header():
+        c.setFillColor(colors.HexColor("#0A2E1F"))
+        c.rect(0, height - 28 * mm, width, 28 * mm, fill=1, stroke=0)
+        c.setFillColor(colors.white)
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(margin, height - 14 * mm, "CREATOR RCC CONSULTANT LLP")
+        c.setFont("Helvetica", 9)
+        c.drawString(margin, height - 20 * mm, "Structural Audits • RCC / Steel Design • PMC • Retrofitting")
+        c.drawString(margin, height - 25 * mm, "Navi Mumbai • project@creatorconsultant.net • 9987076241")
+        c.setFillColor(colors.HexColor("#10B981"))
+        c.setFont("Helvetica-Bold", 11)
+        c.drawRightString(width - margin, height - 14 * mm, "SITE VISIT REPORT")
+        c.setFillColor(colors.white)
+        c.setFont("Helvetica-Bold", 10)
+        c.drawRightString(width - margin, height - 20 * mm, v.get("visit_code", ""))
+        c.setFillColor(colors.black)
+
+    header()
+    y = height - 36 * mm
+    c.setFont("Helvetica", 9)
+    meta_rows = [
+        ("Job No", v.get("job_no") or "—", "Date", (v.get("visit_date") or "")[:10]),
+        ("Customer", v.get("customer") or "—", "Plot No", v.get("plot_no") or "—"),
+        ("DRG No", v.get("drg_no") or "—", "Revision", v.get("revision") or "—"),
+    ]
+    for r in meta_rows:
+        c.setFont("Helvetica-Bold", 9); c.drawString(margin, y, r[0] + ":")
+        c.setFont("Helvetica", 9); c.drawString(margin + 22 * mm, y, str(r[1]))
+        c.setFont("Helvetica-Bold", 9); c.drawString(width / 2 + 5 * mm, y, r[2] + ":")
+        c.setFont("Helvetica", 9); c.drawString(width / 2 + 25 * mm, y, str(r[3]))
+        y -= 6 * mm
+
+    y -= 2 * mm
+    c.setFillColor(colors.HexColor("#0A2E1F"))
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(margin, y, f"Inspection of {v.get('inspection_title', '')}")
+    c.setFillColor(colors.black); y -= 8 * mm
+
+    styles = getSampleStyleSheet()
+    body = ParagraphStyle("body", parent=styles["Normal"], fontName="Helvetica", fontSize=9, leading=12)
+    data = [["Description", "Compliance", "Remark"]]
+    for ci in (v.get("checklist") or []):
+        comp = (ci.get("compliance") or "").upper()
+        data.append([Paragraph(ci.get("label", ""), body), comp, Paragraph(ci.get("remark") or "—", body)])
+    if len(data) > 1:
+        tbl = Table(data, colWidths=[width - margin * 2 - 60 * mm, 28 * mm, 32 * mm])
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0A2E1F")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN", (1, 0), (1, -1), "CENTER"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        tw, th = tbl.wrapOn(c, width - margin * 2, height)
+        tbl.drawOn(c, margin, y - th)
+        y -= th + 6 * mm
+
+    if v.get("observations"):
+        if y < 60 * mm:
+            c.showPage(); header(); y = height - 36 * mm
+        c.setFont("Helvetica-Bold", 11); c.setFillColor(colors.HexColor("#0A2E1F"))
+        c.drawString(margin, y, "Observations:"); c.setFillColor(colors.black)
+        y -= 6 * mm
+        for i, obs in enumerate(v.get("observations") or [], 1):
+            para = Paragraph(f"{i}. {obs}", body)
+            w, h = para.wrap(width - margin * 2 - 6 * mm, 100 * mm)
+            para.drawOn(c, margin + 4 * mm, y - h + 9)
+            y -= h + 2 * mm
+            if y < 40 * mm:
+                c.showPage(); header(); y = height - 36 * mm
+
+    if y < 50 * mm:
+        c.showPage(); header(); y = height - 36 * mm
+    y -= 8 * mm
+    sig_w = 70 * mm; sig_h = 18 * mm
+    for label, name_key, sig_key, x_off in [
+        ("Structural Engineer", "engineer_name", "engineer_signature", margin),
+        ("Site Person", "site_person_name", "site_person_signature", margin + (width - margin * 2) / 2 + 5 * mm),
+    ]:
+        c.setFont("Helvetica-Bold", 9); c.setFillColor(colors.black)
+        c.drawString(x_off, y, label + ":")
+        sig_io = _base64_image_from_data_url(v.get(sig_key, ""))
+        if sig_io:
+            try:
+                c.drawImage(ImageReader(sig_io), x_off, y - sig_h - 2 * mm, width=sig_w, height=sig_h, preserveAspectRatio=True, mask='auto')
+            except Exception:
+                pass
+        c.setFont("Helvetica", 9)
+        c.drawString(x_off, y - sig_h - 6 * mm, f"Name: {v.get(name_key) or '—'}")
+    y -= sig_h + 12 * mm
+
+    photos = v.get("photos") or []
+    if photos:
+        c.showPage(); header(); y = height - 36 * mm
+        c.setFont("Helvetica-Bold", 12); c.setFillColor(colors.HexColor("#0A2E1F"))
+        c.drawString(margin, y, "Site Visit Images & Remarks:"); c.setFillColor(colors.black)
+        y -= 8 * mm
+        img_w = (width - margin * 2 - 6 * mm) / 2; img_h = 60 * mm
+        col = 0
+        for p in photos:
+            img_io = _base64_image_from_data_url(p.get("data_url", ""))
+            if not img_io:
+                continue
+            x = margin + col * (img_w + 6 * mm)
+            try:
+                c.drawImage(ImageReader(img_io), x, y - img_h, width=img_w, height=img_h, preserveAspectRatio=True, mask='auto')
+            except Exception:
+                pass
+            cap = p.get("caption") or ""
+            if cap:
+                c.setFont("Helvetica", 8)
+                c.drawString(x, y - img_h - 4 * mm, cap[:80])
+            col += 1
+            if col >= 2:
+                col = 0
+                y -= img_h + 12 * mm
+                if y < img_h + 30 * mm:
+                    c.showPage(); header(); y = height - 36 * mm
+
+    c.showPage(); c.save()
+    pdf_bytes = buf.getvalue(); buf.close()
+    fname = f"{v.get('visit_code', 'site_visit')}.pdf"
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
 
 
 
