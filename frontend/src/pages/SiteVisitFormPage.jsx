@@ -192,7 +192,7 @@ const SiteVisitFormPage = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="sm:col-span-2">
             <label className="text-xs font-medium" style={{ color: 'var(--cc-text-muted)' }}>Inspection Title *</label>
-            <input className="input w-full mt-1" value={form.inspection_title} onChange={(e) => setForm({ ...form, inspection_title: e.target.value })} placeholder="e.g. Column casting at G+1 level" data-testid="input-title"/>
+            <input className="input w-full mt-1" value={form.inspection_title} onChange={(e) => setForm({ ...form, inspection_title: e.target.value })} placeholder="e.g. Column casting at G+1 level" data-testid="input-inspection-title"/>
           </div>
           <div><label className="text-xs">Job No</label><input className="input w-full mt-1" value={form.job_no} onChange={(e) => setForm({ ...form, job_no: e.target.value })} data-testid="input-job-no"/></div>
           <div><label className="text-xs">Visit Date</label><input type="date" className="input w-full mt-1" value={(form.visit_date || '').slice(0, 10)} onChange={(e) => setForm({ ...form, visit_date: e.target.value })} data-testid="input-visit-date"/></div>
