@@ -76,17 +76,25 @@ const DashboardKPI = ({ stats, svStats }) => {
         delay={240}
         testId="kpi-total-projects"
       />
-      <Link to="/site-visits" className="block focus:outline-none" data-testid="kpi-site-visits-link">
-        <KPICard
-          label="Site Visits (7d)"
-          value={svValue}
-          icon={ClipboardList}
-          accent="#0E7490"
-          delay={320}
-          testId="kpi-site-visits"
-          sub={svSub}
-        />
-      </Link>
+      <div className="card p-5 kpi-enter" style={{ animationDelay: '320ms' }} data-testid="kpi-site-visits">
+        <div className="flex items-start justify-between mb-3">
+          <Link to="/site-visits" className="text-xs font-semibold tracking-[0.12em] uppercase hover:underline" style={{ color: 'var(--cc-text-muted)' }}>Site Visits (7d)</Link>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#0E749020' }}>
+            <ClipboardList size={16} color="#0E7490" />
+          </div>
+        </div>
+        <div className="font-mono-data text-2xl md:text-3xl font-semibold tracking-tight" style={{ color: 'var(--cc-dark-green)' }}>
+          {svValue}
+        </div>
+        {svStats && (
+          <div className="mt-1.5 text-[11px] flex items-center gap-1 flex-wrap" data-testid="kpi-site-visits-sub">
+            <Link to="/site-visits?status=draft" className="hover:underline font-semibold" style={{ color: svStats.draft > 0 ? '#92400E' : 'var(--cc-text-muted)' }} data-testid="kpi-sv-draft-link">{svStats.draft} draft</Link>
+            <span style={{ color: 'var(--cc-text-muted)' }}>·</span>
+            <Link to="/site-visits?status=submitted" className="hover:underline font-semibold" style={{ color: svStats.submitted > 0 ? '#065F46' : 'var(--cc-text-muted)' }} data-testid="kpi-sv-submitted-link">{svStats.submitted} submitted</Link>
+            <span style={{ color: 'var(--cc-text-muted)' }}>(last {svStats.days || 7} days)</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

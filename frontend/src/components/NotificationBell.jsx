@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
-import { Bell, Check } from 'lucide-react';
+import { Bell, Check, BellOff, BellRing, Send } from 'lucide-react';
+import { usePushSubscription } from '../lib/usePushSubscription';
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -18,7 +19,10 @@ const NotificationBell = () => {
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [toast, setToast] = useState('');
   const wrapRef = useRef(null);
+  const push = usePushSubscription();
 
   const load = async () => {
     try {
@@ -92,6 +96,64 @@ const NotificationBell = () => {
               </button>
             )}
           </div>
+
+          {/* Web Push toggle — out-of-tab phone-style alerts */}
+          {push.supported && (
+            <div className="px-3 py-2 border-b text-xs flex items-center gap-2" style={{ borderColor: 'var(--cc-border)' }} data-testid="push-toggle-row">
+              {push.subscribed ? (
+                <BellRing size={13} style={{ color: '#10B981' }} />
+              ) : (
+                <BellOff size={13} style={{ color: 'var(--cc-text-muted)' }} />
+              )}
+              <span className="flex-1" style={{ color: 'var(--cc-text-muted)' }}>
+                {push.subscribed ? 'Phone alerts ON for this device' : 'Get alerts even when this tab is closed'}
+              </span>
+              {push.subscribed ? (
+                <>
+                  <button
+                    onClick={async () => {
+                      setTesting(true);
+                      try { const r = await push.sendTest(); setToast(`Test sent (${r.sent}/${r.total})`); }
+                      catch { setToast('Test failed'); }
+                      finally { setTesting(false); setTimeout(() => setToast(''), 3000); }
+                    }}
+                    disabled={testing}
+                    className="px-2 py-0.5 rounded text-[11px] font-semibold hover:underline disabled:opacity-50"
+                    style={{ color: 'var(--cc-accent)' }}
+                    title="Send a test notification"
+                    data-testid="push-test-btn"
+                  >
+                    <Send size={11} className="inline mr-0.5"/>Test
+                  </button>
+                  <button
+                    onClick={push.unsubscribe}
+                    disabled={push.busy}
+                    className="px-2 py-0.5 rounded text-[11px] font-semibold hover:underline disabled:opacity-50"
+                    style={{ color: '#B91C1C' }}
+                    data-testid="push-disable-btn"
+                  >
+                    Disable
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={push.subscribe}
+                  disabled={push.busy}
+                  className="px-2 py-0.5 rounded text-[11px] font-semibold"
+                  style={{ background: 'var(--cc-dark-green)', color: 'white' }}
+                  data-testid="push-enable-btn"
+                >
+                  Enable
+                </button>
+              )}
+            </div>
+          )}
+          {push.error && (
+            <div className="px-3 py-1.5 text-[11px]" style={{ background: '#FEE2E2', color: '#991B1B' }} data-testid="push-error">{push.error}</div>
+          )}
+          {toast && (
+            <div className="px-3 py-1.5 text-[11px]" style={{ background: '#D1FAE5', color: '#065F46' }} data-testid="push-toast">{toast}</div>
+          )}
 
           <div className="max-h-96 overflow-y-auto">
             {items.length === 0 ? (

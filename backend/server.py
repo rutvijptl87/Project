@@ -2446,7 +2446,7 @@ async def user_activity_feed(user_id: str, limit: int = 100):
         {"_id": 0},
     ).sort("created_at", -1).to_list(limit)
 
-    # Enrich with the visit_code or project_code if missing
+    # Enrich with the visit_code / project_code / audit_code if missing
     for r in log_rows:
         if r.get("site_visit_id") and not r.get("site_visit_code"):
             sv = await db.site_visits.find_one({"id": r["site_visit_id"]}, {"_id": 0, "visit_code": 1})
@@ -2456,6 +2456,10 @@ async def user_activity_feed(user_id: str, limit: int = 100):
             p = await db.projects.find_one({"id": r["project_id"]}, {"_id": 0, "project_code": 1})
             if p:
                 r["project_code"] = p.get("project_code", "")
+        if r.get("audit_id") and not r.get("audit_code"):
+            a = await db.audits.find_one({"id": r["audit_id"]}, {"_id": 0, "audit_code": 1})
+            if a:
+                r["audit_code"] = a.get("audit_code", "")
 
     # Also include their own site visits as a separate stream for quick scanning
     visits = await db.site_visits.find(
@@ -3599,8 +3603,8 @@ async def _log_sv_activity(visit_id: str, visit_code: str, action: str, detail: 
 
 
 async def _notify_admins(message: str, related_visit_id: str = "", related_visit_code: str = ""):
-    """Create an in-app notification targeted at all users with role=admin.
-    The notification feed endpoint filters by `target_role` OR `target_user_id`."""
+    """Create an in-app notification targeted at all users with role=admin
+    AND fire a Web Push to any admins who've subscribed on this/another device."""
     try:
         s = _current_user_stamp()
         await db.notifications.insert_one({
@@ -3618,6 +3622,17 @@ async def _notify_admins(message: str, related_visit_id: str = "", related_visit
         })
     except Exception as e:
         logger.error(f"notify error: {e}")
+
+    # Fire-and-forget web push (subscribed admin devices)
+    try:
+        await _push_to_admins({
+            "title": "New site visit submitted",
+            "body": message[:160],
+            "url": f"/site-visits/{related_visit_id}" if related_visit_id else "/site-visits",
+            "tag": f"site-visit-{related_visit_id or 'general'}",
+        })
+    except Exception as e:
+        logger.error(f"push to admins error: {e}")
 
 
 @api_router.get("/site-visits/{vid}/activity")
@@ -3979,6 +3994,173 @@ async def mark_all_notifications_read():
     return {"ok": True}
 
 
+# ---------------------- WEB PUSH (VAPID + service worker) ----------------------
+
+_VAPID_CACHE: dict = {"public": "", "private_pem": "", "claims_email": "mailto:admin@creatorconsultant.online"}
+
+
+def _vapid_generate_keypair() -> tuple[str, str]:
+    """Generate a fresh VAPID P-256 keypair. Returns (public_b64url, private_pem)."""
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import serialization
+    key = ec.generate_private_key(ec.SECP256R1())
+    private_pem = key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+    nums = key.public_key().public_numbers()
+    raw = b"\x04" + nums.x.to_bytes(32, "big") + nums.y.to_bytes(32, "big")
+    public_b64 = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    return public_b64, private_pem
+
+
+async def _ensure_vapid_keys():
+    """Persist VAPID keys in app_settings; auto-generate once on first run."""
+    doc = await db.app_settings.find_one({"id": "vapid"}, {"_id": 0})
+    if doc and doc.get("public") and doc.get("private_pem"):
+        _VAPID_CACHE.update(doc)
+        logger.info("VAPID keys loaded from db")
+        return
+    public, private_pem = _vapid_generate_keypair()
+    doc = {
+        "id": "vapid",
+        "public": public,
+        "private_pem": private_pem,
+        "claims_email": "mailto:admin@creatorconsultant.online",
+        "created_at": _now(),
+    }
+    await db.app_settings.update_one({"id": "vapid"}, {"$set": doc}, upsert=True)
+    _VAPID_CACHE.update(doc)
+    logger.info("VAPID keypair generated and stored")
+
+
+async def _send_web_push(subscription: dict, payload: dict) -> bool:
+    """Send a single web push. Returns True on success, False otherwise.
+    Deletes the subscription row if the endpoint returns 404/410 (subscription gone)."""
+    if not _VAPID_CACHE.get("private_pem"):
+        return False
+    try:
+        from pywebpush import webpush, WebPushException
+        import json as _json
+        webpush(
+            subscription_info={
+                "endpoint": subscription["endpoint"],
+                "keys": subscription["keys"],
+            },
+            data=_json.dumps(payload),
+            vapid_private_key=_VAPID_CACHE["private_pem"],
+            vapid_claims={"sub": _VAPID_CACHE.get("claims_email", "mailto:admin@example.com")},
+            ttl=86400,
+        )
+        return True
+    except Exception as e:
+        # If the subscription is dead, cull it
+        try:
+            from pywebpush import WebPushException
+            if isinstance(e, WebPushException):
+                code = e.response.status_code if getattr(e, "response", None) else None
+                if code in (404, 410):
+                    await db.push_subscriptions.delete_one({"endpoint": subscription["endpoint"]})
+                    logger.info(f"Pruned dead push subscription: {subscription['endpoint'][:60]}…")
+                    return False
+        except Exception:
+            pass
+        logger.error(f"web push send failed: {e}")
+        return False
+
+
+async def _push_to_admins(payload: dict):
+    """Broadcast a Web Push payload to every admin's active subscription(s)."""
+    admin_ids = [u["id"] async for u in db.users.find({"role": "admin"}, {"_id": 0, "id": 1})]
+    if not admin_ids:
+        return 0
+    subs = await db.push_subscriptions.find({"user_id": {"$in": admin_ids}}, {"_id": 0}).to_list(500)
+    sent = 0
+    for sub in subs:
+        ok = await _send_web_push(sub, payload)
+        if ok:
+            sent += 1
+    return sent
+
+
+@api_router.get("/push/vapid-public")
+async def get_vapid_public():
+    if not _VAPID_CACHE.get("public"):
+        await _ensure_vapid_keys()
+    return {"public_key": _VAPID_CACHE.get("public", "")}
+
+
+class PushSubscriptionIn(BaseModel):
+    endpoint: str
+    keys: dict  # {p256dh, auth}
+    expirationTime: Optional[int] = None
+
+
+@api_router.post("/push/subscribe")
+async def push_subscribe(body: PushSubscriptionIn):
+    user = get_current_user_safe() or {}
+    if not user.get("id"):
+        raise HTTPException(401, "Not authenticated")
+    doc = {
+        "id": _new_id(),
+        "user_id": user["id"],
+        "username": user.get("username", ""),
+        "role": user.get("role", ""),
+        "endpoint": body.endpoint,
+        "keys": body.keys,
+        "expiration_time": body.expirationTime,
+        "user_agent": "",
+        "created_at": _now(),
+    }
+    # Upsert by endpoint so the same browser doesn't pile up duplicates
+    await db.push_subscriptions.update_one(
+        {"endpoint": body.endpoint},
+        {"$set": doc},
+        upsert=True,
+    )
+    return {"ok": True}
+
+
+@api_router.post("/push/unsubscribe")
+async def push_unsubscribe(body: dict):
+    endpoint = body.get("endpoint")
+    if not endpoint:
+        raise HTTPException(400, "Missing endpoint")
+    await db.push_subscriptions.delete_one({"endpoint": endpoint})
+    return {"ok": True}
+
+
+@api_router.get("/push/status")
+async def push_status():
+    """Returns whether the current user has any active subscription on this account."""
+    user = get_current_user_safe() or {}
+    if not user.get("id"):
+        raise HTTPException(401, "Not authenticated")
+    count = await db.push_subscriptions.count_documents({"user_id": user["id"]})
+    return {"subscribed": count > 0, "count": count}
+
+
+@api_router.post("/push/test")
+async def push_test():
+    user = get_current_user_safe() or {}
+    if not user.get("id"):
+        raise HTTPException(401, "Not authenticated")
+    subs = await db.push_subscriptions.find({"user_id": user["id"]}, {"_id": 0}).to_list(50)
+    if not subs:
+        raise HTTPException(400, "You have no active push subscriptions on this device")
+    sent = 0
+    for sub in subs:
+        ok = await _send_web_push(sub, {
+            "title": "Creator Consultant",
+            "body": "Test push notification — you're all set!",
+            "url": "/site-visits",
+        })
+        if ok:
+            sent += 1
+    return {"ok": True, "sent": sent, "total": len(subs)}
+
+
 @api_router.get("/site-visits/{vid}/pdf")
 async def site_visit_pdf(vid: str):
     v = await db.site_visits.find_one({"id": vid}, {"_id": 0})
@@ -4157,6 +4339,7 @@ backup_module.init(
         "offers", "activity_log", "quote_revisions", "counters",
         "documents", "document_types",
         "site_visits", "site_visit_templates", "users", "notifications",
+        "push_subscriptions", "app_settings",
     ],
 )
 api_router.include_router(backup_module.router)
@@ -4239,6 +4422,12 @@ async def on_startup():
         await _seed_sv_templates_if_missing()
     except Exception as e:
         logger.error(f"Site visit templates seed error: {e}")
+
+    # Ensure VAPID keypair exists for Web Push (auto-generates on first run)
+    try:
+        await _ensure_vapid_keys()
+    except Exception as e:
+        logger.error(f"VAPID init error: {e}")
 
     # Start Google Drive auto-backup scheduler
     try:

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { Plus, Search, Eye, FileText, Trash2, ClipboardList, MapPin, Calendar, FileSpreadsheet } from 'lucide-react';
 import { useAuth } from '../lib/auth';
@@ -19,6 +19,8 @@ const SiteVisitsPage = () => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const statusFilter = (searchParams.get('status') || '').toLowerCase();
   const [exportMonth, setExportMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -39,13 +41,26 @@ const SiteVisitsPage = () => {
   useEffect(() => { load(); }, []); // eslint-disable-line
 
   const filtered = useMemo(() => {
+    let arr = items;
+    if (statusFilter) {
+      arr = arr.filter((v) => (v.status || 'submitted').toLowerCase() === statusFilter);
+    }
     const k = q.trim().toLowerCase();
-    if (!k) return items;
-    return items.filter((v) =>
+    if (!k) return arr;
+    return arr.filter((v) =>
       [v.visit_code, v.inspection_title, v.job_no, v.customer, v.plot_no, v.project_code, v.project_name]
         .some((f) => (f || '').toLowerCase().includes(k)),
     );
-  }, [q, items]);
+  }, [q, items, statusFilter]);
+
+  const setStatus = (s) => {
+    if (!s) {
+      searchParams.delete('status');
+    } else {
+      searchParams.set('status', s);
+    }
+    setSearchParams(searchParams, { replace: true });
+  };
 
   const removeVisit = (v) => {
     if (!window.confirm(`Delete site visit ${v.visit_code}? You can undo within 60s.`)) return;
@@ -105,6 +120,32 @@ const SiteVisitsPage = () => {
             <Plus size={16} /> <span className="hidden sm:inline">New Inspection</span><span className="sm:hidden">New</span>
           </Link>
         </div>
+      </div>
+
+      {/* Status filter pills (kept above the search row for easy phone access) */}
+      <div className="flex items-center gap-1.5 mb-4 flex-wrap" data-testid="status-filter-pills">
+        {[
+          { v: '', label: 'All', count: items.length },
+          { v: 'draft', label: 'Draft', count: items.filter((v) => (v.status || '').toLowerCase() === 'draft').length },
+          { v: 'submitted', label: 'Submitted', count: items.filter((v) => (v.status || 'submitted').toLowerCase() === 'submitted').length },
+        ].map((s) => {
+          const active = (statusFilter || '') === s.v;
+          return (
+            <button
+              key={s.v || 'all'}
+              onClick={() => setStatus(s.v)}
+              className="px-3 py-1 rounded-full text-xs font-semibold"
+              style={{
+                background: active ? 'var(--cc-dark-green)' : 'transparent',
+                color: active ? 'white' : 'var(--cc-text)',
+                border: '1px solid var(--cc-border)',
+              }}
+              data-testid={`status-pill-${s.v || 'all'}`}
+            >
+              {s.label} <span style={{ opacity: 0.6 }}>· {s.count}</span>
+            </button>
+          );
+        })}
       </div>
 
       {loading ? (

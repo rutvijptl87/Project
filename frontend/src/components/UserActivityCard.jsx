@@ -99,21 +99,26 @@ const UserActivityCard = () => {
               <div className="text-xs italic p-3 rounded" style={{ background: 'var(--cc-surface)', color: 'var(--cc-text-muted)' }}>No activity recorded.</div>
             ) : (
               <div className="rounded-md overflow-hidden" style={{ border: '1px solid var(--cc-border)', maxHeight: '380px', overflowY: 'auto' }} data-testid="user-activity-events">
-                {data.activity.map((a) => (
-                  <div key={a.id} className="px-3 py-2 border-b text-sm" style={{ borderColor: 'var(--cc-border)' }} data-testid={`user-activity-event-${a.id}`}>
-                    <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                      <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide" style={styleForAction(a.action)}>{a.action || 'EVENT'}</span>
-                      {a.site_visit_code && (
-                        <Link to={`/site-visits/${a.site_visit_id}`} className="font-mono-data text-xs hover:underline" style={{ color: 'var(--cc-dark-green)' }}>{a.site_visit_code}</Link>
-                      )}
-                      {a.project_code && !a.site_visit_code && (
-                        <span className="font-mono-data text-xs" style={{ color: 'var(--cc-text-muted)' }}>{a.project_code}</span>
-                      )}
-                      <span className="text-[11px] ml-auto" style={{ color: 'var(--cc-text-muted)' }}>{relTime(a.created_at)}</span>
+                {data.activity.map((a) => {
+                  // Pick the right link target for each event type
+                  let to = null;
+                  let label = null;
+                  if (a.site_visit_id) { to = `/site-visits/${a.site_visit_id}`; label = a.site_visit_code; }
+                  else if (a.project_id) { to = `/projects/${a.project_id}`; label = a.project_code; }
+                  else if (a.audit_id) { to = `/audits/${a.audit_id}`; label = a.audit_code; }
+                  return (
+                    <div key={a.id} className="px-3 py-2 border-b text-sm" style={{ borderColor: 'var(--cc-border)' }} data-testid={`user-activity-event-${a.id}`}>
+                      <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide" style={styleForAction(a.action)}>{a.action || 'EVENT'}</span>
+                        {to && label && (
+                          <Link to={to} className="font-mono-data text-xs hover:underline" style={{ color: 'var(--cc-dark-green)' }}>{label}</Link>
+                        )}
+                        <span className="text-[11px] ml-auto" style={{ color: 'var(--cc-text-muted)' }}>{relTime(a.created_at)}</span>
+                      </div>
+                      {a.detail && <div className="text-xs" style={{ color: 'var(--cc-text-muted)' }}>{a.detail}</div>}
                     </div>
-                    {a.detail && <div className="text-xs" style={{ color: 'var(--cc-text-muted)' }}>{a.detail}</div>}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
