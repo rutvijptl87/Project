@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { ArrowLeft, ImagePlus, Trash2, Plus, X, Save, FileText, Loader2, ClipboardList, Camera } from 'lucide-react';
 import SignaturePad from '../components/SignaturePad';
@@ -13,6 +13,8 @@ const COMPLIANCE = [
 const SiteVisitFormPage = () => {
   const nav = useNavigate();
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const presetProjectId = searchParams.get('project_id') || '';
   const isEdit = !!id;
   const fileRef = useRef(null);
 
@@ -26,7 +28,7 @@ const SiteVisitFormPage = () => {
     template_id: '',
     template_name: '',
     job_no: '',
-    project_id: '',
+    project_id: presetProjectId,
     inspection_title: '',
     visit_date: new Date().toISOString().slice(0, 10),
     customer: '',
@@ -101,11 +103,44 @@ const SiteVisitFormPage = () => {
   const updateObservation = (idx, val) => setForm((f) => ({ ...f, observations: f.observations.map((o, i) => (i === idx ? val : o)) }));
   const removeObservation = (idx) => setForm((f) => ({ ...f, observations: f.observations.filter((_, i) => i !== idx) }));
 
+  // Resize an image File to max 1280px on the longest edge, JPEG q=0.82.
+  // Big phone photos (5-8MB) become 200-400KB which uploads ~10× faster on site Wi-Fi.
+  const compressImage = (file) => new Promise((resolve) => {
+    if (!file.type.startsWith('image/')) { resolve(file); return; }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1280;
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          const ratio = width > height ? MAX / width : MAX / height;
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => {
+          if (!blob) { resolve(file); return; }
+          // Replace original with smaller jpeg, preserve the original name (forced .jpg)
+          const newName = (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg';
+          resolve(new File([blob], newName, { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.82);
+      };
+      img.onerror = () => resolve(file);
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve(file);
+    reader.readAsDataURL(file);
+  });
+
   const handlePhotoPick = async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
-    for (const file of files) {
+    for (const original of files) {
       try {
+        const file = await compressImage(original);
         const fd = new FormData();
         fd.append('file', file);
         const r = await api.post('/site-visits/uploads', fd, { headers: { 'Content-Type': 'multipart/form-data' } });

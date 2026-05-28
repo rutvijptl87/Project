@@ -87,6 +87,7 @@ class ProjectIn(BaseModel):
     quoted_amount: float = 0.0
     status: Optional[str] = "Outstanding"  # Outstanding / Settled
     notes: Optional[str] = ""
+    assigned_engineer_ids: List[str] = []
 
 
 class Project(BaseModel):
@@ -109,6 +110,7 @@ class Project(BaseModel):
     status: str = "Outstanding"
     notes: str = ""
     archived: bool = False
+    assigned_engineer_ids: List[str] = []
     # Offer linkage (optional — filled when a project is created from an offer)
     offer_id: Optional[str] = None
     offer_code: Optional[str] = ""
@@ -699,6 +701,10 @@ async def list_projects(search: Optional[str] = None, include_archived: bool = F
         query["archived"] = True
     elif not include_archived:
         query["archived"] = {"$ne": True}
+    # Engineer scope: only show projects they are assigned to (empty assignment = none)
+    user = get_current_user_safe()
+    if user and user.get("role") == "engineer":
+        query["assigned_engineer_ids"] = user["id"]
     if search:
         s = search.strip()
         query["$or"] = [
@@ -3510,6 +3516,95 @@ async def _enrich_site_visit(v: dict) -> dict:
     return v
 
 
+@api_router.get("/site-visits/export/excel")
+async def export_site_visits_excel(
+    month: Optional[str] = None,        # YYYY-MM
+    engineer_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+):
+    """Excel export of site visits. Optional filters: month=YYYY-MM, engineer_id, project_id.
+    Two sheets: 'Visits' (one row per visit) + 'By Engineer' (count + non-compliant items).
+    Must be declared BEFORE /site-visits/{vid} GET so the static path takes precedence."""
+    q: dict = {}
+    if project_id:
+        q["project_id"] = project_id
+    if engineer_id:
+        q["created_by_user_id"] = engineer_id
+    # Scope engineer to their own visits
+    user = get_current_user_safe()
+    if user and user.get("role") == "engineer":
+        q["created_by_user_id"] = user["id"]
+    rows = await db.site_visits.find(q, {"_id": 0, "photos": 0, "engineer_signature": 0, "site_person_signature": 0}).sort("created_at", -1).to_list(5000)
+    for r in rows:
+        await _enrich_site_visit(r)
+
+    if month:
+        rows = [r for r in rows if (r.get("visit_date") or r.get("created_at") or "").startswith(month)]
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Visits"
+    headers = ["Code", "Date", "Inspection", "Template", "Project", "Customer", "Plot", "Job No", "DRG No", "Rev", "Engineer", "Status", "Yes", "No", "N/A", "Observations"]
+    ws.append(headers)
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="0A2E1F")
+        c.alignment = Alignment(horizontal="center", vertical="center")
+
+    per_eng: dict = {}  # engineer_name -> {count, non_compliant, last_date}
+    for r in rows:
+        cl = r.get("checklist") or []
+        y = sum(1 for c in cl if (c.get("compliance") or "").lower() == "yes")
+        n = sum(1 for c in cl if (c.get("compliance") or "").lower() == "no")
+        na = sum(1 for c in cl if (c.get("compliance") or "").lower() == "na")
+        eng = (r.get("engineer_name") or r.get("created_by_username") or "—")
+        ws.append([
+            r.get("visit_code", ""),
+            (r.get("visit_date") or "")[:10],
+            r.get("inspection_title", ""),
+            r.get("template_name", ""),
+            f"{r.get('project_code','')} {r.get('project_name','')}".strip(),
+            r.get("customer", ""),
+            r.get("plot_no", ""),
+            r.get("job_no", ""),
+            r.get("drg_no", ""),
+            r.get("revision", ""),
+            eng,
+            r.get("status", "submitted"),
+            y, n, na,
+            "\n".join(r.get("observations") or []),
+        ])
+        agg = per_eng.setdefault(eng, {"count": 0, "non_compliant": 0, "last": ""})
+        agg["count"] += 1
+        agg["non_compliant"] += n
+        d = (r.get("visit_date") or "")[:10]
+        if d and (not agg["last"] or d > agg["last"]):
+            agg["last"] = d
+
+    for col_idx in range(1, len(headers) + 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = 18
+
+    ws2 = wb.create_sheet("By Engineer")
+    ws2.append(["Engineer", "Visits", "Non-compliant items", "Last visit date"])
+    for c in ws2[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="0A2E1F")
+    for eng, agg in sorted(per_eng.items(), key=lambda x: -x[1]["count"]):
+        ws2.append([eng, agg["count"], agg["non_compliant"], agg["last"]])
+    for col_idx in range(1, 5):
+        ws2.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = 24
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"site-visits-{month or 'all'}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 @api_router.get("/site-visits", response_model=List[SiteVisit])
 async def list_site_visits(project_id: Optional[str] = None, mine: Optional[bool] = False, search: Optional[str] = None):
     q: dict = {}
@@ -3855,6 +3950,7 @@ backup_module.init(
         "audits", "audit_payments", "audit_quote_revisions",
         "offers", "activity_log", "quote_revisions", "counters",
         "documents", "document_types",
+        "site_visits", "site_visit_templates", "users",
     ],
 )
 api_router.include_router(backup_module.router)

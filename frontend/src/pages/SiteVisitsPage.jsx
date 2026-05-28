@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { api, API } from '../lib/api';
-import { Plus, Search, Eye, FileText, Trash2, ClipboardList, MapPin, Calendar } from 'lucide-react';
+import { Plus, Search, Eye, FileText, Trash2, ClipboardList, MapPin, Calendar, FileSpreadsheet } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useUndo } from '../lib/undo';
+import { downloadFile } from '../lib/download';
 
 const StatusBadge = ({ status }) => {
   const cls = status === 'draft' ? 'badge-pending' : 'badge-settled';
@@ -18,6 +19,10 @@ const SiteVisitsPage = () => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
+  const [exportMonth, setExportMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
 
   const load = async () => {
     setLoading(true);
@@ -63,7 +68,7 @@ const SiteVisitsPage = () => {
             Mobile-friendly inspection reports — checklists, photos & PDF.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="relative flex-1 sm:w-64">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--cc-text-muted)' }} />
             <input
@@ -75,6 +80,27 @@ const SiteVisitsPage = () => {
               data-testid="site-visits-search"
             />
           </div>
+          {!isEngineer && (
+            <div className="flex items-center gap-1">
+              <input
+                type="month"
+                value={exportMonth}
+                onChange={(e) => setExportMonth(e.target.value)}
+                className="input"
+                style={{ width: '140px' }}
+                data-testid="export-month-picker"
+              />
+              <button
+                type="button"
+                onClick={() => downloadFile(`${API}/site-visits/export/excel?month=${exportMonth}`, `site-visits-${exportMonth}.xlsx`)}
+                className="btn btn-outline btn-sm"
+                title={`Excel summary for ${exportMonth}`}
+                data-testid="btn-export-sv-excel"
+              >
+                <FileSpreadsheet size={13}/> <span className="hidden md:inline">Export</span>
+              </button>
+            </div>
+          )}
           <Link to="/site-visits/new" className="btn btn-accent" data-testid="btn-new-site-visit">
             <Plus size={16} /> <span className="hidden sm:inline">New Inspection</span><span className="sm:hidden">New</span>
           </Link>
@@ -146,7 +172,7 @@ const SiteVisitsPage = () => {
                     <td className="px-3 py-2 text-right">
                       <div className="inline-flex gap-1">
                         <Link to={`/site-visits/${v.id}`} className="btn btn-outline btn-sm" title="View" data-testid={`btn-view-${v.visit_code}`}><Eye size={13}/></Link>
-                        <a href={`${API}/site-visits/${v.id}/pdf`} target="_blank" rel="noreferrer" className="btn btn-outline btn-sm" title="PDF" data-testid={`btn-pdf-${v.visit_code}`}><FileText size={13}/></a>
+                        <button onClick={() => downloadFile(`${API}/site-visits/${v.id}/pdf`, `${v.visit_code}.pdf`)} className="btn btn-outline btn-sm" title="PDF" data-testid={`btn-pdf-${v.visit_code}`}><FileText size={13}/></button>
                         {!isEngineer && (
                           <button onClick={() => removeVisit(v)} className="btn btn-outline btn-sm" title="Delete" data-testid={`btn-delete-${v.visit_code}`}><Trash2 size={13}/></button>
                         )}

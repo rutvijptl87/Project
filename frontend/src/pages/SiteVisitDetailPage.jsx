@@ -4,6 +4,7 @@ import { api, API } from '../lib/api';
 import { ArrowLeft, FileText, Edit3, Trash2, Share2, ImageIcon, ClipboardList, MapPin, Calendar, User } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useUndo } from '../lib/undo';
+import { downloadFile } from '../lib/download';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
@@ -94,9 +95,9 @@ const SiteVisitDetailPage = () => {
             </h1>
           </div>
           <div className="flex flex-wrap gap-2">
-            <a href={`${API}/site-visits/${v.id}/pdf`} target="_blank" rel="noreferrer" className="btn btn-primary" data-testid="btn-download-pdf">
+            <button onClick={() => downloadFile(`${API}/site-visits/${v.id}/pdf`, `${v.visit_code}.pdf`)} className="btn btn-primary" data-testid="btn-download-pdf">
               <FileText size={14}/> Download PDF
-            </a>
+            </button>
             <button onClick={() => setShowShare(true)} className="btn btn-accent" data-testid="btn-share-whatsapp">
               <Share2 size={14}/> Share via WhatsApp
             </button>

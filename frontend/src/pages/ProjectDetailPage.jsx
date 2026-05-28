@@ -193,6 +193,7 @@ const ProjectDetailPage = () => {
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Link to={`/site-visits/new?project_id=${id}`} className="btn btn-accent" data-testid="detail-btn-new-site-visit"><ClipboardList size={15}/> New Site Visit</Link>
           <button onClick={downloadExcel} className="btn btn-outline" data-testid="detail-btn-excel"><Download size={15}/> Export Excel</button>
           <button onClick={downloadInvoice} className="btn btn-outline" data-testid="detail-btn-invoice"><FileText size={15}/> Invoice PDF</button>
           <Link to={`/projects/${id}/edit`} className="btn btn-outline" data-testid="detail-btn-edit"><Pencil size={15}/> Edit</Link>

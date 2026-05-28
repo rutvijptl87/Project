@@ -11,6 +11,7 @@ const ProjectFormPage = () => {
 
   const [clients, setClients] = useState([]);
   const [architects, setArchitects] = useState([]);
+  const [engineers, setEngineers] = useState([]);
   const [form, setForm] = useState({
     name: '',
     client_id: '',
@@ -19,6 +20,7 @@ const ProjectFormPage = () => {
     quoted_amount: 0,
     status: 'Outstanding',
     notes: '',
+    assigned_engineer_ids: [],
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -26,9 +28,14 @@ const ProjectFormPage = () => {
 
   useEffect(() => {
     (async () => {
-      const [c, a] = await Promise.all([api.get('/clients'), api.get('/architects')]);
+      const [c, a, u] = await Promise.all([
+        api.get('/clients'),
+        api.get('/architects'),
+        api.get('/auth/users/directory').catch(() => ({ data: [] })),
+      ]);
       setClients(c.data);
       setArchitects(a.data);
+      setEngineers((u.data || []).filter((x) => x.role === 'engineer'));
       if (isEdit) {
         try {
           const r = await api.get(`/projects/${id}`);
@@ -41,6 +48,7 @@ const ProjectFormPage = () => {
             quoted_amount: p.quoted_amount || 0,
             status: p.status || 'Outstanding',
             notes: p.notes || '',
+            assigned_engineer_ids: p.assigned_engineer_ids || [],
           });
         } catch (e) {
           setError('Could not load project');
@@ -67,6 +75,7 @@ const ProjectFormPage = () => {
         quoted_amount: parseFloat(form.quoted_amount || 0),
         status: form.status,
         notes: form.notes,
+        assigned_engineer_ids: form.assigned_engineer_ids || [],
       };
       if (isEdit) await api.put(`/projects/${id}`, payload);
       else await api.post('/projects', payload);
@@ -137,6 +146,47 @@ const ProjectFormPage = () => {
               <option value="Outstanding">Outstanding</option>
               <option value="Settled">Settled</option>
             </select>
+          </div>
+        </div>
+
+        <div>
+          <label className="label">Assigned Site Engineers</label>
+          {engineers.length === 0 ? (
+            <div className="text-xs italic p-2 rounded" style={{ background: 'var(--cc-surface)', color: 'var(--cc-text-muted)' }}>
+              No engineer users yet. Add one from Settings → User Management with role "Site Engineer".
+            </div>
+          ) : (
+            <div className="rounded-md p-2 flex flex-wrap gap-2" style={{ background: 'var(--cc-surface)', border: '1px solid var(--cc-border)' }} data-testid="assigned-engineers">
+              {engineers.map((e) => {
+                const checked = form.assigned_engineer_ids.includes(e.id);
+                return (
+                  <label
+                    key={e.id}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full cursor-pointer text-xs"
+                    style={{
+                      background: checked ? 'var(--cc-dark-green)' : 'white',
+                      color: checked ? 'white' : 'var(--cc-text)',
+                      border: '1px solid var(--cc-border)',
+                    }}
+                    data-testid={`engineer-chip-${e.username}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => update('assigned_engineer_ids',
+                        checked
+                          ? form.assigned_engineer_ids.filter((id) => id !== e.id)
+                          : [...form.assigned_engineer_ids, e.id])}
+                      className="hidden"
+                    />
+                    {checked ? '✓' : '+'} {e.username}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+          <div className="text-[11px] mt-1" style={{ color: 'var(--cc-text-muted)' }}>
+            Engineers can only see projects they are assigned to. Leave empty to keep this project admin/staff-only.
           </div>
         </div>
 
