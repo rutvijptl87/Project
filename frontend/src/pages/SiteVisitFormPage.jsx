@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { ArrowLeft, ImagePlus, Trash2, Plus, X, Save, FileText, Loader2, ClipboardList, Camera } from 'lucide-react';
 import SignaturePad from '../components/SignaturePad';
+import { useAuth } from '../lib/auth';
 
 const COMPLIANCE = [
   { v: 'yes', label: 'Yes', cls: 'badge-settled', color: '#10B981' },
@@ -12,6 +13,7 @@ const COMPLIANCE = [
 
 const SiteVisitFormPage = () => {
   const nav = useNavigate();
+  const { user } = useAuth();
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const presetProjectId = searchParams.get('project_id') || '';
@@ -38,7 +40,7 @@ const SiteVisitFormPage = () => {
     checklist: [],
     observations: [],
     photos: [],
-    engineer_name: '',
+    engineer_name: user?.username || '',
     engineer_signature: '',
     site_person_name: '',
     site_person_signature: '',
@@ -103,8 +105,9 @@ const SiteVisitFormPage = () => {
   const updateObservation = (idx, val) => setForm((f) => ({ ...f, observations: f.observations.map((o, i) => (i === idx ? val : o)) }));
   const removeObservation = (idx) => setForm((f) => ({ ...f, observations: f.observations.filter((_, i) => i !== idx) }));
 
-  // Resize an image File to max 1280px on the longest edge, JPEG q=0.82.
-  // Big phone photos (5-8MB) become 200-400KB which uploads ~10× faster on site Wi-Fi.
+  // Resize an image File to max 1280px on the longest edge, JPEG q=0.82,
+  // then burn a watermark (engineer name + ISO timestamp) into the bottom-right
+  // so site photos are tamper-evident. Big phone photos (5-8MB) become 200-400KB.
   const compressImage = (file) => new Promise((resolve) => {
     if (!file.type.startsWith('image/')) { resolve(file); return; }
     const reader = new FileReader();
@@ -120,10 +123,50 @@ const SiteVisitFormPage = () => {
         }
         const canvas = document.createElement('canvas');
         canvas.width = width; canvas.height = height;
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // ---- Watermark (engineer name + timestamp, bottom-right) ----
+        try {
+          const eng = (form.engineer_name || '').trim() || user?.username || 'Site Engineer';
+          const now = new Date();
+          const ts = now.toISOString().replace('T', ' ').slice(0, 16);
+          const line1 = eng.length > 28 ? eng.slice(0, 28) + '…' : eng;
+          const line2 = ts;
+
+          // Font sized to image width so the badge stays readable
+          const baseFont = Math.max(12, Math.round(width * 0.018));
+          ctx.font = `600 ${baseFont}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+          const padX = 10, padY = 6, gap = 2;
+          const w1 = ctx.measureText(line1).width;
+          const w2 = ctx.measureText(line2).width;
+          const boxW = Math.max(w1, w2) + padX * 2;
+          const boxH = baseFont * 2 + gap + padY * 2;
+          const x = width - boxW - 12;
+          const y = height - boxH - 12;
+
+          // Translucent dark backdrop
+          ctx.fillStyle = 'rgba(10, 46, 31, 0.7)';
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(x, y, boxW, boxH, 8);
+          else ctx.rect(x, y, boxW, boxH);
+          ctx.fill();
+
+          // Subtle white border
+          ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          ctx.fillStyle = '#FFFFFF';
+          ctx.textBaseline = 'top';
+          ctx.fillText(line1, x + padX, y + padY);
+          ctx.fillStyle = 'rgba(255,255,255,0.85)';
+          ctx.font = `400 ${baseFont}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+          ctx.fillText(line2, x + padX, y + padY + baseFont + gap);
+        } catch (_e) { /* if watermark fails (e.g. very small canvas), just skip it */ }
+
         canvas.toBlob((blob) => {
           if (!blob) { resolve(file); return; }
-          // Replace original with smaller jpeg, preserve the original name (forced .jpg)
           const newName = (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg';
           resolve(new File([blob], newName, { type: 'image/jpeg' }));
         }, 'image/jpeg', 0.82);

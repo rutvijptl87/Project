@@ -2435,6 +2435,64 @@ async def dashboard_site_visit_stats(days: int = 7):
     }
 
 
+@api_router.get("/dashboard/my-sv-weekly")
+async def dashboard_my_sv_weekly(month: Optional[str] = None, engineer_id: Optional[str] = None):
+    """Per-user weekly site-visit counts for the given month (YYYY-MM, defaults to current month).
+    Returns 5 buckets W1..W5 with draft+submitted counts. Engineers are auto-scoped to themselves;
+    admins can pass ?engineer_id= to inspect anyone (omit for 'me')."""
+    user = get_current_user_safe() or {}
+    if not user.get("id"):
+        raise HTTPException(401, "Not authenticated")
+
+    target_id = user["id"]
+    if engineer_id and user.get("role") == "admin":
+        target_id = engineer_id
+
+    now = datetime.now(timezone.utc)
+    month_str = month or f"{now.year:04d}-{now.month:02d}"
+    try:
+        y, m = map(int, month_str.split("-"))
+    except Exception:
+        raise HTTPException(400, "month must be YYYY-MM")
+
+    # Pull all visits this user created whose visit_date starts with the requested month
+    rows = await db.site_visits.find(
+        {"created_by_user_id": target_id},
+        {"_id": 0, "visit_date": 0 if False else 1, "status": 1, "id": 1, "project_id": 1, "project_code": 1, "created_at": 1},
+    ).to_list(2000)
+
+    # Bucket by ISO-day-of-month / 7 (W1 = days 1-7, W2 = 8-14, ...)
+    buckets = [{"week": f"W{i+1}", "draft": 0, "submitted": 0, "total": 0} for i in range(5)]
+    by_project: dict = {}
+    for r in rows:
+        d_str = (r.get("visit_date") or r.get("created_at") or "")[:10]
+        if not d_str.startswith(month_str):
+            continue
+        try:
+            day = int(d_str.split("-")[2])
+        except Exception:
+            continue
+        idx = min(4, max(0, (day - 1) // 7))
+        s = (r.get("status") or "").lower()
+        if s == "draft":
+            buckets[idx]["draft"] += 1
+        elif s == "submitted":
+            buckets[idx]["submitted"] += 1
+        buckets[idx]["total"] += 1
+        # Per-project tally
+        pcode = r.get("project_code") or "—"
+        agg = by_project.setdefault(pcode, {"project_code": pcode, "count": 0})
+        agg["count"] += 1
+
+    return {
+        "month": month_str,
+        "target_user_id": target_id,
+        "weeks": buckets,
+        "by_project": sorted(by_project.values(), key=lambda x: -x["count"])[:8],
+        "total": sum(b["total"] for b in buckets),
+    }
+
+
 @api_router.get("/users/{user_id}/activity")
 async def user_activity_feed(user_id: str, limit: int = 100):
     """All activity_log events created by user_id, plus the user's own site visits.

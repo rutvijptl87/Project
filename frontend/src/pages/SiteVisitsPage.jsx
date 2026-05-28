@@ -5,6 +5,7 @@ import { Plus, Search, Eye, FileText, Trash2, ClipboardList, MapPin, Calendar, F
 import { useAuth } from '../lib/auth';
 import { useUndo } from '../lib/undo';
 import { downloadFile } from '../lib/download';
+import MySvWeeklyChart from '../components/MySvWeeklyChart';
 
 const StatusBadge = ({ status }) => {
   const cls = status === 'draft' ? 'badge-pending' : 'badge-settled';
@@ -121,6 +122,9 @@ const SiteVisitsPage = () => {
           </Link>
         </div>
       </div>
+
+      {/* Engineer's weekly chart (also useful for admins viewing their own visits) */}
+      <MySvWeeklyChart />
 
       {/* Status filter pills (kept above the search row for easy phone access) */}
       <div className="flex items-center gap-1.5 mb-4 flex-wrap" data-testid="status-filter-pills">
