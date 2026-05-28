@@ -11,6 +11,9 @@ import ClientDetailPage from './pages/ClientDetailPage';
 import AuditsPage from './pages/AuditsPage';
 import AuditDetailPage from './pages/AuditDetailPage';
 import DocumentsPage from './pages/DocumentsPage';
+import SiteVisitsPage from './pages/SiteVisitsPage';
+import SiteVisitFormPage from './pages/SiteVisitFormPage';
+import SiteVisitDetailPage from './pages/SiteVisitDetailPage';
 import ProjectFormPage from './pages/ProjectFormPage';
 import ProjectDetailPage from './pages/ProjectDetailPage';
 import SettingsPage from './pages/SettingsPage';
@@ -30,11 +33,13 @@ const ProtectedApp = () => {
 
   if (loading) return <SplashLoading />;
 
+  const isEngineer = user?.role === 'engineer';
+
   return (
     <Routes>
       <Route
         path="/login"
-        element={user ? <Navigate to="/" replace /> : <LoginPage />}
+        element={user ? <Navigate to={isEngineer ? '/site-visits' : '/'} replace /> : <LoginPage />}
       />
       {user ? (
         <Route
@@ -44,19 +49,33 @@ const ProtectedApp = () => {
               <div className="min-h-screen" style={{ background: '#FBFCFB' }}>
                 <Navbar onRecordPayment={() => setShowPayModal(true)} />
                 <Routes>
-                  <Route path="/" element={<ProjectsPage showPayModal={showPayModal} setShowPayModal={setShowPayModal} />} />
-                  <Route path="/audits" element={<AuditsPage />} />
-                  <Route path="/audits/:id" element={<AuditDetailPage />} />
-                  <Route path="/documents" element={<DocumentsPage />} />
-                  <Route path="/clients" element={<ClientsPage />} />
-                  <Route path="/clients/:id" element={<ClientDetailPage />} />
-                  <Route path="/architects" element={<ArchitectsPage />} />
-                  <Route path="/architects/:id" element={<ArchitectDetailPage />} />
-                  <Route path="/projects/new" element={<ProjectFormPage />} />
+                  {/* Engineer landing: redirect "/" to /site-visits */}
+                  {isEngineer ? (
+                    <Route path="/" element={<Navigate to="/site-visits" replace />} />
+                  ) : (
+                    <Route path="/" element={<ProjectsPage showPayModal={showPayModal} setShowPayModal={setShowPayModal} />} />
+                  )}
+
+                  {/* Site visits — everyone */}
+                  <Route path="/site-visits" element={<SiteVisitsPage />} />
+                  <Route path="/site-visits/new" element={<SiteVisitFormPage />} />
+                  <Route path="/site-visits/:id" element={<SiteVisitDetailPage />} />
+                  <Route path="/site-visits/:id/edit" element={<SiteVisitFormPage />} />
+
+                  {/* Engineer can also browse projects read-only — admin/staff get full app */}
+                  {!isEngineer && <Route path="/audits" element={<AuditsPage />} />}
+                  {!isEngineer && <Route path="/audits/:id" element={<AuditDetailPage />} />}
+                  {!isEngineer && <Route path="/documents" element={<DocumentsPage />} />}
+                  {!isEngineer && <Route path="/clients" element={<ClientsPage />} />}
+                  {!isEngineer && <Route path="/clients/:id" element={<ClientDetailPage />} />}
+                  {!isEngineer && <Route path="/architects" element={<ArchitectsPage />} />}
+                  {!isEngineer && <Route path="/architects/:id" element={<ArchitectDetailPage />} />}
+                  {!isEngineer && <Route path="/projects/new" element={<ProjectFormPage />} />}
+                  {!isEngineer && <Route path="/projects/:id/edit" element={<ProjectFormPage />} />}
                   <Route path="/projects/:id" element={<ProjectDetailPage />} />
-                  <Route path="/projects/:id/edit" element={<ProjectFormPage />} />
+                  <Route path="/projects" element={<ProjectsPage showPayModal={showPayModal} setShowPayModal={setShowPayModal} />} />
                   <Route path="/settings" element={<SettingsPage />} />
-                  <Route path="*" element={<Navigate to="/" replace />} />
+                  <Route path="*" element={<Navigate to={isEngineer ? '/site-visits' : '/'} replace />} />
                 </Routes>
 
                 <RecordPaymentModalWrapper

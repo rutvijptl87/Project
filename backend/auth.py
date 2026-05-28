@@ -290,8 +290,8 @@ async def create_user(body: UserCreateIn, _: dict = Depends(require_admin)):
     username = body.username.strip().lower()
     if await _db.users.find_one({"username": username}):
         raise HTTPException(status_code=400, detail="Username already exists")
-    if body.role not in ("admin", "staff"):
-        raise HTTPException(status_code=400, detail="Role must be 'admin' or 'staff'")
+    if body.role not in ("admin", "staff", "engineer"):
+        raise HTTPException(status_code=400, detail="Role must be 'admin', 'staff' or 'engineer'")
     doc = {
         "id": _new_id(),
         "username": username,
@@ -324,8 +324,8 @@ async def update_user(user_id: str, body: UserUpdateIn, current: dict = Depends(
     if body.name is not None:
         update["name"] = body.name
     if body.role is not None:
-        if body.role not in ("admin", "staff"):
-            raise HTTPException(400, "Role must be 'admin' or 'staff'")
+        if body.role not in ("admin", "staff", "engineer"):
+            raise HTTPException(400, "Role must be 'admin', 'staff' or 'engineer'")
         # Prevent demoting the only remaining admin
         if target.get("role") == "admin" and body.role != "admin":
             admin_count = await _db.users.count_documents({"role": "admin"})

@@ -9,3 +9,12 @@ root.render(
     <App />
   </React.StrictMode>,
 );
+
+// PWA: register service worker for offline app-shell + install-to-home-screen
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("/sw.js")
+      .catch((err) => console.warn("SW registration failed:", err));
+  });
+}

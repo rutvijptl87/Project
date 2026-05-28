@@ -1,12 +1,16 @@
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Depends, Form
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import io
+import base64
 import logging
 import bcrypt
+import secrets
+import shutil
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional
@@ -18,7 +22,9 @@ from reportlab.lib import colors
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import Paragraph, Frame, KeepInFrame
+from reportlab.lib.utils import ImageReader
+from reportlab.platypus import Paragraph, Frame, KeepInFrame, Table, TableStyle
+from auth import get_current_user_safe
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -222,7 +228,8 @@ class ChecklistItem(BaseModel):
 
 
 class SiteVisitPhoto(BaseModel):
-    data_url: str  # base64 image (data:image/jpeg;base64,...)
+    data_url: Optional[str] = ""  # base64 image (legacy / inline use)
+    url: Optional[str] = ""  # /api/uploads/site-visits/<filename> (preferred)
     caption: Optional[str] = ""
 
 
@@ -271,6 +278,7 @@ class SiteVisit(BaseModel):
     site_person_name: str = ""
     site_person_signature: str = ""
     status: str = "submitted"
+    public_token: Optional[str] = ""
     created_by_user_id: Optional[str] = None
     created_by_username: Optional[str] = ""
     last_edited_by_user_id: Optional[str] = None
@@ -3553,6 +3561,7 @@ async def create_site_visit(data: SiteVisitIn):
         "site_person_name": data.site_person_name or "",
         "site_person_signature": data.site_person_signature or "",
         "status": data.status or "submitted",
+        "public_token": secrets.token_urlsafe(20),
         "created_by_user_id": user.get("id"),
         "created_by_username": user.get("username", ""),
         "created_at": _now(),
@@ -3613,13 +3622,82 @@ def _base64_image_from_data_url(data_url: str) -> Optional[io.BytesIO]:
         return None
 
 
+# Site-visit upload storage (mounted at /api/uploads)
+UPLOAD_ROOT = Path(os.environ.get("UPLOAD_DIR", str(ROOT_DIR / "uploads")))
+SITE_VISIT_UPLOAD_DIR = UPLOAD_ROOT / "site-visits"
+SITE_VISIT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _photo_to_image_reader(p: dict) -> Optional[ImageReader]:
+    """Resolve a SiteVisitPhoto dict to a reportlab ImageReader.
+    Supports both base64 data_url and uploaded file URL."""
+    if p.get("data_url"):
+        bio = _base64_image_from_data_url(p["data_url"])
+        if bio:
+            try:
+                return ImageReader(bio)
+            except Exception:
+                return None
+    url = p.get("url") or ""
+    if url:
+        # url is /api/uploads/site-visits/<fname>
+        fname = url.rsplit("/", 1)[-1]
+        fpath = SITE_VISIT_UPLOAD_DIR / fname
+        if fpath.exists():
+            try:
+                return ImageReader(str(fpath))
+            except Exception:
+                return None
+    return None
+
+
+@api_router.post("/site-visits/uploads")
+async def upload_site_visit_photo(file: UploadFile = File(...)):
+    """Accept a single image file from the engineer's phone and return its URL.
+    Files are stored under /app/backend/uploads/site-visits/<random>.<ext>."""
+    if not file.filename:
+        raise HTTPException(400, "Missing filename")
+    ext = (file.filename.rsplit(".", 1)[-1] or "jpg").lower()
+    if ext not in {"jpg", "jpeg", "png", "webp", "heic", "heif", "gif"}:
+        raise HTTPException(400, "Only image files are allowed")
+    fname = f"{secrets.token_urlsafe(16)}.{ext}"
+    fpath = SITE_VISIT_UPLOAD_DIR / fname
+    with fpath.open("wb") as out:
+        shutil.copyfileobj(file.file, out)
+    return {"url": f"/api/uploads/site-visits/{fname}", "filename": fname}
+
+
+@api_router.delete("/site-visits/uploads/{filename}")
+async def delete_site_visit_upload(filename: str):
+    fpath = SITE_VISIT_UPLOAD_DIR / filename
+    if fpath.exists() and fpath.is_file():
+        try:
+            fpath.unlink()
+        except Exception:
+            pass
+    return {"ok": True}
+
+
 @api_router.get("/site-visits/{vid}/pdf")
 async def site_visit_pdf(vid: str):
     v = await db.site_visits.find_one({"id": vid}, {"_id": 0})
     if not v:
         raise HTTPException(404, "Site visit not found")
     await _enrich_site_visit(v)
+    return _render_site_visit_pdf_response(v)
 
+
+# Public (no-auth) PDF endpoint — shared via WhatsApp link
+@auth_public_router.get("/site-visits/public/{token}/pdf")
+async def site_visit_public_pdf(token: str):
+    v = await db.site_visits.find_one({"public_token": token}, {"_id": 0})
+    if not v:
+        raise HTTPException(404, "Site visit not found or link expired")
+    await _enrich_site_visit(v)
+    return _render_site_visit_pdf_response(v)
+
+
+def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
@@ -3731,12 +3809,12 @@ async def site_visit_pdf(vid: str):
         img_w = (width - margin * 2 - 6 * mm) / 2; img_h = 60 * mm
         col = 0
         for p in photos:
-            img_io = _base64_image_from_data_url(p.get("data_url", ""))
-            if not img_io:
+            img_reader = _photo_to_image_reader(p)
+            if not img_reader:
                 continue
             x = margin + col * (img_w + 6 * mm)
             try:
-                c.drawImage(ImageReader(img_io), x, y - img_h, width=img_w, height=img_h, preserveAspectRatio=True, mask='auto')
+                c.drawImage(img_reader, x, y - img_h, width=img_w, height=img_h, preserveAspectRatio=True, mask='auto')
             except Exception:
                 pass
             cap = p.get("caption") or ""
@@ -3784,6 +3862,10 @@ api_router.include_router(backup_module.router)
 # Include the routers
 app.include_router(auth_public_router)
 app.include_router(api_router)
+
+# Static file mount for uploaded site-visit photos. Served at /api/uploads/site-visits/<fname>
+# (mounted AFTER the api_router so explicit endpoints take precedence)
+app.mount("/api/uploads", StaticFiles(directory=str(UPLOAD_ROOT)), name="uploads")
 
 app.add_middleware(
     CORSMiddleware,
@@ -3849,6 +3931,12 @@ async def on_startup():
         await _seed_document_types_if_missing()
     except Exception as e:
         logger.error(f"Document types seed error: {e}")
+
+    # Seed default site-visit inspection templates if missing
+    try:
+        await _seed_sv_templates_if_missing()
+    except Exception as e:
+        logger.error(f"Site visit templates seed error: {e}")
 
     # Start Google Drive auto-backup scheduler
     try:

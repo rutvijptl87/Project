@@ -5,6 +5,7 @@ import BackupCard from '../components/BackupCard';
 import RestoreCard from '../components/RestoreCard';
 import UserManagementCard from '../components/UserManagementCard';
 import DocumentTypesCard from '../components/DocumentTypesCard';
+import SiteVisitTemplatesCard from '../components/SiteVisitTemplatesCard';
 
 const SettingsPage = () => {
   const [stats, setStats] = useState(null);
@@ -67,6 +68,9 @@ const SettingsPage = () => {
 
       {/* Document number series management */}
       <div className="mb-4"><DocumentTypesCard /></div>
+
+      {/* Site visit checklist templates */}
+      <div className="mb-4"><SiteVisitTemplatesCard /></div>
 
       <div className="card p-6 mb-4">
         <h2 className="font-head text-xl font-bold mb-3" style={{ color: 'var(--cc-dark-green)' }}>Database Summary</h2>

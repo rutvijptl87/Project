@@ -1,0 +1,239 @@
+import React, { useEffect, useState } from 'react';
+import { Link, useParams, useNavigate } from 'react-router-dom';
+import { api, API } from '../lib/api';
+import { ArrowLeft, FileText, Edit3, Trash2, Share2, ImageIcon, ClipboardList, MapPin, Calendar, User } from 'lucide-react';
+import { useAuth } from '../lib/auth';
+import { useUndo } from '../lib/undo';
+
+const BACKEND = process.env.REACT_APP_BACKEND_URL;
+
+const Pill = ({ children, color }) => (
+  <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide" style={{ background: color, color: 'white' }}>{children}</span>
+);
+
+const SiteVisitDetailPage = () => {
+  const { id } = useParams();
+  const nav = useNavigate();
+  const { user } = useAuth();
+  const undo = useUndo();
+
+  const [v, setV] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [showShare, setShowShare] = useState(false);
+  const [phone, setPhone] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api.get(`/site-visits/${id}`);
+        setV(r.data);
+      } catch (e) {
+        setErr('Site visit not found');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [id]);
+
+  const onDelete = () => {
+    if (!v) return;
+    if (!window.confirm(`Delete ${v.visit_code}? You can undo within 60s.`)) return;
+    undo.schedule({
+      label: `Site visit ${v.visit_code} deleted`,
+      onCommit: async () => { try { await api.delete(`/site-visits/${id}`); } catch {} },
+      onUndo: () => {},
+    });
+    nav('/site-visits');
+  };
+
+  const buildWhatsAppLink = () => {
+    if (!v) return '';
+    const pdfUrl = `${BACKEND}/api/site-visits/public/${v.public_token}/pdf`;
+    const lines = [
+      `Site Visit Report — ${v.visit_code}`,
+      v.inspection_title ? `Inspection: ${v.inspection_title}` : null,
+      v.project_code ? `Project: ${v.project_code} — ${v.project_name || ''}` : null,
+      v.visit_date ? `Date: ${String(v.visit_date).slice(0, 10)}` : null,
+      v.plot_no ? `Plot: ${v.plot_no}` : null,
+      '',
+      `View / download PDF: ${pdfUrl}`,
+    ].filter(Boolean);
+    const msg = encodeURIComponent(lines.join('\n'));
+    const digits = (phone || '').replace(/[^0-9]/g, '');
+    return digits ? `https://wa.me/${digits}?text=${msg}` : `https://wa.me/?text=${msg}`;
+  };
+
+  if (loading) return <div className="max-w-[1100px] mx-auto px-4 py-8 text-sm" style={{ color: 'var(--cc-text-muted)' }}>Loading…</div>;
+  if (err || !v) return (
+    <div className="max-w-[1100px] mx-auto px-4 py-8">
+      <button onClick={() => nav(-1)} className="text-sm hover:underline mb-3 inline-flex items-center gap-1"><ArrowLeft size={14}/> Back</button>
+      <div className="card p-6 text-sm" style={{ color: '#991B1B' }}>{err || 'Not found'}</div>
+    </div>
+  );
+
+  const isEngineer = user?.role === 'engineer';
+
+  return (
+    <div className="max-w-[1100px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8" data-testid="site-visit-detail-page">
+      <Link to="/site-visits" className="text-sm flex items-center gap-1 mb-3 hover:underline" style={{ color: 'var(--cc-text-muted)' }}>
+        <ArrowLeft size={14}/> All site visits
+      </Link>
+
+      {/* Header */}
+      <div className="card p-5 mb-4">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <span className="font-mono-data text-sm font-bold" style={{ color: 'var(--cc-dark-green)' }}>{v.visit_code}</span>
+              <Pill color={v.status === 'draft' ? '#9CA3AF' : '#10B981'}>{(v.status || 'submitted').toUpperCase()}</Pill>
+              {v.template_name && <Pill color="#0A2E1F">{v.template_name}</Pill>}
+            </div>
+            <h1 className="font-head text-2xl sm:text-3xl font-extrabold" style={{ color: 'var(--cc-dark-green)' }}>
+              {v.inspection_title || 'Site Visit'}
+            </h1>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <a href={`${API}/site-visits/${v.id}/pdf`} target="_blank" rel="noreferrer" className="btn btn-primary" data-testid="btn-download-pdf">
+              <FileText size={14}/> Download PDF
+            </a>
+            <button onClick={() => setShowShare(true)} className="btn btn-accent" data-testid="btn-share-whatsapp">
+              <Share2 size={14}/> Share via WhatsApp
+            </button>
+            {!isEngineer && (
+              <>
+                <Link to={`/site-visits/${v.id}/edit`} className="btn btn-outline" data-testid="btn-edit-visit"><Edit3 size={14}/> Edit</Link>
+                <button onClick={onDelete} className="btn btn-outline" style={{ color: '#B91C1C' }} data-testid="btn-delete-visit"><Trash2 size={14}/> Delete</button>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 text-xs">
+          {[
+            { icon: Calendar, label: 'Visit Date', value: (v.visit_date || '').slice(0, 10) || '—' },
+            { icon: User, label: 'Customer', value: v.customer || '—' },
+            { icon: MapPin, label: 'Plot No', value: v.plot_no || '—' },
+            { icon: ClipboardList, label: 'Job No', value: v.job_no || '—' },
+          ].map((m, i) => (
+            <div key={i} className="rounded-md p-2.5" style={{ background: 'var(--cc-surface)' }}>
+              <div className="flex items-center gap-1 mb-0.5" style={{ color: 'var(--cc-text-muted)' }}>
+                <m.icon size={11}/><span className="uppercase tracking-wide" style={{ fontSize: '10px' }}>{m.label}</span>
+              </div>
+              <div className="font-semibold text-sm" style={{ color: 'var(--cc-dark-green)' }}>{m.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {(v.project_code || v.drg_no || v.revision) && (
+          <div className="mt-3 text-xs flex flex-wrap gap-4" style={{ color: 'var(--cc-text-muted)' }}>
+            {v.project_code && <div><strong>Project:</strong> <Link to={`/projects/${v.project_id}`} className="font-mono-data hover:underline" style={{ color: 'var(--cc-dark-green)' }}>{v.project_code}</Link> — {v.project_name}</div>}
+            {v.drg_no && <div><strong>DRG:</strong> <span className="font-mono-data">{v.drg_no}</span></div>}
+            {v.revision && <div><strong>Rev:</strong> {v.revision}</div>}
+          </div>
+        )}
+      </div>
+
+      {/* Checklist */}
+      {Array.isArray(v.checklist) && v.checklist.length > 0 && (
+        <div className="card p-5 mb-4" data-testid="detail-checklist">
+          <h2 className="font-head text-lg font-bold mb-3" style={{ color: 'var(--cc-dark-green)' }}>Checklist</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ background: 'var(--cc-surface)', color: 'var(--cc-dark-green)' }}>
+                  <th className="text-left px-2 py-2">Description</th>
+                  <th className="text-center px-2 py-2 w-24">Compliance</th>
+                  <th className="text-left px-2 py-2">Remark</th>
+                </tr>
+              </thead>
+              <tbody>
+                {v.checklist.map((c, i) => {
+                  const color = c.compliance === 'yes' ? '#10B981' : c.compliance === 'no' ? '#DC2626' : '#9CA3AF';
+                  return (
+                    <tr key={i} className="border-t" style={{ borderColor: 'var(--cc-border)' }}>
+                      <td className="px-2 py-2">{c.label}</td>
+                      <td className="px-2 py-2 text-center">
+                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase" style={{ background: color, color: 'white' }}>{(c.compliance || 'yes').toUpperCase()}</span>
+                      </td>
+                      <td className="px-2 py-2 text-xs" style={{ color: 'var(--cc-text-muted)' }}>{c.remark || '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Observations */}
+      {Array.isArray(v.observations) && v.observations.length > 0 && (
+        <div className="card p-5 mb-4">
+          <h2 className="font-head text-lg font-bold mb-3" style={{ color: 'var(--cc-dark-green)' }}>Observations</h2>
+          <ol className="list-decimal pl-5 space-y-1 text-sm">
+            {v.observations.map((o, i) => <li key={i}>{o}</li>)}
+          </ol>
+        </div>
+      )}
+
+      {/* Photos */}
+      {Array.isArray(v.photos) && v.photos.length > 0 && (
+        <div className="card p-5 mb-4" data-testid="detail-photos">
+          <h2 className="font-head text-lg font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--cc-dark-green)' }}><ImageIcon size={16}/> Photos ({v.photos.length})</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+            {v.photos.map((p, i) => {
+              const src = p.url ? `${BACKEND}${p.url}` : p.data_url;
+              return (
+                <a key={i} href={src} target="_blank" rel="noreferrer" className="block rounded-md overflow-hidden" style={{ border: '1px solid var(--cc-border)' }}>
+                  <img src={src} alt={p.caption || `photo-${i+1}`} className="w-full h-32 object-cover" />
+                  {p.caption && <div className="text-[11px] px-1.5 py-1 truncate" style={{ background: 'var(--cc-surface)' }}>{p.caption}</div>}
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Signatures */}
+      {(v.engineer_signature || v.site_person_signature || v.engineer_name || v.site_person_name) && (
+        <div className="card p-5 mb-4">
+          <h2 className="font-head text-lg font-bold mb-3" style={{ color: 'var(--cc-dark-green)' }}>Signatures</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {[['Structural Engineer', v.engineer_name, v.engineer_signature], ['Site Person', v.site_person_name, v.site_person_signature]].map(([label, name, sig], i) => (
+              <div key={i} className="rounded-md p-3" style={{ background: 'var(--cc-surface)' }}>
+                <div className="text-xs font-semibold mb-1" style={{ color: 'var(--cc-text-muted)' }}>{label}</div>
+                <div className="bg-white rounded h-20 flex items-center justify-center overflow-hidden" style={{ border: '1px dashed var(--cc-border)' }}>
+                  {sig ? <img src={sig} alt="signature" className="max-h-full" /> : <span className="text-xs italic" style={{ color: 'var(--cc-text-muted)' }}>Not signed</span>}
+                </div>
+                <div className="text-xs mt-2">{name || '—'}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* WhatsApp share modal */}
+      {showShare && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShowShare(false)} data-testid="share-modal">
+          <div className="bg-white rounded-xl p-5 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-head text-lg font-bold mb-2" style={{ color: 'var(--cc-dark-green)' }}>Share via WhatsApp</h3>
+            <p className="text-xs mb-3" style={{ color: 'var(--cc-text-muted)' }}>The PDF link is public (anyone with the URL can view). Add a recipient phone (optional) to open the chat directly.</p>
+            <label className="text-xs font-medium" style={{ color: 'var(--cc-text-muted)' }}>Phone number (with country code, optional)</label>
+            <input type="tel" className="input w-full mt-1 mb-3" placeholder="91xxxxxxxxxx" value={phone} onChange={(e) => setPhone(e.target.value)} data-testid="share-phone"/>
+            <div className="text-xs mb-3 break-all p-2 rounded" style={{ background: 'var(--cc-surface)', color: 'var(--cc-text-muted)' }}>
+              {`${BACKEND}/api/site-visits/public/${v.public_token}/pdf`}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowShare(false)} className="btn btn-outline" data-testid="share-cancel">Cancel</button>
+              <a href={buildWhatsAppLink()} target="_blank" rel="noreferrer" className="btn btn-accent" onClick={() => setShowShare(false)} data-testid="share-open-whatsapp">
+                <Share2 size={14}/> Open WhatsApp
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default SiteVisitDetailPage;

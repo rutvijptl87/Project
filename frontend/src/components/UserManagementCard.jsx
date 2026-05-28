@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { logger } from '../lib/logger';
-import { Users, UserPlus, KeyRound, CheckCircle2, AlertCircle, Trash2, ShieldCheck, RotateCcw } from 'lucide-react';
+import { Users, UserPlus, KeyRound, CheckCircle2, AlertCircle, Trash2, RotateCcw } from 'lucide-react';
 
 const fmtErr = (detail, fallback = 'Something went wrong') => {
   if (typeof detail === 'string') return detail;
@@ -88,8 +88,8 @@ const UserManagementCard = () => {
     }
   };
 
-  const handleToggleRole = async (u) => {
-    const next = u.role === 'admin' ? 'staff' : 'admin';
+  const handleChangeRole = async (u, next) => {
+    if (!next || next === u.role) return;
     if (!window.confirm(`Change role of "${u.username}" from ${u.role} to ${next}?`)) return;
     try {
       await api.put(`/auth/users/${u.id}`, { role: next });
@@ -211,6 +211,7 @@ const UserManagementCard = () => {
             <input type="password" className="input md:col-span-1" placeholder="Password" value={newP} onChange={(e) => setNewP(e.target.value)} data-testid="add-user-password"/>
             <select className="select md:col-span-1" value={newRole} onChange={(e) => setNewRole(e.target.value)} data-testid="add-user-role">
               <option value="staff">Staff</option>
+              <option value="engineer">Site Engineer</option>
               <option value="admin">Admin</option>
             </select>
             <button type="submit" disabled={adding} className="btn btn-primary md:col-span-1" data-testid="btn-add-user">
@@ -235,7 +236,23 @@ const UserManagementCard = () => {
                   <tr key={u.id} data-testid={`user-row-${u.username}`}>
                     <td className="font-mono-data text-sm">{u.username}</td>
                     <td className="text-sm">{u.name || '—'}</td>
-                    <td><span className={`badge ${u.role === 'admin' ? 'badge-settled' : 'badge-outstanding'}`}>{u.role}</span></td>
+                    <td>
+                      {u.id !== user.id ? (
+                        <select
+                          className="select select-sm"
+                          value={u.role}
+                          onChange={(e) => handleChangeRole(u, e.target.value)}
+                          data-testid={`role-select-${u.username}`}
+                          style={{ minWidth: '110px' }}
+                        >
+                          <option value="staff">Staff</option>
+                          <option value="engineer">Engineer</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                      ) : (
+                        <span className={`badge ${u.role === 'admin' ? 'badge-settled' : 'badge-outstanding'}`}>{u.role}</span>
+                      )}
+                    </td>
                     <td className="text-xs font-mono-data">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
                     <td className="text-xs font-mono-data">{u.last_login_at ? new Date(u.last_login_at).toLocaleString() : 'Never'}</td>
                     <td>
@@ -247,20 +264,12 @@ const UserManagementCard = () => {
                           data-testid={`btn-reset-pw-${u.username}`}
                         ><RotateCcw size={12}/></button>
                         {u.id !== user.id && (
-                          <>
-                            <button
-                              className="btn btn-outline btn-sm"
-                              title="Toggle admin/staff"
-                              onClick={() => handleToggleRole(u)}
-                              data-testid={`btn-toggle-role-${u.username}`}
-                            ><ShieldCheck size={12}/></button>
-                            <button
-                              className="btn btn-danger btn-sm"
-                              title="Delete user"
-                              onClick={() => handleDeleteUser(u)}
-                              data-testid={`btn-delete-user-${u.username}`}
-                            ><Trash2 size={12}/></button>
-                          </>
+                          <button
+                            className="btn btn-danger btn-sm"
+                            title="Delete user"
+                            onClick={() => handleDeleteUser(u)}
+                            data-testid={`btn-delete-user-${u.username}`}
+                          ><Trash2 size={12}/></button>
                         )}
                       </div>
                     </td>
