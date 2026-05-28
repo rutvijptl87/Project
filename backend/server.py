@@ -4166,6 +4166,56 @@ async def push_test():
     return {"ok": True, "sent": sent, "total": len(subs)}
 
 
+# ---------------------- HOUSEKEEPING (daily) ----------------------
+
+NOTIFICATION_TTL_DAYS = 30
+_housekeeping_scheduler = None
+
+
+async def _cleanup_old_read_notifications() -> int:
+    """Daily job: drop in-app notifications that are older than 30 days AND have been read
+    by at least one user. We keep brand-new unread items even if old so nothing slips through."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=NOTIFICATION_TTL_DAYS)).isoformat()
+    res = await db.notifications.delete_many({
+        "created_at": {"$lt": cutoff},
+        "read_by.0": {"$exists": True},   # has at least one reader
+    })
+    if res.deleted_count:
+        logger.info(f"Housekeeping: pruned {res.deleted_count} read notifications older than {NOTIFICATION_TTL_DAYS}d")
+    return res.deleted_count
+
+
+@api_router.post("/notifications/cleanup")
+async def notifications_cleanup_now():
+    """Manual trigger for the housekeeping job (admin convenience)."""
+    user = get_current_user_safe() or {}
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    deleted = await _cleanup_old_read_notifications()
+    return {"ok": True, "deleted": deleted}
+
+
+def _start_housekeeping_scheduler():
+    """Run the cleanup once a day at 03:15 UTC."""
+    global _housekeeping_scheduler
+    if _housekeeping_scheduler is not None:
+        return
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from apscheduler.triggers.cron import CronTrigger
+    sched = AsyncIOScheduler(timezone="UTC")
+    sched.add_job(_cleanup_old_read_notifications, CronTrigger(hour=3, minute=15), id="cleanup_old_notifications", replace_existing=True)
+    sched.start()
+    _housekeeping_scheduler = sched
+    logger.info("Housekeeping scheduler started — daily 03:15 UTC")
+
+
+def _stop_housekeeping_scheduler():
+    global _housekeeping_scheduler
+    if _housekeeping_scheduler is not None:
+        _housekeeping_scheduler.shutdown(wait=False)
+        _housekeeping_scheduler = None
+
+
 @api_router.get("/site-visits/{vid}/pdf")
 async def site_visit_pdf(vid: str):
     v = await db.site_visits.find_one({"id": vid}, {"_id": 0})
@@ -4440,6 +4490,12 @@ async def on_startup():
     except Exception as e:
         logger.error(f"Failed to start backup scheduler: {e}")
 
+    # Start daily housekeeping (cleanup of old read notifications)
+    try:
+        _start_housekeeping_scheduler()
+    except Exception as e:
+        logger.error(f"Housekeeping scheduler init failed: {e}")
+
     # Seed/refresh the admin account from .env
     try:
         await auth_module.seed_admin()
@@ -4452,6 +4508,10 @@ async def on_startup():
 async def shutdown_db_client():
     try:
         await backup_module.stop_scheduler()
+    except Exception:
+        pass
+    try:
+        _stop_housekeeping_scheduler()
     except Exception:
         pass
     client.close()

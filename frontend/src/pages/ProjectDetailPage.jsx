@@ -32,6 +32,7 @@ const ProjectDetailPage = () => {
   const [payments, setPayments] = useState([]);
   const [revisions, setRevisions] = useState([]);
   const [activity, setActivity] = useState([]);
+  const [siteVisits, setSiteVisits] = useState([]);
   const [showPay, setShowPay] = useState(false);
   const [newQuote, setNewQuote] = useState('');
   const [reviseReason, setReviseReason] = useState('');
@@ -74,16 +75,18 @@ const ProjectDetailPage = () => {
   };
 
   const load = useCallback(async () => {
-    const [p, pay, rev, act] = await Promise.all([
+    const [p, pay, rev, act, sv] = await Promise.all([
       api.get(`/projects/${id}`),
       api.get('/payments', { params: { project_id: id } }),
       api.get(`/projects/${id}/revisions`),
       api.get(`/projects/${id}/activity`),
+      api.get('/site-visits', { params: { project_id: id } }).catch(() => ({ data: [] })),
     ]);
     setProject(p.data);
     setPayments(pay.data);
     setRevisions(rev.data);
     setActivity(act.data);
+    setSiteVisits((sv?.data) || []);
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
@@ -432,6 +435,56 @@ const ProjectDetailPage = () => {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Site visits for this project */}
+      <div className="card overflow-hidden mb-4" data-testid="project-site-visits-card">
+        <div className="p-5 border-b flex items-center justify-between gap-2" style={{ borderColor: 'var(--cc-border)' }}>
+          <h2 className="font-head text-lg font-bold flex items-center gap-2" style={{ color: 'var(--cc-dark-green)' }}>
+            <ClipboardList size={18}/> Site Visit History ({siteVisits.length})
+          </h2>
+          <Link to={`/site-visits/new?project_id=${id}`} className="btn btn-accent btn-sm" data-testid="project-sv-btn-new">
+            <Plus size={13}/> New Site Visit
+          </Link>
+        </div>
+        {siteVisits.length === 0 ? (
+          <div className="text-center py-6 text-sm" style={{ color: 'var(--cc-text-muted)' }} data-testid="project-sv-empty">
+            No site visits logged for this project yet.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ background: 'var(--cc-surface)', color: 'var(--cc-dark-green)' }}>
+                  <th className="text-left px-3 py-2 font-semibold">Code</th>
+                  <th className="text-left px-3 py-2 font-semibold">Inspection</th>
+                  <th className="text-left px-3 py-2 font-semibold">Date</th>
+                  <th className="text-left px-3 py-2 font-semibold">Engineer</th>
+                  <th className="text-left px-3 py-2 font-semibold">Status</th>
+                  <th className="text-right px-3 py-2 font-semibold">Open</th>
+                </tr>
+              </thead>
+              <tbody>
+                {siteVisits.map((v) => (
+                  <tr key={v.id} className="border-t hover:bg-emerald-50/40" style={{ borderColor: 'var(--cc-border)' }} data-testid={`project-sv-row-${v.visit_code}`}>
+                    <td className="px-3 py-2 font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{v.visit_code}</td>
+                    <td className="px-3 py-2">{v.inspection_title || '—'}</td>
+                    <td className="px-3 py-2 text-xs font-mono-data">{(v.visit_date || '').slice(0, 10) || '—'}</td>
+                    <td className="px-3 py-2 text-xs">{v.engineer_name || v.created_by_username || '—'}</td>
+                    <td className="px-3 py-2">
+                      <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase" style={{ background: (v.status || '').toLowerCase() === 'draft' ? '#FEF3C7' : '#D1FAE5', color: (v.status || '').toLowerCase() === 'draft' ? '#92400E' : '#065F46' }}>
+                        {(v.status || 'submitted').toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <Link to={`/site-visits/${v.id}`} className="btn btn-outline btn-sm" data-testid={`project-sv-open-${v.visit_code}`}>Open</Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Activity */}

@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 14 — verified daily-housekeeping notifications cleanup + Site Visit History card on Project Detail. 6 new pytests added, all 40 prior regression tests still green (46/46 in the active suite). Frontend rendering verified for both populated and empty project cases.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_notifications_cleanup.py",
+    "/app/test_reports/pytest/iter14_cleanup.xml",
+    "/app/test_reports/pytest/iter14_full.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is ~4,518 lines — consider modularising (routers, services, schedulers) per the 700-line guideline; not blocking this iteration.",
+    "Older test_iteration4/5/6 files reference obsolete endpoints (/api/auth/status, /api/auth/set-password, /api/auth/verify, sqlite import, etc.) and fail wholesale; main agent should delete or rewrite those test files so the default pytest run is clean. The 40-test regression set used by iter11–14 (site_visits + iter11 + iter12) is the canonical green suite.",
+    "_cleanup_old_read_notifications relies on lexicographic string comparison against ISO-format created_at — this is correct for UTC ISO-8601 timestamps; if any record ever stores naive (no tz) or differently-formatted strings, those would NOT be considered for deletion. Worth a small data-shape guard or migration note.",
+    "Scheduler uses AsyncIOScheduler attached to the FastAPI event loop — good. _stop_housekeeping_scheduler is wired only into shutdown_db_client; if supervisor sends SIGKILL the scheduler thread is preempted (acceptable in this preview env)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_notifications_cleanup.py (new)"
+  ],
+  "success_rate": {"backend": "100% (46/46 in active suite — 40 regression + 6 new)", "frontend": "100% (populated + empty states both pass)"},
+  "test_credentials": "Admin rutvij0213 / Rutvij4141* ; Engineer test_engineer / EngTest123!",
+  "seed_data_creation": "Test seeds 3 notifications with id prefix 'TEST_iter14_cleanup_' directly into Mongo for cleanup correctness; tears them down in finally block. No app-visible data left behind.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression suite = test_site_visits.py + test_iteration11_notifications_and_activity.py + test_iteration12_dashboard_sv_and_user_activity.py + test_notifications_cleanup.py = 46 tests, all green. The older test_iteration4/5/6/test_iteration13_push_and_activity.py are stale and fail; do NOT include them in the regression command. Empty-state project used: CC-0126 / id bbfa4dea-f3c6-45fa-b7c6-ede77869585b. Populated project used: ac50a1a3-5096-45c6-a0fd-6d0ab0474fdf (SV-0001, SV-0014).",
+  "rca_of_the_issue": "N/A — no defects found this iteration. Verified: (1) APScheduler boots with the log line 'Housekeeping scheduler started — daily 03:15 UTC', (2) POST /api/notifications/cleanup as admin returns {ok:true, deleted:int}, (3) engineer gets 403, (4) only notifications older than 30 days AND with read_by non-empty are pruned (old+unread and recent+read both survive), (5) GET /site-visits?project_id=<id> still filters correctly, (6) Project Detail mounts the 'Site Visit History' card with rows linking to /site-visits/<id> and 'New Site Visit' button carrying project_id, (7) empty-state copy renders for projects with no visits."
+}
