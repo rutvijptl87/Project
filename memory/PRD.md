@@ -81,6 +81,15 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
   - PDF download buttons (in SV row + detail page) switched from `<a href>` to `downloadFile()` helper so axios's bearer token actually rides along.
   - Tested via iteration_10: 23/23 pytest backend (10 new + 13 regression), 100% frontend flows green.
 
+- ✅ **Notifications + Activity log for Site Visits** (2026-02-28, iteration 11) — closes the "who edited what" + admin-alerting loop.
+  - **In-app notification bell** in the navbar (admin-only). Polls `GET /api/notifications` every 30 s, shows unread red badge with count, dropdown lists recent submissions, click navigates to the visit and marks the item read. Bulk "Mark all read" action included. Engineer's role-scoped `target_role='admin'` filter means engineers never see admin-bound notifications.
+  - **Notification generated automatically** when an engineer (or any non-admin) creates a visit with `status='submitted'` OR flips an existing visit from `draft → submitted`. Admin self-actions are NOT notified.
+  - **Activity log entries** wired into `create_site_visit / update_site_visit / delete_site_visit` (parallels the project/audit activity_log pattern). Events: `VISIT CREATED / VISIT UPDATED / STATUS CHANGED / VISIT DELETED`.
+  - **Activity History card** on the SiteVisitDetailPage shows chronological events with color-coded action badges + user + timestamp.
+  - **Cascading cleanup** — deleting a site visit also removes any pending notifications referencing it (no dead links).
+  - Endpoints: `GET /api/site-visits/{vid}/activity`, `GET /api/notifications`, `POST /api/notifications/{nid}/read`, `POST /api/notifications/read-all`. New Mongo collection: `notifications` (auto-included in Drive backups in the next session).
+  - Tested via iteration_11: 27/27 pytest backend (14 new + 13 regression), 100% frontend flows green.
+
 - ✅ Excel import that auto-creates missing clients/architects by name, skips duplicates
 - ✅ Beautiful green+white UI — Cabinet Grotesk headings, IBM Plex Sans body, IBM Plex Mono for numbers
 - ✅ All pages: Projects (dashboard+table), Clients, Architects, New/Edit Project form, Project Detail + payment history, Settings

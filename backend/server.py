@@ -3775,11 +3775,17 @@ async def update_site_visit(vid: str, data: SiteVisitIn):
 @api_router.delete("/site-visits/{vid}")
 async def delete_site_visit(vid: str):
     existing = await db.site_visits.find_one({"id": vid}, {"_id": 0, "visit_code": 1})
-    res = await db.site_visits.delete_one({"id": vid})
-    if res.deleted_count == 0:
+    if not existing:
         raise HTTPException(404, "Site visit not found")
-    if existing:
-        await _log_sv_activity(vid, existing.get("visit_code", ""), "VISIT DELETED", "")
+    # Log activity BEFORE the delete so the audit trail mirrors what happened
+    await _log_sv_activity(vid, existing.get("visit_code", ""), "VISIT DELETED", "")
+    # Cascade: remove any notifications referencing this visit so admins
+    # don't get dead links in their feed
+    try:
+        await db.notifications.delete_many({"related_visit_id": vid})
+    except Exception:
+        pass
+    await db.site_visits.delete_one({"id": vid})
     return {"ok": True}
 
 
@@ -4086,7 +4092,7 @@ backup_module.init(
         "audits", "audit_payments", "audit_quote_revisions",
         "offers", "activity_log", "quote_revisions", "counters",
         "documents", "document_types",
-        "site_visits", "site_visit_templates", "users",
+        "site_visits", "site_visit_templates", "users", "notifications",
     ],
 )
 api_router.include_router(backup_module.router)
