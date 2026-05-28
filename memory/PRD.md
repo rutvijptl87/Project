@@ -103,6 +103,11 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
   - **KPI drill-down (P3)**: the SV-stats KPI sub-line ("N draft · N submitted") is now two clickable `<Link>`s that navigate to `/site-visits?status=<v>`. SiteVisitsPage reads the `?status=` query param and toggles a status filter pill bar (All / Draft / Submitted) with counts.
   - Tested via iteration_13: backend 40/40 regression + 12/13 new passing (the failing test exposed the pywebpush 2.x raw-key gotcha which was fixed inline). After fix, end-to-end verified: fake FCM subscription → /push/test → HTTP 410 → pruned (status count dropped 1→0). Frontend 100% pass on KPI drill-down, status pills, activity-feed entity links, NotificationBell push row.
 
+- ✅ **Daily housekeeping + Project-detail SV history card** (2026-02-28, iteration 14) — bookkeeping polish.
+  - **Notification auto-cleanup**: new APScheduler `cleanup_old_notifications` job runs daily at 03:15 UTC, deleting in-app notifications older than `NOTIFICATION_TTL_DAYS = 30` that have been read by at least one user. Unread items are NEVER deleted by the cleaner so nothing slips through. New endpoint `POST /api/notifications/cleanup` triggers the same job synchronously (admin-only, 403 for everyone else). Scheduler cleanly stops on supervisor restart.
+  - **Site Visit History card on Project Detail**: renders the existing `GET /api/site-visits?project_id=<id>` as a table directly on the project page, with Open links and a "+ New Site Visit" button. Shows a friendly empty-state when no visits exist yet.
+  - Tested via iteration_14: 46/46 pytest backend (6 new + 40 regression), 100% frontend pass, zero issues.
+
 - ✅ Excel import that auto-creates missing clients/architects by name, skips duplicates
 - ✅ Beautiful green+white UI — Cabinet Grotesk headings, IBM Plex Sans body, IBM Plex Mono for numbers
 - ✅ All pages: Projects (dashboard+table), Clients, Architects, New/Edit Project form, Project Detail + payment history, Settings
