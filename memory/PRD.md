@@ -72,6 +72,15 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
   - **PWA**: `manifest.json` with green theme, `sw.js` minimal service worker (network-first for navigations, no API caching), `<link rel="manifest">` + iOS apple-touch-icon meta tags. Service worker auto-registered in `src/index.js`. App is installable on phone home screen.
   - Tested via iteration_9: 13/13 pytest backend tests pass; frontend ~90% — fixed the single RBAC gap (engineer was able to reach `/settings`).
 
+- ✅ **Site Visit follow-ups — engineer assignment, Excel export, compression, project-detail shortcut, drive backup** (2026-02-28, iteration 10) — five P1/P2/P3 enhancements after the initial SV ship.
+  - `projects.assigned_engineer_ids: List[str]` field added (ProjectIn/Project models + multi-select chip UI on ProjectFormPage). The `GET /api/projects` endpoint now scopes by `assigned_engineer_ids: $in user.id` for engineer role — engineers see ONLY their assigned projects.
+  - **"+ New Site Visit"** button on Project Detail page action bar → routes to `/site-visits/new?project_id=<id>` with the project dropdown pre-filled. One-tap inspection start.
+  - **Excel export** for site visits: `GET /api/site-visits/export/excel?month=YYYY-MM&engineer_id=&project_id=` — 2-sheet workbook (Visits + By Engineer summary). Month picker + Export button on the Site Visits page (admin-only). Engineers are auto-scoped to their own visits.
+  - **Image compression** before upload: a canvas resizes to max 1280px on the longest edge, JPEG q=0.82. Big 5-8 MB phone photos become 200-400 KB → much faster site Wi-Fi uploads.
+  - **Drive backup** now includes `site_visits`, `site_visit_templates`, and `users` collections.
+  - PDF download buttons (in SV row + detail page) switched from `<a href>` to `downloadFile()` helper so axios's bearer token actually rides along.
+  - Tested via iteration_10: 23/23 pytest backend (10 new + 13 regression), 100% frontend flows green.
+
 - ✅ Excel import that auto-creates missing clients/architects by name, skips duplicates
 - ✅ Beautiful green+white UI — Cabinet Grotesk headings, IBM Plex Sans body, IBM Plex Mono for numbers
 - ✅ All pages: Projects (dashboard+table), Clients, Architects, New/Edit Project form, Project Detail + payment history, Settings
