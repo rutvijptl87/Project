@@ -3996,37 +3996,41 @@ async def mark_all_notifications_read():
 
 # ---------------------- WEB PUSH (VAPID + service worker) ----------------------
 
-_VAPID_CACHE: dict = {"public": "", "private_pem": "", "claims_email": "mailto:admin@creatorconsultant.online"}
+_VAPID_CACHE: dict = {"public": "", "private_pem": "", "private_raw_b64": "", "claims_email": "mailto:admin@creatorconsultant.online"}
 
 
-def _vapid_generate_keypair() -> tuple[str, str]:
-    """Generate a fresh VAPID P-256 keypair. Returns (public_b64url, private_pem)."""
+def _vapid_generate_keypair() -> tuple[str, str, str]:
+    """Generate a fresh VAPID P-256 keypair. Returns (public_b64url, private_pem, private_raw_b64url).
+    pywebpush 2.x wants the *raw 32-byte private* in base64url (not the PEM), so we cache both."""
     from cryptography.hazmat.primitives.asymmetric import ec
     from cryptography.hazmat.primitives import serialization
     key = ec.generate_private_key(ec.SECP256R1())
     private_pem = key.private_bytes(
         encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
         encryption_algorithm=serialization.NoEncryption(),
     ).decode()
     nums = key.public_key().public_numbers()
-    raw = b"\x04" + nums.x.to_bytes(32, "big") + nums.y.to_bytes(32, "big")
-    public_b64 = base64.urlsafe_b64encode(raw).decode().rstrip("=")
-    return public_b64, private_pem
+    raw_pub = b"\x04" + nums.x.to_bytes(32, "big") + nums.y.to_bytes(32, "big")
+    public_b64 = base64.urlsafe_b64encode(raw_pub).decode().rstrip("=")
+    raw_priv = key.private_numbers().private_value.to_bytes(32, "big")
+    private_raw_b64 = base64.urlsafe_b64encode(raw_priv).decode().rstrip("=")
+    return public_b64, private_pem, private_raw_b64
 
 
 async def _ensure_vapid_keys():
     """Persist VAPID keys in app_settings; auto-generate once on first run."""
     doc = await db.app_settings.find_one({"id": "vapid"}, {"_id": 0})
-    if doc and doc.get("public") and doc.get("private_pem"):
+    if doc and doc.get("public") and doc.get("private_pem") and doc.get("private_raw_b64"):
         _VAPID_CACHE.update(doc)
         logger.info("VAPID keys loaded from db")
         return
-    public, private_pem = _vapid_generate_keypair()
+    public, private_pem, private_raw_b64 = _vapid_generate_keypair()
     doc = {
         "id": "vapid",
         "public": public,
         "private_pem": private_pem,
+        "private_raw_b64": private_raw_b64,
         "claims_email": "mailto:admin@creatorconsultant.online",
         "created_at": _now(),
     }
@@ -4038,34 +4042,35 @@ async def _ensure_vapid_keys():
 async def _send_web_push(subscription: dict, payload: dict) -> bool:
     """Send a single web push. Returns True on success, False otherwise.
     Deletes the subscription row if the endpoint returns 404/410 (subscription gone)."""
-    if not _VAPID_CACHE.get("private_pem"):
+    priv = _VAPID_CACHE.get("private_raw_b64")
+    if not priv:
         return False
+    from pywebpush import webpush, WebPushException
+    import json as _json
     try:
-        from pywebpush import webpush, WebPushException
-        import json as _json
         webpush(
             subscription_info={
                 "endpoint": subscription["endpoint"],
                 "keys": subscription["keys"],
             },
             data=_json.dumps(payload),
-            vapid_private_key=_VAPID_CACHE["private_pem"],
+            vapid_private_key=priv,
             vapid_claims={"sub": _VAPID_CACHE.get("claims_email", "mailto:admin@example.com")},
             ttl=86400,
         )
         return True
+    except WebPushException as e:
+        code = getattr(getattr(e, "response", None), "status_code", None)
+        if code in (404, 410):
+            try:
+                await db.push_subscriptions.delete_one({"endpoint": subscription["endpoint"]})
+                logger.info(f"Pruned dead push subscription (HTTP {code}): {subscription['endpoint'][:60]}…")
+            except Exception as ce:
+                logger.error(f"failed to prune dead sub: {ce}")
+            return False
+        logger.error(f"web push send failed (HTTP {code}): {e}")
+        return False
     except Exception as e:
-        # If the subscription is dead, cull it
-        try:
-            from pywebpush import WebPushException
-            if isinstance(e, WebPushException):
-                code = e.response.status_code if getattr(e, "response", None) else None
-                if code in (404, 410):
-                    await db.push_subscriptions.delete_one({"endpoint": subscription["endpoint"]})
-                    logger.info(f"Pruned dead push subscription: {subscription['endpoint'][:60]}…")
-                    return False
-        except Exception:
-            pass
         logger.error(f"web push send failed: {e}")
         return False
 
