@@ -32,6 +32,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
   const { byUsername } = useUserDirectory();
   const [projects, setProjects] = useState([]);
   const [stats, setStats] = useState(null);
+  const [svStats, setSvStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [payTargetId, setPayTargetId] = useState(null);
@@ -49,12 +50,14 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
       const params = {};
       if (search) params.search = search;
       if (showArchived) params.archived_only = true;
-      const [p, s] = await Promise.all([
+      const [p, s, sv] = await Promise.all([
         api.get('/projects', { params }),
         api.get('/dashboard/stats'),
+        api.get('/dashboard/site-visit-stats', { params: { days: 7 } }).catch(() => ({ data: null })),
       ]);
       setProjects(p.data);
       setStats(s.data);
+      setSvStats(sv.data);
     } catch (e) {
       logger.error('Projects load failed:', e);
     } finally {
@@ -207,7 +210,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
         </div>
       </div>
 
-      {!showArchived && <DashboardKPI stats={stats} />}
+      {!showArchived && <DashboardKPI stats={stats} svStats={svStats} />}
       {!showArchived && <MonthlyRevenueChart />}
 
       <form onSubmit={handleSearch} className="card p-3 mb-4 flex gap-2" data-testid="search-form">

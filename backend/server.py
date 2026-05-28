@@ -14,7 +14,7 @@ import shutil
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 from reportlab.lib.pagesizes import A4
@@ -2400,6 +2400,70 @@ async def dashboard_monthly_revenue(months: int = 12):
 
     rows = list(buckets.values())
     return {"months": rows, "total_received": round(sum(r["total"] for r in rows), 2)}
+
+
+@api_router.get("/dashboard/site-visit-stats")
+async def dashboard_site_visit_stats(days: int = 7):
+    """Counts of site visits in the trailing `days` window, split by status, plus per-engineer breakdown.
+    Used by the Projects dashboard 'Pending site visits this week' KPI card."""
+    days = max(1, min(int(days or 7), 90))
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    q = {"created_at": {"$gte": cutoff}}
+    rows = await db.site_visits.find(q, {"_id": 0, "id": 1, "visit_code": 1, "status": 1, "created_by_user_id": 1, "created_by_username": 1, "engineer_name": 1, "inspection_title": 1, "visit_date": 1, "project_code": 1}).sort("created_at", -1).to_list(2000)
+
+    draft = sum(1 for r in rows if (r.get("status") or "").lower() == "draft")
+    submitted = sum(1 for r in rows if (r.get("status") or "").lower() == "submitted")
+
+    by_engineer: dict = {}
+    for r in rows:
+        name = r.get("engineer_name") or r.get("created_by_username") or "—"
+        agg = by_engineer.setdefault(name, {"name": name, "draft": 0, "submitted": 0, "total": 0})
+        s = (r.get("status") or "").lower()
+        if s == "draft":
+            agg["draft"] += 1
+        elif s == "submitted":
+            agg["submitted"] += 1
+        agg["total"] += 1
+
+    return {
+        "days": days,
+        "total": len(rows),
+        "draft": draft,
+        "submitted": submitted,
+        "by_engineer": sorted(by_engineer.values(), key=lambda x: -x["total"])[:10],
+        "recent_drafts": [r for r in rows if (r.get("status") or "").lower() == "draft"][:5],
+    }
+
+
+@api_router.get("/users/{user_id}/activity")
+async def user_activity_feed(user_id: str, limit: int = 100):
+    """All activity_log events created by user_id, plus the user's own site visits.
+    Used by the per-engineer activity feed in Settings."""
+    limit = max(1, min(int(limit or 100), 500))
+
+    log_rows = await db.activity_log.find(
+        {"user_id": user_id},
+        {"_id": 0},
+    ).sort("created_at", -1).to_list(limit)
+
+    # Enrich with the visit_code or project_code if missing
+    for r in log_rows:
+        if r.get("site_visit_id") and not r.get("site_visit_code"):
+            sv = await db.site_visits.find_one({"id": r["site_visit_id"]}, {"_id": 0, "visit_code": 1})
+            if sv:
+                r["site_visit_code"] = sv.get("visit_code", "")
+        if r.get("project_id") and not r.get("project_code"):
+            p = await db.projects.find_one({"id": r["project_id"]}, {"_id": 0, "project_code": 1})
+            if p:
+                r["project_code"] = p.get("project_code", "")
+
+    # Also include their own site visits as a separate stream for quick scanning
+    visits = await db.site_visits.find(
+        {"created_by_user_id": user_id},
+        {"_id": 0, "id": 1, "visit_code": 1, "inspection_title": 1, "status": 1, "visit_date": 1, "project_code": 1, "project_name": 1, "created_at": 1},
+    ).sort("created_at", -1).to_list(limit)
+
+    return {"activity": log_rows, "visits": visits}
 
 
 
