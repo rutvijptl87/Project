@@ -47,6 +47,7 @@ const SiteVisitFormPage = () => {
     engineer_name: user?.username || '',
     engineer_signature: '',
     site_person_name: '',
+    site_person_phone: '',
     site_person_signature: '',
     status: 'submitted',
   };
@@ -705,6 +706,15 @@ const SiteVisitFormPage = () => {
               onChange={(e) => setForm({ ...form, site_person_name: e.target.value })}
               placeholder="Site person name"
               data-testid="input-site-person-name"
+            />
+            <input
+              className="input w-full mb-2"
+              type="tel"
+              inputMode="tel"
+              value={form.site_person_phone}
+              onChange={(e) => setForm({ ...form, site_person_phone: e.target.value })}
+              placeholder="Site person phone (e.g. +91 98xxxxxxxx)"
+              data-testid="input-site-person-phone"
             />
             <SignaturePad
               value={form.site_person_signature}

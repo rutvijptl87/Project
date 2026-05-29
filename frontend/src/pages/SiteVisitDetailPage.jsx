@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
-import { ArrowLeft, FileText, Edit3, Trash2, Share2, ImageIcon, ClipboardList, MapPin, Calendar, User, Pin, PinOff } from 'lucide-react';
+import { ArrowLeft, FileText, Edit3, Trash2, Share2, ImageIcon, ClipboardList, MapPin, Calendar, User, Pin, PinOff, Phone, MessageCircle } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useUndo } from '../lib/undo';
 import { downloadFile } from '../lib/download';
@@ -253,13 +253,30 @@ const SiteVisitDetailPage = () => {
         <div className="card p-5 mb-4">
           <h2 className="font-head text-lg font-bold mb-3" style={{ color: 'var(--cc-dark-green)' }}>Signatures</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {[['Structural Engineer', v.engineer_name, v.engineer_signature], ['Site Person', v.site_person_name, v.site_person_signature]].map(([label, name, sig], i) => (
+            {[
+              ['Structural Engineer', v.engineer_name, v.engineer_signature, null],
+              ['Site Person', v.site_person_name, v.site_person_signature, v.site_person_phone],
+            ].map(([label, name, sig, phone], i) => (
               <div key={i} className="rounded-md p-3" style={{ background: 'var(--cc-surface)' }}>
                 <div className="text-xs font-semibold mb-1" style={{ color: 'var(--cc-text-muted)' }}>{label}</div>
                 <div className="bg-white rounded h-20 flex items-center justify-center overflow-hidden" style={{ border: '1px dashed var(--cc-border)' }}>
                   {sig ? <img src={sig} alt="signature" className="max-h-full" /> : <span className="text-xs italic" style={{ color: 'var(--cc-text-muted)' }}>Not signed</span>}
                 </div>
                 <div className="text-xs mt-2">{name || '—'}</div>
+                {phone && (
+                  <div className="text-xs mt-1 flex flex-wrap items-center gap-2" data-testid="site-person-contact">
+                    <a href={`tel:${phone}`} className="inline-flex items-center gap-1 hover:opacity-70"
+                       style={{ color: 'var(--cc-accent)' }} data-testid="site-person-call">
+                      <Phone size={11}/> {phone}
+                    </a>
+                    <a href={`https://wa.me/${String(phone).replace(/[^0-9]/g, '')}`}
+                       target="_blank" rel="noreferrer"
+                       className="inline-flex items-center gap-1 hover:opacity-70"
+                       style={{ color: '#25D366' }} data-testid="site-person-whatsapp">
+                      <MessageCircle size={11}/> WhatsApp
+                    </a>
+                  </div>
+                )}
               </div>
             ))}
           </div>

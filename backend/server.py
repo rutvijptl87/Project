@@ -262,6 +262,7 @@ class SiteVisitIn(BaseModel):
     engineer_name: Optional[str] = ""
     engineer_signature: Optional[str] = ""  # base64 data URL of signature pad
     site_person_name: Optional[str] = ""
+    site_person_phone: Optional[str] = ""
     site_person_signature: Optional[str] = ""
     status: str = "submitted"  # draft | submitted
 
@@ -292,6 +293,7 @@ class SiteVisit(BaseModel):
     engineer_name: str = ""
     engineer_signature: str = ""
     site_person_name: str = ""
+    site_person_phone: str = ""
     site_person_signature: str = ""
     status: str = "submitted"
     is_pinned: bool = False
@@ -3878,6 +3880,7 @@ async def create_site_visit(data: SiteVisitIn):
         "engineer_name": data.engineer_name or user.get("username", ""),
         "engineer_signature": data.engineer_signature or "",
         "site_person_name": data.site_person_name or "",
+        "site_person_phone": data.site_person_phone or "",
         "site_person_signature": data.site_person_signature or "",
         "status": data.status or "submitted",
         "public_token": secrets.token_urlsafe(20),
@@ -3926,6 +3929,7 @@ async def update_site_visit(vid: str, data: SiteVisitIn):
         "engineer_name": data.engineer_name or existing.get("engineer_name", ""),
         "engineer_signature": data.engineer_signature or existing.get("engineer_signature", ""),
         "site_person_name": data.site_person_name or existing.get("site_person_name", ""),
+        "site_person_phone": data.site_person_phone or existing.get("site_person_phone", ""),
         "site_person_signature": data.site_person_signature or existing.get("site_person_signature", ""),
         "status": data.status or existing.get("status", "submitted"),
     }
@@ -4431,9 +4435,9 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
         c.showPage(); header(); y = height - 36 * mm
     y -= 8 * mm
     sig_w = 70 * mm; sig_h = 18 * mm
-    for label, name_key, sig_key, x_off in [
-        ("Structural Engineer", "engineer_name", "engineer_signature", margin),
-        ("Site Person", "site_person_name", "site_person_signature", margin + (width - margin * 2) / 2 + 5 * mm),
+    for label, name_key, sig_key, x_off, phone_key in [
+        ("Structural Engineer", "engineer_name", "engineer_signature", margin, None),
+        ("Site Person", "site_person_name", "site_person_signature", margin + (width - margin * 2) / 2 + 5 * mm, "site_person_phone"),
     ]:
         c.setFont("Helvetica-Bold", 9); c.setFillColor(colors.black)
         c.drawString(x_off, y, label + ":")
@@ -4445,6 +4449,8 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
                 pass
         c.setFont("Helvetica", 9)
         c.drawString(x_off, y - sig_h - 6 * mm, f"Name: {v.get(name_key) or '—'}")
+        if phone_key and v.get(phone_key):
+            c.drawString(x_off, y - sig_h - 10 * mm, f"Phone: {v.get(phone_key)}")
     y -= sig_h + 12 * mm
 
     photos = v.get("photos") or []
