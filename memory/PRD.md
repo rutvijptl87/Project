@@ -126,6 +126,13 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
   - **Per-photo GPS**: when an engineer adds a photo, we capture a one-shot lat/lng/accuracy at that moment and store it on the photo record (`SiteVisitPhoto.latitude/longitude/geo_accuracy/captured_at`). If the visit doesn't yet have a GPS fix, the first photo's location is auto-promoted to the visit-level GPS — saves the user a tap. Each photo card (form + detail page) shows a tiny "📍 GPS" badge linking to Google Maps at those coordinates. If the visit already has GPS, subsequent photos reuse it instead of asking for permission again.
   - **Customer contact strip**: below the Customer input on the form, when a project is linked we show clickable phone (`tel:`), WhatsApp (`wa.me/`), and email (`mailto:`) badges — so site engineers can call the customer directly without leaving the form. Phone/email come from the linked client via the existing project enrichment, so no extra DB work.
 
+- ✅ **Site Walk-around Map (P3)** (2026-02-29) — small Leaflet + OpenStreetMap embed on the Site Visit detail page.
+  - Plots all photos that have lat/lng as numbered pins (1, 2, 3 …) plus the visit-level GPS as a green star.
+  - Auto-fits the map to the bounds of all markers with padding (max zoom 19).
+  - Each pin opens a popup with the photo caption + 6-decimal coordinates.
+  - Free / no API key — uses `tile.openstreetmap.org` directly. Bundle adds ~180KB (leaflet only, no react-leaflet wrapper).
+  - Card hides itself entirely when there are zero geotagged photos AND no visit-level GPS, so old visits look clean.
+
 - ✅ Excel import that auto-creates missing clients/architects by name, skips duplicates
 - ✅ Beautiful green+white UI — Cabinet Grotesk headings, IBM Plex Sans body, IBM Plex Mono for numbers
 - ✅ All pages: Projects (dashboard+table), Clients, Architects, New/Edit Project form, Project Detail + payment history, Settings

@@ -5,6 +5,7 @@ import { ArrowLeft, FileText, Edit3, Trash2, Share2, ImageIcon, ClipboardList, M
 import { useAuth } from '../lib/auth';
 import { useUndo } from '../lib/undo';
 import { downloadFile } from '../lib/download';
+import PhotoMap from '../components/PhotoMap';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
@@ -240,6 +241,12 @@ const SiteVisitDetailPage = () => {
           </div>
         </div>
       )}
+
+      {/* Site walk-around map (photo GPS pins + visit GPS star) */}
+      <PhotoMap
+        photos={v.photos || []}
+        visitGps={v.latitude != null ? { latitude: v.latitude, longitude: v.longitude, accuracy: v.geo_accuracy } : null}
+      />
 
       {/* Signatures */}
       {(v.engineer_signature || v.site_person_signature || v.engineer_name || v.site_person_name) && (
