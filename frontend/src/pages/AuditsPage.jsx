@@ -14,8 +14,7 @@ import {
 } from 'lucide-react';
 
 const SORTABLE_COLUMNS = {
-  audit_code: 'Audit ID',
-  audit_offer: 'Audit Offer',
+  audit_offer: 'Audit Offer Number',
   report_id: 'Report ID',
   client_name: 'Name',
   total_amount: 'Total',
@@ -32,6 +31,7 @@ const emptyAudit = {
   total_amount: '',
   status: 'Outstanding',
   notes: '',
+  file_path: '',
 };
 
 const AuditsPage = () => {
@@ -116,6 +116,7 @@ const AuditsPage = () => {
       total_amount: a.total_amount != null ? String(a.total_amount) : '',
       status: a.status || 'Outstanding',
       notes: a.notes || '',
+      file_path: a.file_path || '',
     });
     setFormError('');
     setModalOpen(true);
@@ -136,6 +137,7 @@ const AuditsPage = () => {
         total_amount: parseFloat(form.total_amount) || 0,
         status: form.status || 'Outstanding',
         notes: form.notes || '',
+        file_path: (form.file_path || '').trim(),
       };
       if (editing) await api.put(`/audits/${editing.id}`, payload);
       else await api.post('/audits', payload);
@@ -247,17 +249,16 @@ const AuditsPage = () => {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={11} className="text-center py-10" style={{ color: 'var(--cc-text-muted)' }}>Loading...</td></tr>
+                <tr><td colSpan={10} className="text-center py-10" style={{ color: 'var(--cc-text-muted)' }}>Loading...</td></tr>
               ) : sortedAudits.length === 0 ? (
-                <tr><td colSpan={11} className="text-center py-12">
+                <tr><td colSpan={10} className="text-center py-12">
                   <ClipboardCheck size={32} className="mx-auto mb-2 text-gray-400"/>
                   <div className="font-semibold">{showArchived ? 'No archived audits' : 'No audits yet'}</div>
                   <div className="text-sm" style={{ color: 'var(--cc-text-muted)' }}>Create your first audit to get started.</div>
                 </td></tr>
               ) : sortedAudits.map((a) => (
                 <tr key={a.id} data-testid={`audit-row-${a.audit_code}`}>
-                  <td className="font-mono-data text-xs font-semibold" style={{ color: 'var(--cc-dark-green)' }}><Link to={`/audits/${a.id}`} className="link-underline" data-testid={`audit-code-link-${a.audit_code}`}>{a.audit_code}</Link></td>
-                  <td className="font-medium">{a.audit_offer || '—'}</td>
+                  <td className="font-medium"><Link to={`/audits/${a.id}`} className="link-underline" data-testid={`audit-offer-link-${a.audit_code}`}>{a.audit_offer || '—'}</Link></td>
                   <td className="font-mono-data text-xs">{a.report_id || '—'}</td>
                   <td>{a.client_name ? <Link to={`/clients/${a.client_id}`} className="link-underline">{a.client_name}</Link> : <span className="text-gray-400">—</span>}</td>
                   <td className="font-mono-data text-sm">{formatINR(a.total_amount)}</td>
@@ -294,19 +295,13 @@ const AuditsPage = () => {
       {/* Form modal */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? `Edit Audit ${editing.audit_code}` : 'New Audit'} testId="audit-modal">
         <form onSubmit={handleSave} className="space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="label">Audit ID</label>
-              <input className="input font-mono-data" value={form.audit_code} onChange={(e) => update('audit_code', e.target.value)} placeholder="Auto (AUD-0001) — or type custom" data-testid="audit-form-code" />
-            </div>
-            <div>
-              <label className="label">Report ID</label>
-              <input className="input font-mono-data" value={form.report_id} onChange={(e) => update('report_id', e.target.value)} placeholder={`Auto (RPT-${new Date().getFullYear()}-001) — or type custom`} data-testid="audit-form-report-id" />
-            </div>
+          <div>
+            <label className="label">Report ID</label>
+            <input className="input font-mono-data" value={form.report_id} onChange={(e) => update('report_id', e.target.value)} placeholder={`Auto (RPT-${new Date().getFullYear()}-001) — or type custom`} data-testid="audit-form-report-id" />
           </div>
           <div>
-            <label className="label">Audit Offer *</label>
-            <input className="input" value={form.audit_offer} onChange={(e) => update('audit_offer', e.target.value)} placeholder="e.g. Structural Audit, RCC Basic Audit, UPV Testing" data-testid="audit-form-offer" />
+            <label className="label">Audit Offer Number *</label>
+            <input className="input" value={form.audit_offer} onChange={(e) => update('audit_offer', e.target.value)} placeholder="e.g. STR/AUDIT/2026/006" data-testid="audit-form-offer" />
           </div>
           <div>
             <label className="label">Name (Client)</label>
@@ -335,6 +330,16 @@ const AuditsPage = () => {
           <div>
             <label className="label">Notes</label>
             <textarea className="textarea" rows={3} value={form.notes} onChange={(e) => update('notes', e.target.value)} placeholder="Initial site visit completed, half-cell test pending, etc." data-testid="audit-form-notes" />
+          </div>
+          <div>
+            <label className="label">File Path <span className="text-xs font-normal" style={{ color: 'var(--cc-text-muted)' }}>(path of the audit report PDF / Excel on your PC)</span></label>
+            <input
+              className="input font-mono-data text-xs"
+              value={form.file_path}
+              onChange={(e) => update('file_path', e.target.value)}
+              placeholder={`e.g. D:\\CreatorConsultant\\Audits\\2026\\STR-AUDIT-2026-006.pdf`}
+              data-testid="audit-form-file-path"
+            />
           </div>
           {formError && <div className="text-sm text-red-600" data-testid="audit-form-error">{formError}</div>}
           <div className="flex justify-end gap-2 pt-2">

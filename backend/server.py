@@ -1390,6 +1390,7 @@ class AuditIn(BaseModel):
     total_amount: float = 0.0
     status: Optional[str] = "Outstanding"
     notes: Optional[str] = ""
+    file_path: Optional[str] = ""        # path on user's PC, e.g. D:\Audits\2026\STR-AUDIT-006.pdf
 
 
 class Audit(BaseModel):
@@ -1407,6 +1408,7 @@ class Audit(BaseModel):
     outstanding_amount: float = 0.0
     status: str = "Outstanding"
     notes: str = ""
+    file_path: str = ""
     archived: bool = False
     last_edited_by_user_id: Optional[str] = None
     last_edited_by_username: Optional[str] = ""

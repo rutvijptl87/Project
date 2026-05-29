@@ -11,7 +11,7 @@ import { logger } from '../lib/logger';
 import {
   ArrowLeft, Pencil, Trash2, FileText, Download, Archive,
   Plus, CreditCard, ClipboardList, Clock, Phone, Mail, MessageCircle,
-  StickyNote, Save, X, ClipboardCheck,
+  StickyNote, Save, X, ClipboardCheck, FolderOpen, Copy,
 } from 'lucide-react';
 
 const actionStyle = (action) => {
@@ -82,6 +82,7 @@ const AuditDetailPage = () => {
         total_amount: audit.total_amount || 0,
         status: audit.status || 'Outstanding',
         notes: notesDraft,
+        file_path: audit.file_path || '',
       });
       setAudit((a) => ({ ...a, notes: notesDraft }));
       setEditingNotes(false);
@@ -208,6 +209,30 @@ const AuditDetailPage = () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* File path (audit report stored on user's PC) */}
+      {audit.file_path && (
+        <div
+          className="card p-3 mb-6 flex items-center justify-between gap-3 flex-wrap"
+          data-testid="audit-detail-file-path"
+        >
+          <div className="flex items-center gap-2 text-xs min-w-0 flex-1">
+            <FolderOpen size={14} style={{ color: 'var(--cc-accent)', flexShrink: 0 }}/>
+            <span className="font-mono-data truncate" title={audit.file_path}>{audit.file_path}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard?.writeText(audit.file_path).catch(() => {});
+            }}
+            className="btn btn-outline btn-sm"
+            title="Copy path"
+            data-testid="audit-detail-copy-file-path"
+          >
+            <Copy size={12}/> Copy
+          </button>
         </div>
       )}
 
