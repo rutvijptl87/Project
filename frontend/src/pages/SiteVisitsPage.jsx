@@ -49,7 +49,7 @@ const SiteVisitsPage = () => {
     const k = q.trim().toLowerCase();
     if (!k) return arr;
     return arr.filter((v) =>
-      [v.visit_code, v.inspection_title, v.job_no, v.customer, v.plot_no, v.project_code, v.project_name]
+      [v.visit_code, v.inspection_title, v.job_no, v.customer, v.plot_no, v.site_location, v.project_code, v.project_name]
         .some((f) => (f || '').toLowerCase().includes(k)),
     );
   }, [q, items, statusFilter]);
@@ -179,7 +179,7 @@ const SiteVisitsPage = () => {
                 <div className="font-semibold text-sm leading-tight mb-0.5">{v.inspection_title || '—'}</div>
                 <div className="text-xs flex items-center gap-2 flex-wrap" style={{ color: 'var(--cc-text-muted)' }}>
                   {v.project_code && <span className="font-mono-data">{v.project_code}</span>}
-                  {v.plot_no && (<><MapPin size={11}/> {v.plot_no}</>)}
+                  {(v.site_location || v.plot_no) && (<><MapPin size={11}/> {v.site_location || v.plot_no}</>)}
                   {v.visit_date && (<><Calendar size={11}/> {String(v.visit_date).slice(0, 10)}</>)}
                 </div>
               </Link>
@@ -194,7 +194,7 @@ const SiteVisitsPage = () => {
                   <th className="text-left px-3 py-2 font-semibold">Code</th>
                   <th className="text-left px-3 py-2 font-semibold">Inspection</th>
                   <th className="text-left px-3 py-2 font-semibold">Project</th>
-                  <th className="text-left px-3 py-2 font-semibold">Customer / Plot</th>
+                  <th className="text-left px-3 py-2 font-semibold">Customer / Site</th>
                   <th className="text-left px-3 py-2 font-semibold">Date</th>
                   <th className="text-left px-3 py-2 font-semibold">Engineer</th>
                   <th className="text-left px-3 py-2 font-semibold">Status</th>
@@ -209,7 +209,7 @@ const SiteVisitsPage = () => {
                     <td className="px-3 py-2 font-mono-data text-xs">{v.project_code || '—'}</td>
                     <td className="px-3 py-2 text-xs">
                       <div>{v.customer || '—'}</div>
-                      <div style={{ color: 'var(--cc-text-muted)' }}>{v.plot_no || ''}</div>
+                      <div style={{ color: 'var(--cc-text-muted)' }}>{v.site_location || v.plot_no || ''}</div>
                     </td>
                     <td className="px-3 py-2 text-xs">{(v.visit_date || '').slice(0, 10)}</td>
                     <td className="px-3 py-2 text-xs">{v.engineer_name || v.created_by_username || '—'}</td>

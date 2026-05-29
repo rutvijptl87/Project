@@ -114,6 +114,14 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
   - **Photo watermarking**: the existing client-side `compressImage` canvas step now also burns a dark-green badge in the bottom-right corner with the engineer's name + ISO timestamp before the file is uploaded. Engineer name auto-defaults to the logged-in `user.username` so the watermark works even if the user never opens the Signatures section. Verified via PIL pixel inspection: ~8% of bottom-right ROI pixels match the watermark backdrop color (10, 46, 31). Original 5-8 MB phone JPEGs still come out ~200-400 KB.
   - Tested via iteration_15: **55/55 pytest backend** (9 new + 46 regression), **100% frontend** (chart + month re-fetch + engineer auto-fill + watermark file verification). Only findings are 2 cosmetic console warnings from the platform's injector + recharts initial layout tick — both non-blocking and not in our code.
 
+- ✅ **Pin Visit + Smart project picker + Auto-fill + GPS capture** (2026-02-29) — major Site Visit form UX upgrade based on user screenshot feedback.
+  - **Pin this visit**: new `POST /api/site-visits/{vid}/pin` toggle and `is_pinned` field. Project Detail page surfaces pinned visits in an amber "Key Inspections" strip at the top so clients/admins see them front-and-center.
+  - **Project picker** in Site Visit form is now a search box + dropdown (replaced the native `<select>`). Shows just the **4-digit project code tail** (no `CC-` prefix). Searches across job number, name, customer and site location.
+  - **Smart Job No** — typing a 4-digit job number into the Job No field looks up the matching project and auto-fills the Customer and Site Location.
+  - Renamed `Plot No` → `Site Location` throughout (form, detail page, table, mobile cards, Excel export, PDF). Old visits' `plot_no` value still appears as a fallback.
+  - **GPS capture** via `navigator.geolocation` — new Fetch GPS button stamps lat/lng + accuracy onto the visit. Shown as a Google-Maps link on the detail page + included as an extra row in the PDF.
+  - Backend `_enrich_site_visit` now auto-fills blank `customer` / `site_location` on read from the linked project too, so historical visits without those fields look right.
+
 - ✅ Excel import that auto-creates missing clients/architects by name, skips duplicates
 - ✅ Beautiful green+white UI — Cabinet Grotesk headings, IBM Plex Sans body, IBM Plex Mono for numbers
 - ✅ All pages: Projects (dashboard+table), Clients, Architects, New/Edit Project form, Project Detail + payment history, Settings

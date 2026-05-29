@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, API } from '../lib/api';
-import { ArrowLeft, ImagePlus, Trash2, Plus, X, Save, FileText, Loader2, ClipboardList, Camera } from 'lucide-react';
+import { ArrowLeft, ImagePlus, Trash2, Plus, X, Save, FileText, Loader2, ClipboardList, Camera, MapPin, LocateFixed, Search } from 'lucide-react';
 import SignaturePad from '../components/SignaturePad';
 import { useAuth } from '../lib/auth';
 
@@ -35,8 +35,12 @@ const SiteVisitFormPage = () => {
     visit_date: new Date().toISOString().slice(0, 10),
     customer: '',
     plot_no: '',
+    site_location: '',
     drg_no: '',
     revision: '',
+    latitude: null,
+    longitude: null,
+    geo_accuracy: null,
     checklist: [],
     observations: [],
     photos: [],
@@ -47,6 +51,88 @@ const SiteVisitFormPage = () => {
     status: 'submitted',
   };
   const [form, setForm] = useState(blank);
+
+  // Searchable project picker state
+  const [projectSearch, setProjectSearch] = useState('');
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [gpsBusy, setGpsBusy] = useState(false);
+  const [gpsMsg, setGpsMsg] = useState('');
+
+  // Last 4 digits of a project code (CC-0571 -> 0571). Falls back to the raw code.
+  const codeTail = (code) => {
+    const m = String(code || '').match(/(\d+)\s*$/);
+    return m ? m[1] : (code || '');
+  };
+
+  const applyProject = (p) => {
+    if (!p) {
+      setForm((f) => ({ ...f, project_id: '', job_no: '' }));
+      return;
+    }
+    setForm((f) => ({
+      ...f,
+      project_id: p.id,
+      // Auto-fill the job number with the project's 4-digit tail
+      job_no: codeTail(p.project_code),
+      // Auto-fill blanks (don't overwrite user-edited values)
+      customer: f.customer || p.client_name || '',
+      site_location: f.site_location || p.site_location || '',
+    }));
+    setProjectSearch('');
+    setProjectPickerOpen(false);
+  };
+
+  // When the engineer types a 4-digit job number, find the matching project
+  // and auto-fill customer + site_location. Triggered on every keystroke; cheap O(n).
+  const onJobNoChange = (val) => {
+    setForm((f) => ({ ...f, job_no: val }));
+    const tail = String(val || '').trim();
+    if (!tail) return;
+    const match = projects.find((p) => codeTail(p.project_code) === tail);
+    if (match) {
+      setForm((f) => ({
+        ...f,
+        project_id: match.id,
+        customer: match.client_name || f.customer,
+        site_location: match.site_location || f.site_location,
+      }));
+    }
+  };
+
+  const selectedProject = useMemo(
+    () => projects.find((p) => p.id === form.project_id) || null,
+    [projects, form.project_id],
+  );
+
+  const filteredProjects = useMemo(() => {
+    const k = projectSearch.trim().toLowerCase();
+    if (!k) return projects.slice(0, 50);
+    return projects
+      .filter((p) => [p.project_code, p.name, p.client_name, p.site_location].some((f) => (f || '').toLowerCase().includes(k)))
+      .slice(0, 50);
+  }, [projects, projectSearch]);
+
+  const fetchGps = () => {
+    if (!('geolocation' in navigator)) {
+      setGpsMsg('Geolocation not supported on this device');
+      return;
+    }
+    setGpsBusy(true); setGpsMsg('');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        setForm((f) => ({ ...f, latitude, longitude, geo_accuracy: accuracy }));
+        setGpsBusy(false);
+        setGpsMsg(`Located ±${Math.round(accuracy)} m`);
+        setTimeout(() => setGpsMsg(''), 4000);
+      },
+      (err) => {
+        setGpsBusy(false);
+        setGpsMsg(err.code === 1 ? 'Permission denied — enable location in browser settings.' : (err.message || 'Could not get location'));
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+    );
+  };
 
   useEffect(() => {
     (async () => {
@@ -251,15 +337,67 @@ const SiteVisitFormPage = () => {
           </div>
           <div>
             <label className="text-xs font-medium" style={{ color: 'var(--cc-text-muted)' }}>Linked Project (optional)</label>
-            <select
-              value={form.project_id || ''}
-              onChange={(e) => setForm((f) => ({ ...f, project_id: e.target.value }))}
-              className="select w-full mt-1"
-              data-testid="select-project"
-            >
-              <option value="">—</option>
-              {projects.map((p) => <option key={p.id} value={p.id}>{p.project_code} · {p.name}</option>)}
-            </select>
+            <div className="relative mt-1" data-testid="project-picker-wrap">
+              <button
+                type="button"
+                onClick={() => setProjectPickerOpen((o) => !o)}
+                className="input w-full text-left flex items-center justify-between"
+                data-testid="select-project"
+              >
+                <span className={selectedProject ? '' : 'opacity-60'}>
+                  {selectedProject ? `${codeTail(selectedProject.project_code)} · ${selectedProject.name}` : '— Select project —'}
+                </span>
+                <Search size={13} style={{ color: 'var(--cc-text-muted)' }}/>
+              </button>
+              {projectPickerOpen && (
+                <div
+                  className="absolute z-30 mt-1 w-full rounded-md shadow-lg overflow-hidden"
+                  style={{ background: 'white', border: '1px solid var(--cc-border)' }}
+                  data-testid="project-picker-dropdown"
+                >
+                  <div className="p-2 border-b" style={{ borderColor: 'var(--cc-border)' }}>
+                    <input
+                      autoFocus
+                      type="text"
+                      className="input w-full"
+                      placeholder="Search by job no, name, customer, site…"
+                      value={projectSearch}
+                      onChange={(e) => setProjectSearch(e.target.value)}
+                      data-testid="project-picker-search"
+                    />
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {selectedProject && (
+                      <button type="button" onClick={() => applyProject(null)} className="w-full px-3 py-1.5 text-xs text-left hover:bg-emerald-50" style={{ color: '#B91C1C' }} data-testid="project-picker-clear">— Clear selection —</button>
+                    )}
+                    {filteredProjects.length === 0 ? (
+                      <div className="px-3 py-3 text-xs italic text-center" style={{ color: 'var(--cc-text-muted)' }}>No projects match.</div>
+                    ) : (
+                      filteredProjects.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => applyProject(p)}
+                          className="w-full px-3 py-2 text-left text-sm hover:bg-emerald-50 border-b"
+                          style={{ borderColor: 'var(--cc-border)' }}
+                          data-testid={`project-picker-option-${codeTail(p.project_code)}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono-data font-bold" style={{ color: 'var(--cc-dark-green)' }}>{codeTail(p.project_code)}</span>
+                            <span className="truncate">{p.name}</span>
+                          </div>
+                          {(p.client_name || p.site_location) && (
+                            <div className="text-[11px] mt-0.5 truncate" style={{ color: 'var(--cc-text-muted)' }}>
+                              {p.client_name}{p.client_name && p.site_location ? ' · ' : ''}{p.site_location}
+                            </div>
+                          )}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -272,12 +410,49 @@ const SiteVisitFormPage = () => {
             <label className="text-xs font-medium" style={{ color: 'var(--cc-text-muted)' }}>Inspection Title *</label>
             <input className="input w-full mt-1" value={form.inspection_title} onChange={(e) => setForm({ ...form, inspection_title: e.target.value })} placeholder="e.g. Column casting at G+1 level" data-testid="input-inspection-title"/>
           </div>
-          <div><label className="text-xs">Job No</label><input className="input w-full mt-1" value={form.job_no} onChange={(e) => setForm({ ...form, job_no: e.target.value })} data-testid="input-job-no"/></div>
+          <div>
+            <label className="text-xs">Job No <span style={{ color: 'var(--cc-text-muted)' }}>(type 4-digit to auto-fill)</span></label>
+            <input className="input w-full mt-1" inputMode="numeric" placeholder="e.g. 0571" value={form.job_no} onChange={(e) => onJobNoChange(e.target.value)} data-testid="input-job-no"/>
+          </div>
           <div><label className="text-xs">Visit Date</label><input type="date" className="input w-full mt-1" value={(form.visit_date || '').slice(0, 10)} onChange={(e) => setForm({ ...form, visit_date: e.target.value })} data-testid="input-visit-date"/></div>
-          <div><label className="text-xs">Customer</label><input className="input w-full mt-1" value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} data-testid="input-customer"/></div>
-          <div><label className="text-xs">Plot No</label><input className="input w-full mt-1" value={form.plot_no} onChange={(e) => setForm({ ...form, plot_no: e.target.value })} data-testid="input-plot-no"/></div>
+          <div><label className="text-xs">Customer</label><input className="input w-full mt-1" value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} placeholder="Auto-filled from project" data-testid="input-customer"/></div>
+          <div><label className="text-xs">Site Location</label><input className="input w-full mt-1" value={form.site_location} onChange={(e) => setForm({ ...form, site_location: e.target.value })} placeholder="Auto-filled from project" data-testid="input-site-location"/></div>
           <div><label className="text-xs">DRG No</label><input className="input w-full mt-1" value={form.drg_no} onChange={(e) => setForm({ ...form, drg_no: e.target.value })} data-testid="input-drg-no"/></div>
           <div><label className="text-xs">Revision</label><input className="input w-full mt-1" value={form.revision} onChange={(e) => setForm({ ...form, revision: e.target.value })} data-testid="input-revision"/></div>
+
+          {/* GPS row */}
+          <div className="sm:col-span-2">
+            <label className="text-xs font-medium" style={{ color: 'var(--cc-text-muted)' }}>GPS Location <span className="opacity-70">(stamped on PDF for proof-of-presence)</span></label>
+            <div className="flex flex-wrap items-center gap-2 mt-1">
+              <button
+                type="button"
+                onClick={fetchGps}
+                disabled={gpsBusy}
+                className="btn btn-outline btn-sm"
+                data-testid="btn-fetch-gps"
+              >
+                {gpsBusy ? <Loader2 size={13} className="animate-spin"/> : <LocateFixed size={13}/>}
+                {form.latitude != null ? 'Re-fetch GPS' : 'Fetch GPS'}
+              </button>
+              {form.latitude != null && form.longitude != null && (
+                <a
+                  href={`https://www.google.com/maps?q=${form.latitude},${form.longitude}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-mono-data hover:underline"
+                  style={{ background: 'var(--cc-surface)', color: 'var(--cc-dark-green)' }}
+                  data-testid="gps-coords-link"
+                >
+                  <MapPin size={11}/> {form.latitude.toFixed(6)}, {form.longitude.toFixed(6)}
+                  {form.geo_accuracy != null && <span style={{ color: 'var(--cc-text-muted)' }}>· ±{Math.round(form.geo_accuracy)}m</span>}
+                </a>
+              )}
+              {form.latitude != null && (
+                <button type="button" onClick={() => setForm((f) => ({ ...f, latitude: null, longitude: null, geo_accuracy: null }))} className="text-xs hover:underline" style={{ color: '#B91C1C' }} data-testid="btn-clear-gps">Clear</button>
+              )}
+              {gpsMsg && <span className="text-[11px]" style={{ color: gpsMsg.includes('Permission') ? '#B91C1C' : 'var(--cc-accent)' }} data-testid="gps-msg">{gpsMsg}</span>}
+            </div>
+          </div>
         </div>
       </div>
 

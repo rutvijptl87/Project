@@ -134,7 +134,7 @@ const SiteVisitDetailPage = () => {
           {[
             { icon: Calendar, label: 'Visit Date', value: (v.visit_date || '').slice(0, 10) || '—' },
             { icon: User, label: 'Customer', value: v.customer || '—' },
-            { icon: MapPin, label: 'Plot No', value: v.plot_no || '—' },
+            { icon: MapPin, label: 'Site Location', value: v.site_location || v.plot_no || '—' },
             { icon: ClipboardList, label: 'Job No', value: v.job_no || '—' },
           ].map((m, i) => (
             <div key={i} className="rounded-md p-2.5" style={{ background: 'var(--cc-surface)' }}>
@@ -145,6 +145,16 @@ const SiteVisitDetailPage = () => {
             </div>
           ))}
         </div>
+        {(v.latitude != null && v.longitude != null) && (
+          <div className="mt-3 text-xs flex items-center gap-2" data-testid="detail-gps-row">
+            <MapPin size={12} style={{ color: 'var(--cc-accent)' }} />
+            <strong>GPS:</strong>
+            <a href={`https://www.google.com/maps?q=${v.latitude},${v.longitude}`} target="_blank" rel="noreferrer" className="font-mono-data hover:underline" style={{ color: 'var(--cc-dark-green)' }}>
+              {v.latitude.toFixed(6)}, {v.longitude.toFixed(6)}
+            </a>
+            {v.geo_accuracy != null && <span style={{ color: 'var(--cc-text-muted)' }}>±{Math.round(v.geo_accuracy)} m</span>}
+          </div>
+        )}
 
         {(v.project_code || v.drg_no || v.revision) && (
           <div className="mt-3 text-xs flex flex-wrap gap-4" style={{ color: 'var(--cc-text-muted)' }}>

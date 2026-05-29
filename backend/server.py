@@ -243,9 +243,13 @@ class SiteVisitIn(BaseModel):
     inspection_title: str
     visit_date: Optional[str] = None  # ISO date
     customer: Optional[str] = ""
-    plot_no: Optional[str] = ""
+    plot_no: Optional[str] = ""           # kept for backward-compat with older visits
+    site_location: Optional[str] = ""     # NEW — auto-filled from linked project
     drg_no: Optional[str] = ""
     revision: Optional[str] = ""
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    geo_accuracy: Optional[float] = None
     checklist: List[ChecklistItem] = []
     observations: List[str] = []
     photos: List[SiteVisitPhoto] = []
@@ -270,8 +274,12 @@ class SiteVisit(BaseModel):
     visit_date: Optional[str] = None
     customer: str = ""
     plot_no: str = ""
+    site_location: str = ""
     drg_no: str = ""
     revision: str = ""
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    geo_accuracy: Optional[float] = None
     checklist: List[ChecklistItem] = []
     observations: List[str] = []
     photos: List[SiteVisitPhoto] = []
@@ -3636,10 +3644,15 @@ async def delete_sv_template(tid: str):
 
 async def _enrich_site_visit(v: dict) -> dict:
     if v.get("project_id"):
-        p = await db.projects.find_one({"id": v["project_id"]}, {"_id": 0, "project_code": 1, "name": 1})
+        p = await db.projects.find_one({"id": v["project_id"]}, {"_id": 0, "project_code": 1, "name": 1, "site_location": 1, "client_name": 1})
         if p:
             v["project_code"] = p.get("project_code", "")
             v["project_name"] = p.get("name", "")
+            # Auto-fill blanks from the linked project so historical visits also benefit
+            if not v.get("customer"):
+                v["customer"] = p.get("client_name", "")
+            if not v.get("site_location"):
+                v["site_location"] = p.get("site_location", "")
     return v
 
 
@@ -3743,7 +3756,7 @@ async def export_site_visits_excel(
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Visits"
-    headers = ["Code", "Date", "Inspection", "Template", "Project", "Customer", "Plot", "Job No", "DRG No", "Rev", "Engineer", "Status", "Yes", "No", "N/A", "Observations"]
+    headers = ["Code", "Date", "Inspection", "Template", "Project", "Customer", "Site Location", "Job No", "DRG No", "Rev", "Engineer", "Status", "GPS", "Yes", "No", "N/A", "Observations"]
     ws.append(headers)
     for c in ws[1]:
         c.font = Font(bold=True, color="FFFFFF")
@@ -3764,12 +3777,13 @@ async def export_site_visits_excel(
             r.get("template_name", ""),
             f"{r.get('project_code','')} {r.get('project_name','')}".strip(),
             r.get("customer", ""),
-            r.get("plot_no", ""),
+            r.get("site_location", "") or r.get("plot_no", ""),
             r.get("job_no", ""),
             r.get("drg_no", ""),
             r.get("revision", ""),
             eng,
             r.get("status", "submitted"),
+            f"{r.get('latitude'):.6f}, {r.get('longitude'):.6f}" if (r.get("latitude") is not None and r.get("longitude") is not None) else "",
             y, n, na,
             "\n".join(r.get("observations") or []),
         ])
@@ -3845,8 +3859,12 @@ async def create_site_visit(data: SiteVisitIn):
         "visit_date": data.visit_date or _now(),
         "customer": data.customer or "",
         "plot_no": data.plot_no or "",
+        "site_location": data.site_location or "",
         "drg_no": data.drg_no or "",
         "revision": data.revision or "",
+        "latitude": data.latitude,
+        "longitude": data.longitude,
+        "geo_accuracy": data.geo_accuracy,
         "checklist": [ci.model_dump() for ci in (data.checklist or [])],
         "observations": [o for o in (data.observations or []) if o.strip()],
         "photos": [p.model_dump() for p in (data.photos or [])],
@@ -3889,8 +3907,12 @@ async def update_site_visit(vid: str, data: SiteVisitIn):
         "visit_date": data.visit_date or existing.get("visit_date"),
         "customer": data.customer or "",
         "plot_no": data.plot_no or "",
+        "site_location": data.site_location or existing.get("site_location", ""),
         "drg_no": data.drg_no or "",
         "revision": data.revision or "",
+        "latitude": data.latitude if data.latitude is not None else existing.get("latitude"),
+        "longitude": data.longitude if data.longitude is not None else existing.get("longitude"),
+        "geo_accuracy": data.geo_accuracy if data.geo_accuracy is not None else existing.get("geo_accuracy"),
         "checklist": [ci.model_dump() for ci in (data.checklist or [])],
         "observations": [o for o in (data.observations or []) if o.strip()],
         "photos": [p.model_dump() for p in (data.photos or [])],
@@ -4335,9 +4357,17 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
     c.setFont("Helvetica", 9)
     meta_rows = [
         ("Job No", v.get("job_no") or "—", "Date", (v.get("visit_date") or "")[:10]),
-        ("Customer", v.get("customer") or "—", "Plot No", v.get("plot_no") or "—"),
+        ("Customer", v.get("customer") or "—", "Site Location", v.get("site_location") or v.get("plot_no") or "—"),
         ("DRG No", v.get("drg_no") or "—", "Revision", v.get("revision") or "—"),
     ]
+    # Add GPS row if captured
+    if v.get("latitude") is not None and v.get("longitude") is not None:
+        meta_rows.append((
+            "GPS",
+            f"{v.get('latitude'):.6f}, {v.get('longitude'):.6f}",
+            "Accuracy",
+            f"±{v.get('geo_accuracy'):.0f} m" if v.get('geo_accuracy') is not None else "—",
+        ))
     for r in meta_rows:
         c.setFont("Helvetica-Bold", 9); c.drawString(margin, y, r[0] + ":")
         c.setFont("Helvetica", 9); c.drawString(margin + 22 * mm, y, str(r[1]))
