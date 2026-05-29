@@ -54,6 +54,20 @@ const AuditsPage = () => {
   const [payOpen, setPayOpen] = useState(false);
   const [payAuditId, setPayAuditId] = useState(null);
   const [toast, setToast] = useState(null);
+  const [offerPreview, setOfferPreview] = useState('');
+
+  // Fetch the upcoming Audit Offer Number from the AUD-OFR document-type
+  // counter (managed in Settings → Document Number Series). Used as a
+  // placeholder on the New Audit form so the engineer sees what number will
+  // be assigned.
+  const loadOfferPreview = async () => {
+    try {
+      const r = await api.get('/document-types/by-prefix/AUD-OFR/preview');
+      setOfferPreview(r.data?.number || '');
+    } catch {
+      setOfferPreview('');
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -105,7 +119,13 @@ const AuditsPage = () => {
     setTimeout(() => setToast(null), 2500);
   };
 
-  const openNew = () => { setEditing(null); setForm(emptyAudit); setFormError(''); setModalOpen(true); };
+  const openNew = () => {
+    setEditing(null);
+    setForm(emptyAudit);
+    setFormError('');
+    loadOfferPreview();
+    setModalOpen(true);
+  };
   const openEdit = (a) => {
     setEditing(a);
     setForm({
@@ -126,7 +146,6 @@ const AuditsPage = () => {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    if (!form.audit_offer.trim()) return setFormError('Audit Offer is required (e.g. Structural Audit)');
     setSaving(true);
     try {
       const payload = {
@@ -295,26 +314,22 @@ const AuditsPage = () => {
       {/* Form modal */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? `Edit Audit ${editing.audit_code}` : 'New Audit'} testId="audit-modal">
         <form onSubmit={handleSave} className="space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="label">Audit Number</label>
-              <input
-                className="input font-mono-data"
-                value={form.audit_code}
-                onChange={(e) => update('audit_code', e.target.value)}
-                placeholder="Auto (AUD-0001) — leave blank to auto-fill"
-                data-testid="audit-form-code"
-              />
-              <div className="text-[11px] mt-1" style={{ color: 'var(--cc-text-muted)' }}>Auto-generated. Edit only if you want a custom number.</div>
-            </div>
-            <div>
-              <label className="label">Report ID</label>
-              <input className="input font-mono-data" value={form.report_id} onChange={(e) => update('report_id', e.target.value)} placeholder={`Auto (RPT-${new Date().getFullYear()}-001) — or type custom`} data-testid="audit-form-report-id" />
-            </div>
+          <div>
+            <label className="label">Report ID</label>
+            <input className="input font-mono-data" value={form.report_id} onChange={(e) => update('report_id', e.target.value)} placeholder={`Auto (RPT-${new Date().getFullYear()}-001) — or type custom`} data-testid="audit-form-report-id" />
           </div>
           <div>
-            <label className="label">Audit Offer Number *</label>
-            <input className="input" value={form.audit_offer} onChange={(e) => update('audit_offer', e.target.value)} placeholder="e.g. STR/AUDIT/2026/006" data-testid="audit-form-offer" />
+            <label className="label">Audit Offer Number</label>
+            <input
+              className="input font-mono-data"
+              value={form.audit_offer}
+              onChange={(e) => update('audit_offer', e.target.value)}
+              placeholder={offerPreview ? `Auto (${offerPreview}) — leave blank to auto-fill` : 'Auto (STR/AUD-OFR/YYYY/NNN) — or type custom'}
+              data-testid="audit-form-offer"
+            />
+            <div className="text-[11px] mt-1" style={{ color: 'var(--cc-text-muted)' }}>
+              Auto-generated from the <strong>Audit Offer (AUD-OFR)</strong> series in Settings → Document Number Series. Edit only if you want a custom number.
+            </div>
           </div>
           <div>
             <label className="label">Name (Client)</label>

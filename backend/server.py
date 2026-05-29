@@ -1514,6 +1514,12 @@ async def create_audit(data: AuditIn):
     doc["id"] = _new_id()
     doc["audit_code"] = (doc.get("audit_code") or "").strip() or await _next_audit_code()
     doc["report_id"] = (doc.get("report_id") or "").strip() or await _next_report_id()
+    # If the engineer didn't override the Audit Offer Number, auto-generate it
+    # from the AUD-OFR document-type counter (managed in Settings).
+    if not (doc.get("audit_offer") or "").strip():
+        dt = await db.document_types.find_one({"prefix": "AUD-OFR"}, {"_id": 0})
+        if dt:
+            doc["audit_offer"] = await _next_document_number(dt)
     doc["received_amount"] = 0.0
     doc["archived"] = False
     doc["created_at"] = _now()
@@ -1535,11 +1541,13 @@ async def update_audit(audit_id: str, data: AuditIn):
         raise HTTPException(404, "Audit not found")
     old_total = existing.get("total_amount", 0)
     update = data.model_dump()
-    # Keep the existing code/report_id if new value is blank
+    # Keep the existing code/report_id/audit_offer if new value is blank
     if not (update.get("audit_code") or "").strip():
         update["audit_code"] = existing.get("audit_code", "")
     if not (update.get("report_id") or "").strip():
         update["report_id"] = existing.get("report_id", "")
+    if not (update.get("audit_offer") or "").strip():
+        update["audit_offer"] = existing.get("audit_offer", "")
     existing.update(update)
     _stamp_edit(existing)
     await _enrich_audit(existing)
@@ -3068,6 +3076,7 @@ async def seed_demo():
 # ---------------------- DOCUMENTS MODULE ----------------------
 
 DEFAULT_DOCUMENT_TYPES = [
+    ("Audit Offer", "AUD-OFR"),
     ("Quotation", "QT"),
     ("PMC Quotation", "PMC-QT"),
     ("Inspection Report Letter", "INSP"),
@@ -3091,12 +3100,25 @@ DEFAULT_DOCUMENT_TYPES = [
 
 async def _seed_document_types_if_missing():
     if await db.document_types.count_documents({}) > 0:
-        # One-shot migration: drop legacy "Audit Offer" / "Audit Report" doc types
-        # if they exist (and haven't yet been used to issue a number).
+        # One-shot migration: drop legacy "Audit Report" doc type if it exists
+        # and hasn't yet been used to issue a number (counter ≤ 0).
         await db.document_types.delete_many({
-            "prefix": {"$in": ["AUD-OFR", "AUD-RPT"]},
+            "prefix": "AUD-RPT",
             "$or": [{"counter": {"$lte": 0}}, {"counter": {"$exists": False}}],
         })
+        # Backfill: if AUD-OFR doesn't exist (e.g. removed earlier), recreate it
+        # so the audit-offer numbering settings are available.
+        if not await db.document_types.find_one({"prefix": "AUD-OFR"}):
+            await db.document_types.insert_one({
+                "id": _new_id(),
+                "name": "Audit Offer",
+                "prefix": "AUD-OFR",
+                "description": "",
+                "year_reset": True,
+                "counter": 0,
+                "last_year": 0,
+                "created_at": _now(),
+            })
         return
     now = _now()
     docs = []
@@ -3139,6 +3161,23 @@ async def _next_document_number(doc_type: dict) -> str:
 async def list_document_types():
     rows = await db.document_types.find({}, {"_id": 0}).sort("name", 1).to_list(1000)
     return rows
+
+
+@api_router.get("/document-types/by-prefix/{prefix}/preview")
+async def preview_document_number_by_prefix(prefix: str):
+    """Return what the next document number WILL be for the given prefix, without
+    incrementing the counter. Used to pre-fill the Audit Offer Number on the
+    New Audit form so the user sees the upcoming `STR/AUD-OFR/2026/007`."""
+    dt = await db.document_types.find_one({"prefix": prefix.upper()}, {"_id": 0})
+    if not dt:
+        raise HTTPException(404, f"No document type with prefix '{prefix}'")
+    year = datetime.now(timezone.utc).year
+    if dt.get("year_reset", True) and (dt.get("last_year") or 0) != year:
+        next_counter = 1
+    else:
+        next_counter = (dt.get("counter") or 0) + 1
+    number = f"STR/{dt['prefix']}/{year}/{next_counter:03d}"
+    return {"number": number, "year": year, "counter": next_counter, "prefix": dt["prefix"]}
 
 
 @api_router.post("/document-types", response_model=DocumentType)
