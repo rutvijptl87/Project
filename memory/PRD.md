@@ -261,3 +261,32 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
     ArchitectsPage.jsx
     SettingsPage.jsx
 ```
+
+
+---
+
+## Session 16 — 2026-02 (Regression Pass)
+- ✅ Verified per-photo GPS exif capture end-to-end (lat/lng persisted in `site_visits.photos[]`)
+- ✅ Verified Leaflet `PhotoMap` renders numbered photo markers + green visit-pin
+- ✅ Verified Customer phone/email contact strip on `SiteVisitFormPage`
+- ✅ Verified smart 4-digit Job No search auto-fills Site Location + Customer
+- ✅ Verified Pin-this-visit-to-project on project header
+- ✅ Verified web push (VAPID + pywebpush 2.3.0 raw base64url) subscribe & notify
+- ✅ Verified engineer RBAC, PDF/Excel exports, dashboard `my-sv-weekly`, notifications, activity log, CRUD regression
+- ✅ 27/27 backend pytest pass — `/app/backend/tests/test_iteration16_sv_enhancements.py`
+- ✅ Cosmetic: PhotoMap wrapper now exposes `data-testid="photo-map"`
+
+### Still Pending (Backlog)
+- **P0 (carried over)**: Email Digest via Resend — 7 AM daily summary + instant admin alerts. Package installed; **user opted to SKIP for now** (no API key provided).
+- **P2**: Per-project engineer assignment filtering (engineers currently see all projects; schema supports `assigned_engineer_ids`)
+- **P3**: Refactor `/app/backend/server.py` (4624 lines) into routers (`projects.py`, `site_visits.py`, `push_service.py`, `pdf_builder.py`, `export_utils.py`)
+- **P3**: Native mobile (Expo/React Native) — only if PWA proves insufficient
+- **Known op-issue**: Google Drive Backup needs re-auth from production domain (`creatorconsultant.online`)
+
+### Known Cosmetic (non-blocking)
+- React hydration warning from a stray child node inside an `<option>` (could not reproduce in current code; likely cleared)
+- Recharts `width(-1)/height(-1)` warning when chart mounts hidden — harmless
+
+### Test Credentials
+- Admin: `rutvij0213` / `Rutvij4141*`
+- Engineer: `test_engineer` / `EngTest123!`

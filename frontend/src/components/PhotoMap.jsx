@@ -108,7 +108,7 @@ const PhotoMap = ({ photos = [], visitGps = null, height = 280 }) => {
   if (!geoPhotos.length && !hasVisit) return null;
 
   return (
-    <div className="card p-5 mb-4" data-testid="photo-map-card">
+    <div className="card p-5 mb-4" data-testid="photo-map">
       <h2 className="font-head text-lg font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--cc-dark-green)' }}>
         <MapPin size={16}/> Site Walk-around Map
         <span className="text-xs font-normal ml-1" style={{ color: 'var(--cc-text-muted)' }}>
