@@ -290,3 +290,25 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
 ### Test Credentials
 - Admin: `rutvij0213` / `Rutvij4141*`
 - Engineer: `test_engineer` / `EngTest123!`
+
+
+---
+
+## Session 17 — 2026-02 (Job No + Default Signature + Mobile Notifications)
+- ✅ **Project.job_no**: Added optional `job_no` field to `Project`/`ProjectIn` model. Surfaced as a "Job No" input on the Project form, shown as a badge on the Project detail header, and included in `/api/projects?search=` query.
+- ✅ **Site Visit Job No auto-fill** now prefers `project.job_no` (e.g. "3324") over the project_code tail ("0126"). Fallback chain: `job_no → name → codeTail(project_code)`. Smart Job No typing also matches by `job_no`.
+- ✅ **Default Signature**: New `default_signature` field on User, with `PUT /api/auth/me/signature` (set/clear with size + format validation). New `DefaultSignatureCard` lets the user draw and save it; SiteVisitFormPage auto-loads it on **new** visits (skipped on edit, never overwrites a user-drawn one).
+- ✅ **Mobile Notifications**: New `MobileNotificationsCard` exposes a prominent Enable/Disable + Send Test for Web Push using the existing `usePushSubscription` hook. iOS detection shows "Add to Home Screen" hint when needed.
+- ✅ **`/profile` route** accessible to every role (admin/staff/engineer). New "Profile" nav link in engineer's desktop nav + mobile bottom-nav. Admin's user-info chip in navbar is now a Link to `/profile`. Settings page also mounts both cards for admins.
+- ✅ Tests: 13/13 new backend pytest cases pass (`/app/backend/tests/test_iteration17_jobno_signature_profile.py`); iter16 27/27 regression still green; frontend e2e confirms all flows.
+
+### Files added / changed (iter17)
+- Backend: `/app/backend/server.py` (Project.job_no + search), `/app/backend/auth.py` (UserPublic.default_signature, `DefaultSignatureIn`, `PUT /auth/me/signature`)
+- Frontend new: `DefaultSignatureCard.jsx`, `MobileNotificationsCard.jsx`, `ProfilePage.jsx`
+- Frontend edited: `App.js` (route), `Navbar.jsx` (Profile link), `SettingsPage.jsx` (mounts new cards), `SiteVisitFormPage.jsx` (job_no logic + signature pre-fill), `ProjectFormPage.jsx` (Job No input), `ProjectDetailPage.jsx` (Job No badge)
+
+### Backlog (unchanged)
+- P0: Email Digest via Resend (user-paused)
+- P3: Split server.py into routers
+- P3: Native mobile (Expo) if PWA proves insufficient
+- Op: Google Drive re-auth from production domain
