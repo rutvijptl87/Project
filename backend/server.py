@@ -3068,7 +3068,6 @@ async def seed_demo():
 # ---------------------- DOCUMENTS MODULE ----------------------
 
 DEFAULT_DOCUMENT_TYPES = [
-    ("Audit Offer", "AUD-OFR"),
     ("Quotation", "QT"),
     ("PMC Quotation", "PMC-QT"),
     ("Inspection Report Letter", "INSP"),
@@ -3082,7 +3081,6 @@ DEFAULT_DOCUMENT_TYPES = [
     ("MCGM Certificate", "MCGM"),
     ("Plinth Completion Certificate", "PLINTH"),
     ("Column Location Certificate", "COL"),
-    ("Audit Report", "AUD-RPT"),
     ("RERA Certificate", "RERA"),
     ("Lift Certificate", "LIFT"),
     ("General Certificate", "GEN"),
@@ -3093,6 +3091,12 @@ DEFAULT_DOCUMENT_TYPES = [
 
 async def _seed_document_types_if_missing():
     if await db.document_types.count_documents({}) > 0:
+        # One-shot migration: drop legacy "Audit Offer" / "Audit Report" doc types
+        # if they exist (and haven't yet been used to issue a number).
+        await db.document_types.delete_many({
+            "prefix": {"$in": ["AUD-OFR", "AUD-RPT"]},
+            "$or": [{"counter": {"$lte": 0}}, {"counter": {"$exists": False}}],
+        })
         return
     now = _now()
     docs = []

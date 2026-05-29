@@ -295,9 +295,22 @@ const AuditsPage = () => {
       {/* Form modal */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? `Edit Audit ${editing.audit_code}` : 'New Audit'} testId="audit-modal">
         <form onSubmit={handleSave} className="space-y-3">
-          <div>
-            <label className="label">Report ID</label>
-            <input className="input font-mono-data" value={form.report_id} onChange={(e) => update('report_id', e.target.value)} placeholder={`Auto (RPT-${new Date().getFullYear()}-001) — or type custom`} data-testid="audit-form-report-id" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">Audit Number</label>
+              <input
+                className="input font-mono-data"
+                value={form.audit_code}
+                onChange={(e) => update('audit_code', e.target.value)}
+                placeholder="Auto (AUD-0001) — leave blank to auto-fill"
+                data-testid="audit-form-code"
+              />
+              <div className="text-[11px] mt-1" style={{ color: 'var(--cc-text-muted)' }}>Auto-generated. Edit only if you want a custom number.</div>
+            </div>
+            <div>
+              <label className="label">Report ID</label>
+              <input className="input font-mono-data" value={form.report_id} onChange={(e) => update('report_id', e.target.value)} placeholder={`Auto (RPT-${new Date().getFullYear()}-001) — or type custom`} data-testid="audit-form-report-id" />
+            </div>
           </div>
           <div>
             <label className="label">Audit Offer Number *</label>
