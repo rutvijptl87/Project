@@ -14,6 +14,7 @@ const ProjectFormPage = () => {
   const [engineers, setEngineers] = useState([]);
   const [form, setForm] = useState({
     name: '',
+    job_no: '',
     client_id: '',
     architect_id: '',
     site_location: '',
@@ -42,6 +43,7 @@ const ProjectFormPage = () => {
           const p = r.data;
           setForm({
             name: p.name || '',
+            job_no: p.job_no || '',
             client_id: p.client_id || '',
             architect_id: p.architect_id || '',
             site_location: p.site_location || '',
@@ -69,6 +71,7 @@ const ProjectFormPage = () => {
     try {
       const payload = {
         name: form.name.trim(),
+        job_no: (form.job_no || '').trim(),
         client_id: form.client_id || null,
         architect_id: form.architect_id || null,
         site_location: form.site_location,
@@ -100,9 +103,16 @@ const ProjectFormPage = () => {
       <p className="text-sm mb-6" style={{ color: 'var(--cc-text-muted)' }}>Fill in the details below. Project ID is auto-generated.</p>
 
       <form onSubmit={handleSubmit} className="card p-6 space-y-4" data-testid="project-form">
-        <div>
-          <label className="label">Project Name *</label>
-          <input className="input" value={form.name} onChange={(e) => update('name', e.target.value)} placeholder="e.g. Acceptance & Supervision" data-testid="form-name" />
+        <div className="grid md:grid-cols-3 gap-4">
+          <div className="md:col-span-2">
+            <label className="label">Project Name *</label>
+            <input className="input" value={form.name} onChange={(e) => update('name', e.target.value)} placeholder="e.g. Acceptance & Supervision" data-testid="form-name" />
+          </div>
+          <div>
+            <label className="label">Job No</label>
+            <input className="input" inputMode="numeric" value={form.job_no} onChange={(e) => update('job_no', e.target.value)} placeholder="e.g. 3324" data-testid="form-job-no" />
+            <div className="text-[11px] mt-1" style={{ color: 'var(--cc-text-muted)' }}>Used to auto-fill Site Visit Job No</div>
+          </div>
         </div>
 
         <div className="grid md:grid-cols-2 gap-4">

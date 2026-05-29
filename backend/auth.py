@@ -95,6 +95,7 @@ class UserPublic(BaseModel):
     name: str = ""
     role: str = "staff"
     color: str = "#0F3D2A"
+    default_signature: Optional[str] = None
     created_at: Optional[str] = None
     last_login_at: Optional[str] = None
 
@@ -114,6 +115,10 @@ class ChangePasswordIn(BaseModel):
 
 class ChangeUsernameIn(BaseModel):
     new_username: str = Field(..., min_length=2, max_length=40)
+
+
+class DefaultSignatureIn(BaseModel):
+    signature: Optional[str] = None  # base64 data-URL, or None/empty to clear
 
 
 # ---------- Dependencies ----------
@@ -269,6 +274,25 @@ async def change_username(body: ChangeUsernameIn, user: dict = Depends(get_curre
         raise HTTPException(status_code=400, detail="That username is already taken")
     await _db.users.update_one({"id": user["id"]}, {"$set": {"username": new_u}})
     return {"ok": True, "username": new_u}
+
+
+@router.put("/me/signature")
+async def set_default_signature(body: DefaultSignatureIn, user: dict = Depends(get_current_user)):
+    """Save (or clear) the current user's pre-fitted default signature.
+
+    The signature is stored as a base64 PNG data-URL. Site Visit forms read this
+    via /auth/me and pre-fill the engineer signature pad on new visits.
+    """
+    sig = (body.signature or "").strip()
+    if sig and not sig.startswith("data:image/"):
+        raise HTTPException(400, "Signature must be a base64 data-URL (data:image/...).")
+    if len(sig) > 400_000:
+        raise HTTPException(400, "Signature image is too large (max ~300KB).")
+    await _db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"default_signature": sig or None}},
+    )
+    return {"ok": True, "has_signature": bool(sig)}
 
 
 @router.get("/users/directory")

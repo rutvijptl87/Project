@@ -81,6 +81,7 @@ class Architect(ArchitectIn):
 
 class ProjectIn(BaseModel):
     name: str
+    job_no: Optional[str] = ""
     client_id: Optional[str] = None
     architect_id: Optional[str] = None
     site_location: Optional[str] = ""
@@ -94,6 +95,7 @@ class Project(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str
     project_code: str  # e.g. CC-0001
+    job_no: str = ""
     name: str
     client_id: Optional[str] = None
     client_name: Optional[str] = ""
@@ -722,6 +724,7 @@ async def list_projects(search: Optional[str] = None, include_archived: bool = F
         s = search.strip()
         query["$or"] = [
             {"project_code": {"$regex": s, "$options": "i"}},
+            {"job_no": {"$regex": s, "$options": "i"}},
             {"name": {"$regex": s, "$options": "i"}},
             {"client_name": {"$regex": s, "$options": "i"}},
             {"architect_name": {"$regex": s, "$options": "i"}},

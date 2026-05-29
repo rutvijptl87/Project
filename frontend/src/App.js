@@ -17,6 +17,7 @@ import SiteVisitDetailPage from './pages/SiteVisitDetailPage';
 import ProjectFormPage from './pages/ProjectFormPage';
 import ProjectDetailPage from './pages/ProjectDetailPage';
 import SettingsPage from './pages/SettingsPage';
+import ProfilePage from './pages/ProfilePage';
 import LoginPage from './pages/LoginPage';
 import { AuthProvider, useAuth } from './lib/auth';
 import { UndoProvider } from './lib/undo';
@@ -75,6 +76,7 @@ const ProtectedApp = () => {
                   <Route path="/projects/:id" element={<ProjectDetailPage />} />
                   <Route path="/projects" element={<ProjectsPage showPayModal={showPayModal} setShowPayModal={setShowPayModal} />} />
                   {!isEngineer && <Route path="/settings" element={<SettingsPage />} />}
+                  <Route path="/profile" element={<ProfilePage />} />
                   <Route path="*" element={<Navigate to={isEngineer ? '/site-visits' : '/'} replace />} />
                 </Routes>
 

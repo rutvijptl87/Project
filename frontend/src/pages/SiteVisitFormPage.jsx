@@ -64,6 +64,13 @@ const SiteVisitFormPage = () => {
     return m ? m[1] : (code || '');
   };
 
+  // The "Job No" we surface on a site visit. Prefers the project's explicit
+  // `job_no` field, falls back to the project name, then to the code tail.
+  const jobNoFor = (p) =>
+    (p?.job_no && String(p.job_no).trim()) ||
+    (p?.name && String(p.name).trim()) ||
+    codeTail(p?.project_code);
+
   const applyProject = (p) => {
     if (!p) {
       setForm((f) => ({ ...f, project_id: '', job_no: '' }));
@@ -72,8 +79,8 @@ const SiteVisitFormPage = () => {
     setForm((f) => ({
       ...f,
       project_id: p.id,
-      // Auto-fill the job number with the project's 4-digit tail
-      job_no: codeTail(p.project_code),
+      // Auto-fill the job number with the project's explicit job_no
+      job_no: jobNoFor(p),
       // Auto-fill blanks (don't overwrite user-edited values)
       customer: f.customer || p.client_name || '',
       site_location: f.site_location || p.site_location || '',
@@ -82,13 +89,21 @@ const SiteVisitFormPage = () => {
     setProjectPickerOpen(false);
   };
 
-  // When the engineer types a 4-digit job number, find the matching project
-  // and auto-fill customer + site_location. Triggered on every keystroke; cheap O(n).
+  // When the engineer types a job number, find the matching project by:
+  //   1. exact match on project.job_no  (NEW — user-defined "3324")
+  //   2. exact match on project.name    (older convention)
+  //   3. 4-digit project_code tail      (legacy)
+  // and auto-fill customer + site_location.
   const onJobNoChange = (val) => {
     setForm((f) => ({ ...f, job_no: val }));
     const tail = String(val || '').trim();
     if (!tail) return;
-    const match = projects.find((p) => codeTail(p.project_code) === tail);
+    const lc = tail.toLowerCase();
+    const match = projects.find((p) =>
+      ((p.job_no || '').trim().toLowerCase() === lc) ||
+      ((p.name || '').trim().toLowerCase() === lc) ||
+      (codeTail(p.project_code) === tail),
+    );
     if (match) {
       setForm((f) => ({
         ...f,
@@ -108,7 +123,7 @@ const SiteVisitFormPage = () => {
     const k = projectSearch.trim().toLowerCase();
     if (!k) return projects.slice(0, 50);
     return projects
-      .filter((p) => [p.project_code, p.name, p.client_name, p.site_location].some((f) => (f || '').toLowerCase().includes(k)))
+      .filter((p) => [p.project_code, p.job_no, p.name, p.client_name, p.site_location].some((f) => (f || '').toLowerCase().includes(k)))
       .slice(0, 50);
   }, [projects, projectSearch]);
 
@@ -146,6 +161,23 @@ const SiteVisitFormPage = () => {
       } catch {}
     })();
   }, []);
+
+  // On NEW visits, pre-fill the engineer signature from their saved default
+  // (managed in Settings → My Default Signature). On edit we keep whatever the
+  // visit already has.
+  useEffect(() => {
+    if (isEdit) return;
+    (async () => {
+      try {
+        const r = await api.get('/auth/me');
+        const sig = r.data?.default_signature;
+        if (sig) {
+          setForm((f) => (f.engineer_signature ? f : { ...f, engineer_signature: sig }));
+        }
+      } catch {}
+    })();
+    // eslint-disable-next-line
+  }, [isEdit]);
 
   useEffect(() => {
     if (!isEdit) return;
@@ -382,7 +414,9 @@ const SiteVisitFormPage = () => {
                 data-testid="select-project"
               >
                 <span className={selectedProject ? '' : 'opacity-60'}>
-                  {selectedProject ? `${codeTail(selectedProject.project_code)} · ${selectedProject.name}` : '— Select project —'}
+                  {selectedProject
+                    ? `${codeTail(selectedProject.project_code)} · ${selectedProject.job_no || selectedProject.name}`
+                    : '— Select project —'}
                 </span>
                 <Search size={13} style={{ color: 'var(--cc-text-muted)' }}/>
               </button>
@@ -421,6 +455,7 @@ const SiteVisitFormPage = () => {
                         >
                           <div className="flex items-center gap-2">
                             <span className="font-mono-data font-bold" style={{ color: 'var(--cc-dark-green)' }}>{codeTail(p.project_code)}</span>
+                            {p.job_no && <span className="font-mono-data text-[11px] px-1.5 py-0.5 rounded" style={{ background: 'var(--cc-surface)', color: 'var(--cc-accent)' }}>Job {p.job_no}</span>}
                             <span className="truncate">{p.name}</span>
                           </div>
                           {(p.client_name || p.site_location) && (

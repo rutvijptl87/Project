@@ -7,6 +7,8 @@ import UserManagementCard from '../components/UserManagementCard';
 import UserActivityCard from '../components/UserActivityCard';
 import DocumentTypesCard from '../components/DocumentTypesCard';
 import SiteVisitTemplatesCard from '../components/SiteVisitTemplatesCard';
+import DefaultSignatureCard from '../components/DefaultSignatureCard';
+import MobileNotificationsCard from '../components/MobileNotificationsCard';
 
 const SettingsPage = () => {
   const [stats, setStats] = useState(null);
@@ -60,6 +62,12 @@ const SettingsPage = () => {
 
       {/* Account & users */}
       <UserManagementCard />
+
+      {/* Pre-fitted engineer signature (per user) */}
+      <DefaultSignatureCard />
+
+      {/* Mobile push notifications */}
+      <MobileNotificationsCard />
 
       {/* Google Drive Auto-Backup */}
       <BackupCard />

@@ -166,6 +166,12 @@ const ProjectDetailPage = () => {
           </h1>
           <div className="mt-2 flex items-center gap-2 text-sm flex-wrap" style={{ color: 'var(--cc-text-muted)' }}>
             <span className="font-mono-data font-semibold" style={{ color: 'var(--cc-accent)' }} data-testid="detail-code">{project.project_code}</span>
+            {project.job_no && (
+              <>
+                <span>·</span>
+                <span className="font-mono-data text-xs px-2 py-0.5 rounded" style={{ background: 'var(--cc-surface)', color: 'var(--cc-dark-green)' }} data-testid="detail-job-no">Job No {project.job_no}</span>
+              </>
+            )}
             <span>·</span>
             {project.client_id ? (
               <Link to={`/clients/${project.client_id}`} className="link-underline" data-testid="detail-client-link">{project.client_name}</Link>

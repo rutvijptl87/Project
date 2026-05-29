@@ -24,6 +24,7 @@ const Navbar = ({ onRecordPayment }) => {
             <>
               <NavLink to="/site-visits" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-site-visits"><ClipboardList size={14} className="inline mr-1"/>Site Visits</NavLink>
               <NavLink to="/projects" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-projects">Projects</NavLink>
+              <NavLink to="/profile" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-profile"><User size={14} className="inline mr-1"/>Profile</NavLink>
             </>
           ) : (
             <>
@@ -56,12 +57,16 @@ const Navbar = ({ onRecordPayment }) => {
           {user && (
             <>
               {user.role === 'admin' && <NotificationBell />}
-              <div className="hidden lg:flex items-center gap-1.5 px-2 py-1 rounded-md" style={{ background: 'var(--cc-surface)', color: 'var(--cc-text-muted)' }} data-testid="navbar-user-info">
+              <Link to="/profile"
+                    className="hidden lg:flex items-center gap-1.5 px-2 py-1 rounded-md hover:opacity-80 transition-opacity"
+                    style={{ background: 'var(--cc-surface)', color: 'var(--cc-text-muted)' }}
+                    title="My Profile"
+                    data-testid="navbar-user-info">
                 <User size={12} />
                 <span className="text-xs font-mono-data">{user.username}</span>
                 {user.role === 'admin' && <span className="badge badge-settled" style={{ fontSize: '9px', padding: '1px 6px' }}>admin</span>}
                 {user.role === 'engineer' && <span className="badge badge-pending" style={{ fontSize: '9px', padding: '1px 6px', background: '#0E7490', color: 'white' }}>engineer</span>}
-              </div>
+              </Link>
               <button
                 onClick={logout}
                 className="btn btn-outline btn-sm"
@@ -83,6 +88,9 @@ const Navbar = ({ onRecordPayment }) => {
           </NavLink>
           <NavLink to="/projects" className={({isActive}) => `flex-1 text-center py-2 text-xs ${isActive ? 'font-bold' : ''}`} style={({isActive}) => ({ color: isActive ? 'var(--cc-dark-green)' : 'var(--cc-text-muted)' })} data-testid="mobile-nav-projects">
             Projects
+          </NavLink>
+          <NavLink to="/profile" className={({isActive}) => `flex-1 text-center py-2 text-xs ${isActive ? 'font-bold' : ''}`} style={({isActive}) => ({ color: isActive ? 'var(--cc-dark-green)' : 'var(--cc-text-muted)' })} data-testid="mobile-nav-profile">
+            <User size={16} className="mx-auto mb-0.5"/> Profile
           </NavLink>
         </div>
       )}
