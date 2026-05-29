@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, API } from '../lib/api';
-import { ArrowLeft, ImagePlus, Trash2, Plus, X, Save, FileText, Loader2, ClipboardList, Camera, MapPin, LocateFixed, Search } from 'lucide-react';
+import { ArrowLeft, ImagePlus, Trash2, Plus, X, Save, FileText, Loader2, ClipboardList, Camera, MapPin, LocateFixed, Search, Phone, Mail, MessageCircle } from 'lucide-react';
 import SignaturePad from '../components/SignaturePad';
 import { useAuth } from '../lib/auth';
 
@@ -264,16 +264,53 @@ const SiteVisitFormPage = () => {
     reader.readAsDataURL(file);
   });
 
+  // Returns a Promise<GeolocationCoordinates | null> resolved within ~6s.
+  // Used per-photo so each shot has its own lat/lng (more granular than the visit-level GPS).
+  const getOneShotGps = () => new Promise((resolve) => {
+    if (!('geolocation' in navigator)) { resolve(null); return; }
+    let done = false;
+    const t = setTimeout(() => { if (!done) { done = true; resolve(null); } }, 6000);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { if (done) return; done = true; clearTimeout(t); resolve(pos.coords); },
+      () => { if (done) return; done = true; clearTimeout(t); resolve(null); },
+      { enableHighAccuracy: true, timeout: 6000, maximumAge: 30000 },
+    );
+  });
+
   const handlePhotoPick = async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
     for (const original of files) {
       try {
-        const file = await compressImage(original);
+        const [file, coords] = await Promise.all([
+          compressImage(original),
+          // Don't bother re-asking if the visit already has GPS — re-use it as the baseline.
+          form.latitude != null
+            ? Promise.resolve({ latitude: form.latitude, longitude: form.longitude, accuracy: form.geo_accuracy })
+            : getOneShotGps(),
+        ]);
         const fd = new FormData();
         fd.append('file', file);
         const r = await api.post('/site-visits/uploads', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-        setForm((f) => ({ ...f, photos: [...f.photos, { url: r.data.url, caption: '' }] }));
+        const photo = {
+          url: r.data.url,
+          caption: '',
+          captured_at: new Date().toISOString(),
+          latitude: coords?.latitude ?? null,
+          longitude: coords?.longitude ?? null,
+          geo_accuracy: coords?.accuracy ?? null,
+        };
+        // If the visit doesn't have a GPS yet, promote the first photo's location to it.
+        setForm((f) => {
+          const promote = f.latitude == null && coords;
+          return {
+            ...f,
+            photos: [...f.photos, photo],
+            latitude: promote ? coords.latitude : f.latitude,
+            longitude: promote ? coords.longitude : f.longitude,
+            geo_accuracy: promote ? coords.accuracy : f.geo_accuracy,
+          };
+        });
       } catch (err) {
         setError('Upload failed: ' + (err?.response?.data?.detail || err.message));
       }
@@ -415,7 +452,29 @@ const SiteVisitFormPage = () => {
             <input className="input w-full mt-1" inputMode="numeric" placeholder="e.g. 0571" value={form.job_no} onChange={(e) => onJobNoChange(e.target.value)} data-testid="input-job-no"/>
           </div>
           <div><label className="text-xs">Visit Date</label><input type="date" className="input w-full mt-1" value={(form.visit_date || '').slice(0, 10)} onChange={(e) => setForm({ ...form, visit_date: e.target.value })} data-testid="input-visit-date"/></div>
-          <div><label className="text-xs">Customer</label><input className="input w-full mt-1" value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} placeholder="Auto-filled from project" data-testid="input-customer"/></div>
+          <div>
+            <label className="text-xs">Customer</label>
+            <input className="input w-full mt-1" value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} placeholder="Auto-filled from project" data-testid="input-customer"/>
+            {selectedProject && (selectedProject.client_phone || selectedProject.client_email) && (
+              <div className="flex flex-wrap items-center gap-2 mt-1.5" data-testid="customer-contact-strip">
+                {selectedProject.client_phone && (
+                  <>
+                    <a href={`tel:${selectedProject.client_phone}`} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full hover:underline" style={{ background: 'var(--cc-surface)', color: 'var(--cc-dark-green)' }} data-testid="customer-phone-call">
+                      <Phone size={10}/> {selectedProject.client_phone}
+                    </a>
+                    <a href={`https://wa.me/${(selectedProject.client_phone || '').replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full hover:underline" style={{ background: '#D1FAE5', color: '#065F46' }} data-testid="customer-phone-whatsapp">
+                      <MessageCircle size={10}/> WhatsApp
+                    </a>
+                  </>
+                )}
+                {selectedProject.client_email && (
+                  <a href={`mailto:${selectedProject.client_email}`} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full hover:underline" style={{ background: 'var(--cc-surface)', color: 'var(--cc-dark-green)' }} data-testid="customer-email-link">
+                    <Mail size={10}/> {selectedProject.client_email}
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
           <div><label className="text-xs">Site Location</label><input className="input w-full mt-1" value={form.site_location} onChange={(e) => setForm({ ...form, site_location: e.target.value })} placeholder="Auto-filled from project" data-testid="input-site-location"/></div>
           <div><label className="text-xs">DRG No</label><input className="input w-full mt-1" value={form.drg_no} onChange={(e) => setForm({ ...form, drg_no: e.target.value })} data-testid="input-drg-no"/></div>
           <div><label className="text-xs">Revision</label><input className="input w-full mt-1" value={form.revision} onChange={(e) => setForm({ ...form, revision: e.target.value })} data-testid="input-revision"/></div>
@@ -557,6 +616,20 @@ const SiteVisitFormPage = () => {
                   <button type="button" onClick={() => removePhoto(idx)} className="absolute top-1 right-1 rounded-full p-1 shadow" style={{ background: 'rgba(220,38,38,0.92)', color: 'white' }} data-testid={`photo-remove-${idx}`}>
                     <X size={12}/>
                   </button>
+                  {p.latitude != null && p.longitude != null && (
+                    <a
+                      href={`https://www.google.com/maps?q=${p.latitude},${p.longitude}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute top-1 left-1 inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-bold uppercase shadow"
+                      style={{ background: 'rgba(10,46,31,0.85)', color: 'white' }}
+                      title={`${p.latitude.toFixed(6)}, ${p.longitude.toFixed(6)}`}
+                      data-testid={`photo-gps-${idx}`}
+                    >
+                      <MapPin size={9}/> GPS
+                    </a>
+                  )}
                   <input
                     className="input w-full rounded-none border-x-0 border-b-0 text-xs"
                     value={p.caption || ''}

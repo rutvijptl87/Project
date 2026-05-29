@@ -122,6 +122,10 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
   - **GPS capture** via `navigator.geolocation` — new Fetch GPS button stamps lat/lng + accuracy onto the visit. Shown as a Google-Maps link on the detail page + included as an extra row in the PDF.
   - Backend `_enrich_site_visit` now auto-fills blank `customer` / `site_location` on read from the linked project too, so historical visits without those fields look right.
 
+- ✅ **Per-photo GPS + Customer contact strip on Site Visit form** (2026-02-29) — two requested P3 enhancements.
+  - **Per-photo GPS**: when an engineer adds a photo, we capture a one-shot lat/lng/accuracy at that moment and store it on the photo record (`SiteVisitPhoto.latitude/longitude/geo_accuracy/captured_at`). If the visit doesn't yet have a GPS fix, the first photo's location is auto-promoted to the visit-level GPS — saves the user a tap. Each photo card (form + detail page) shows a tiny "📍 GPS" badge linking to Google Maps at those coordinates. If the visit already has GPS, subsequent photos reuse it instead of asking for permission again.
+  - **Customer contact strip**: below the Customer input on the form, when a project is linked we show clickable phone (`tel:`), WhatsApp (`wa.me/`), and email (`mailto:`) badges — so site engineers can call the customer directly without leaving the form. Phone/email come from the linked client via the existing project enrichment, so no extra DB work.
+
 - ✅ Excel import that auto-creates missing clients/architects by name, skips duplicates
 - ✅ Beautiful green+white UI — Cabinet Grotesk headings, IBM Plex Sans body, IBM Plex Mono for numbers
 - ✅ All pages: Projects (dashboard+table), Clients, Architects, New/Edit Project form, Project Detail + payment history, Settings

@@ -233,6 +233,10 @@ class SiteVisitPhoto(BaseModel):
     data_url: Optional[str] = ""  # base64 image (legacy / inline use)
     url: Optional[str] = ""  # /api/uploads/site-visits/<filename> (preferred)
     caption: Optional[str] = ""
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    geo_accuracy: Optional[float] = None
+    captured_at: Optional[str] = ""  # ISO timestamp from the engineer's device
 
 
 class SiteVisitIn(BaseModel):

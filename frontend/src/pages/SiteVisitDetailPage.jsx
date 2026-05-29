@@ -214,11 +214,27 @@ const SiteVisitDetailPage = () => {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
             {v.photos.map((p, i) => {
               const src = p.url ? `${BACKEND}${p.url}` : p.data_url;
+              const hasGps = p.latitude != null && p.longitude != null;
               return (
-                <a key={i} href={src} target="_blank" rel="noreferrer" className="block rounded-md overflow-hidden" style={{ border: '1px solid var(--cc-border)' }}>
-                  <img src={src} alt={p.caption || `photo-${i+1}`} className="w-full h-32 object-cover" />
-                  {p.caption && <div className="text-[11px] px-1.5 py-1 truncate" style={{ background: 'var(--cc-surface)' }}>{p.caption}</div>}
-                </a>
+                <div key={i} className="block rounded-md overflow-hidden relative" style={{ border: '1px solid var(--cc-border)' }}>
+                  <a href={src} target="_blank" rel="noreferrer" className="block">
+                    <img src={src} alt={p.caption || `photo-${i+1}`} className="w-full h-32 object-cover" />
+                    {p.caption && <div className="text-[11px] px-1.5 py-1 truncate" style={{ background: 'var(--cc-surface)' }}>{p.caption}</div>}
+                  </a>
+                  {hasGps && (
+                    <a
+                      href={`https://www.google.com/maps?q=${p.latitude},${p.longitude}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="absolute top-1 left-1 inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-bold uppercase shadow"
+                      style={{ background: 'rgba(10,46,31,0.85)', color: 'white' }}
+                      title={`${p.latitude.toFixed(6)}, ${p.longitude.toFixed(6)}`}
+                      data-testid={`detail-photo-gps-${i}`}
+                    >
+                      <MapPin size={9}/> GPS
+                    </a>
+                  )}
+                </div>
               );
             })}
           </div>
