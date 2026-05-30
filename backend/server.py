@@ -4,6 +4,8 @@ from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
+import copy
+import pypdf
 import os
 import io
 import base64
@@ -4039,6 +4041,56 @@ SITE_VISIT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 # `site_visit_photos.files` + `.chunks` collections inside the same DB.
 _photo_bucket = AsyncIOMotorGridFSBucket(db, bucket_name="site_visit_photos")
 
+# ---------- Letterhead overlay (Creator Consultant branded PDF background) ----------
+# The PDF at /app/backend/assets/letterhead.pdf is rendered as a background on
+# every site-visit report page. Drawn body content sits on top.
+LETTERHEAD_PATH = ROOT_DIR / "assets" / "letterhead.pdf"
+_letterhead_reader: Optional[pypdf.PdfReader] = None
+try:
+    if LETTERHEAD_PATH.exists():
+        _letterhead_reader = pypdf.PdfReader(str(LETTERHEAD_PATH))
+        print(f"[startup] Letterhead loaded ({len(_letterhead_reader.pages)} page) from {LETTERHEAD_PATH}")
+except Exception as _e:
+    print(f"[startup] Could not load letterhead PDF: {_e}")
+    _letterhead_reader = None
+
+
+def _apply_letterhead(pdf_bytes: bytes) -> bytes:
+    """Stamp the Creator Consultant letterhead UNDER every page of `pdf_bytes`.
+    If the letterhead is missing or merging fails, returns the input unchanged.
+    The letterhead page is scaled to match each content page's media box, so
+    Letter-size letterhead works under A4 content (and vice versa).
+    """
+    if not _letterhead_reader or not _letterhead_reader.pages:
+        return pdf_bytes
+    try:
+        from pypdf import PdfReader, PdfWriter, Transformation
+        from pypdf.generic import RectangleObject
+        src = PdfReader(io.BytesIO(pdf_bytes))
+        writer = PdfWriter()
+        lh_template = _letterhead_reader.pages[0]
+        lh_w = float(lh_template.mediabox.width)
+        lh_h = float(lh_template.mediabox.height)
+        for page in src.pages:
+            pw = float(page.mediabox.width)
+            ph = float(page.mediabox.height)
+            # Deep-copy so we don't mutate the cached template page across requests
+            bg = copy.deepcopy(lh_template)
+            sx = pw / lh_w
+            sy = ph / lh_h
+            bg.add_transformation(Transformation().scale(sx=sx, sy=sy))
+            bg.mediabox = RectangleObject((0, 0, pw, ph))
+            bg.cropbox = RectangleObject((0, 0, pw, ph))
+            # Draw content ON TOP of the letterhead
+            bg.merge_page(page)
+            writer.add_page(bg)
+        out = io.BytesIO()
+        writer.write(out)
+        return out.getvalue()
+    except Exception as e:
+        print(f"[pdf] Letterhead overlay failed, returning unstamped PDF: {e}")
+        return pdf_bytes
+
 
 def _photo_to_image_reader(p: dict) -> Optional[ImageReader]:
     """Resolve a SiteVisitPhoto dict to a reportlab ImageReader.
@@ -4504,26 +4556,32 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
     margin = 18 * mm
+    # The Creator Consultant letterhead reserves the top ~5mm (clean white) and
+    # the bottom ~32mm (green band + contact details). We keep our body well
+    # inside those zones so nothing visually clashes.
+    LH_TOP_RESERVE = 22 * mm   # space below top of page where our title sits
+    LH_BOTTOM_RESERVE = 34 * mm  # space above the letterhead footer band
+    page_bottom_limit = LH_BOTTOM_RESERVE
 
     def header():
+        # Slim title row — no full-width green band (the letterhead already
+        # carries the brand). We just print the report title in dark green
+        # and the visit code in accent green on the right.
         c.setFillColor(colors.HexColor("#0A2E1F"))
-        c.rect(0, height - 28 * mm, width, 28 * mm, fill=1, stroke=0)
-        c.setFillColor(colors.white)
-        c.setFont("Helvetica-Bold", 16)
-        c.drawString(margin, height - 14 * mm, "CREATOR RCC CONSULTANT LLP")
-        c.setFont("Helvetica", 9)
-        c.drawString(margin, height - 20 * mm, "Structural Audits • RCC / Steel Design • PMC • Retrofitting")
-        c.drawString(margin, height - 25 * mm, "Navi Mumbai • project@creatorconsultant.net • 9987076241")
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(margin, height - LH_TOP_RESERVE, "SITE VISIT REPORT")
         c.setFillColor(colors.HexColor("#10B981"))
         c.setFont("Helvetica-Bold", 11)
-        c.drawRightString(width - margin, height - 14 * mm, "SITE VISIT REPORT")
-        c.setFillColor(colors.white)
-        c.setFont("Helvetica-Bold", 10)
-        c.drawRightString(width - margin, height - 20 * mm, v.get("visit_code", ""))
+        c.drawRightString(width - margin, height - LH_TOP_RESERVE, v.get("visit_code", ""))
+        # Thin underline
+        c.setStrokeColor(colors.HexColor("#10B981"))
+        c.setLineWidth(0.8)
+        c.line(margin, height - LH_TOP_RESERVE - 2 * mm, width - margin, height - LH_TOP_RESERVE - 2 * mm)
         c.setFillColor(colors.black)
+        c.setStrokeColor(colors.black)
 
     header()
-    y = height - 36 * mm
+    y = height - LH_TOP_RESERVE - 10 * mm
     c.setFont("Helvetica", 9)
     meta_rows = [
         ("Job No", v.get("job_no") or "—", "Date", (v.get("visit_date") or "")[:10]),
@@ -4577,8 +4635,8 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
         y -= th + 6 * mm
 
     if v.get("observations"):
-        if y < 60 * mm:
-            c.showPage(); header(); y = height - 36 * mm
+        if y < page_bottom_limit + 30 * mm:
+            c.showPage(); header(); y = height - LH_TOP_RESERVE - 10 * mm
         c.setFont("Helvetica-Bold", 11); c.setFillColor(colors.HexColor("#0A2E1F"))
         c.drawString(margin, y, "Observations:"); c.setFillColor(colors.black)
         y -= 6 * mm
@@ -4587,11 +4645,11 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
             w, h = para.wrap(width - margin * 2 - 6 * mm, 100 * mm)
             para.drawOn(c, margin + 4 * mm, y - h + 9)
             y -= h + 2 * mm
-            if y < 40 * mm:
-                c.showPage(); header(); y = height - 36 * mm
+            if y < page_bottom_limit + 10 * mm:
+                c.showPage(); header(); y = height - LH_TOP_RESERVE - 10 * mm
 
-    if y < 50 * mm:
-        c.showPage(); header(); y = height - 36 * mm
+    if y < page_bottom_limit + 40 * mm:
+        c.showPage(); header(); y = height - LH_TOP_RESERVE - 10 * mm
     y -= 8 * mm
     sig_w = 70 * mm; sig_h = 18 * mm
     for label, name_key, sig_key, x_off, phone_key in [
@@ -4614,11 +4672,11 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
 
     photos = v.get("photos") or []
     if photos:
-        c.showPage(); header(); y = height - 36 * mm
+        c.showPage(); header(); y = height - LH_TOP_RESERVE - 10 * mm
         c.setFont("Helvetica-Bold", 12); c.setFillColor(colors.HexColor("#0A2E1F"))
         c.drawString(margin, y, "Site Visit Images & Remarks:"); c.setFillColor(colors.black)
         y -= 8 * mm
-        img_w = (width - margin * 2 - 6 * mm) / 2; img_h = 60 * mm
+        img_w = (width - margin * 2 - 6 * mm) / 2; img_h = 55 * mm
         col = 0
         for p in photos:
             img_reader = _photo_to_image_reader(p)
@@ -4642,11 +4700,13 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
             if col >= 2:
                 col = 0
                 y -= img_h + 12 * mm
-                if y < img_h + 30 * mm:
-                    c.showPage(); header(); y = height - 36 * mm
+                if y < page_bottom_limit + img_h + 8 * mm:
+                    c.showPage(); header(); y = height - LH_TOP_RESERVE - 10 * mm
 
     c.showPage(); c.save()
     pdf_bytes = buf.getvalue(); buf.close()
+    # Stamp the Creator Consultant letterhead under every page
+    pdf_bytes = _apply_letterhead(pdf_bytes)
     fname = f"{v.get('visit_code', 'site_visit')}.pdf"
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
