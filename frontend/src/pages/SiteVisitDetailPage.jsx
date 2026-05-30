@@ -7,6 +7,7 @@ import { useUndo } from '../lib/undo';
 import { downloadFile } from '../lib/download';
 import { formatINR } from '../lib/format';
 import PhotoMap from '../components/PhotoMap';
+import SiteVisitPdfDownloadButton from '../components/SiteVisitPdfDownloadButton';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
@@ -125,28 +126,9 @@ const SiteVisitDetailPage = () => {
             </h1>
           </div>
           <div className="flex flex-wrap gap-2">
-            {/* Plain anchor (not async-then-click) so mobile browsers can
-                fire the download from the original user gesture. Uses the
-                visit's public_token + the no-auth public PDF endpoint.
-                `target="_blank"` is critical for installed PWAs — Android
-                Chrome treats `download` as a hint and falls back to opening
-                the PDF in the system browser, from which the user can save. */}
-            {v.public_token ? (
-              <a
-                href={`${BACKEND}/api/site-visits/public/${v.public_token}/pdf`}
-                target="_blank"
-                rel="noopener"
-                download={`${v.visit_code}.pdf`}
-                className="btn btn-primary"
-                data-testid="btn-download-pdf"
-              >
-                <FileText size={14}/> Download PDF
-              </a>
-            ) : (
-              <button onClick={() => downloadFile(`${API}/site-visits/${v.id}/pdf`, `${v.visit_code}.pdf`)} className="btn btn-primary" data-testid="btn-download-pdf">
-                <FileText size={14}/> Download PDF
-              </button>
-            )}
+            {/* Cross-device download — picks blob-save on desktop and
+                synchronous anchor on mobile/PWA. See component for details. */}
+            <SiteVisitPdfDownloadButton visit={v} variant="primary" />
             <button onClick={togglePin} className="btn btn-outline" title={v.is_pinned ? 'Unpin this visit from the project page' : 'Pin to the project page'} data-testid="btn-toggle-pin">
               {v.is_pinned ? <><PinOff size={14}/> Unpin</> : <><Pin size={14}/> Pin to project</>}
             </button>
