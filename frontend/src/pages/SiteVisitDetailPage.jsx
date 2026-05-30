@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
-import { ArrowLeft, FileText, Edit3, Trash2, Share2, ImageIcon, ClipboardList, MapPin, Calendar, User, Pin, PinOff, Phone, MessageCircle } from 'lucide-react';
+import { ArrowLeft, FileText, Edit3, Trash2, Share2, ImageIcon, ClipboardList, MapPin, Calendar, User, Pin, PinOff, Phone, MessageCircle, IndianRupee, ExternalLink } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useUndo } from '../lib/undo';
 import { downloadFile } from '../lib/download';
+import { formatINR } from '../lib/format';
 import PhotoMap from '../components/PhotoMap';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
@@ -20,6 +21,7 @@ const SiteVisitDetailPage = () => {
   const undo = useUndo();
 
   const [v, setV] = useState(null);
+  const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [showShare, setShowShare] = useState(false);
@@ -30,6 +32,14 @@ const SiteVisitDetailPage = () => {
       try {
         const r = await api.get(`/site-visits/${id}`);
         setV(r.data);
+        // Pull linked project for the financials card (admin/staff only — engineers
+        // are RBAC-blocked from project detail anyway, but they can still read summary).
+        if (r.data?.project_id) {
+          try {
+            const pr = await api.get(`/projects/${r.data.project_id}`);
+            setProject(pr.data);
+          } catch {}
+        }
       } catch (e) {
         setErr('Site visit not found');
       } finally {
@@ -99,7 +109,9 @@ const SiteVisitDetailPage = () => {
         <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
           <div>
             <div className="flex items-center gap-2 flex-wrap mb-1">
-              <span className="font-mono-data text-sm font-bold" style={{ color: 'var(--cc-dark-green)' }}>{v.visit_code}</span>
+              <span className="font-mono-data text-sm font-bold" style={{ color: 'var(--cc-dark-green)' }} data-testid="detail-visit-code">
+                {v.visit_code}{v.job_no ? ` · Job ${v.job_no}` : ''}
+              </span>
               <Pill color={v.status === 'draft' ? '#9CA3AF' : '#10B981'}>{(v.status || 'submitted').toUpperCase()}</Pill>
               {v.template_name && <Pill color="#0A2E1F">{v.template_name}</Pill>}
               {v.is_pinned && (
@@ -165,6 +177,46 @@ const SiteVisitDetailPage = () => {
           </div>
         )}
       </div>
+
+      {/* Linked Project Accounting (admin/staff only — engineers don't need to see money) */}
+      {project && !isEngineer && (
+        <div className="card p-5 mb-4" data-testid="detail-project-financials">
+          <div className="flex items-start justify-between flex-wrap gap-3 mb-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-widest mb-0.5" style={{ color: 'var(--cc-text-muted)' }}>Linked Project</div>
+              <Link to={`/projects/${project.id}`} className="font-head text-lg font-bold link-underline inline-flex items-center gap-1.5"
+                    style={{ color: 'var(--cc-dark-green)' }} data-testid="detail-project-link">
+                {project.name} <ExternalLink size={13}/>
+              </Link>
+              <div className="text-xs mt-0.5 flex flex-wrap items-center gap-2" style={{ color: 'var(--cc-text-muted)' }}>
+                <span className="font-mono-data">{project.project_code}</span>
+                {project.job_no && (
+                  <>
+                    <span>·</span>
+                    <span className="font-mono-data px-1.5 py-0.5 rounded" style={{ background: 'var(--cc-surface)' }}>Job {project.job_no}</span>
+                  </>
+                )}
+                {project.client_name && <><span>·</span><span>{project.client_name}</span></>}
+              </div>
+            </div>
+            <Pill color={project.status === 'Settled' ? '#10B981' : '#F59E0B'}>{project.status || 'Outstanding'}</Pill>
+          </div>
+          <div className="grid grid-cols-3 gap-2 sm:gap-3 text-xs">
+            {[
+              { label: 'Quoted', value: project.quoted_amount, color: 'var(--cc-dark-green)' },
+              { label: 'Received', value: project.received_amount, color: '#0E7490' },
+              { label: 'Outstanding', value: project.outstanding_amount, color: (project.outstanding_amount || 0) > 0 ? '#B91C1C' : '#10B981' },
+            ].map((m, i) => (
+              <div key={i} className="rounded-md p-3" style={{ background: 'var(--cc-surface)' }}>
+                <div className="uppercase tracking-wide mb-1" style={{ fontSize: '10px', color: 'var(--cc-text-muted)' }}>{m.label}</div>
+                <div className="font-head font-bold text-base inline-flex items-center gap-0.5" style={{ color: m.color }}>
+                  <IndianRupee size={13}/>{formatINR(m.value || 0).replace('₹', '')}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Checklist */}
       {Array.isArray(v.checklist) && v.checklist.length > 0 && (

@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 import os
 import io
 import base64
@@ -718,10 +718,10 @@ async def list_projects(search: Optional[str] = None, include_archived: bool = F
         query["archived"] = True
     elif not include_archived:
         query["archived"] = {"$ne": True}
-    # Engineer scope: only show projects they are assigned to (empty assignment = none)
-    user = get_current_user_safe()
-    if user and user.get("role") == "engineer":
-        query["assigned_engineer_ids"] = user["id"]
+    # NOTE: Engineers can browse all projects (read-only). This makes the
+    # "Linked Project" picker on the New Site Visit form work even when no
+    # explicit per-engineer assignment exists yet. RBAC is still enforced on
+    # write endpoints (admins manage projects; engineers only create visits).
     if search:
         s = search.strip()
         query["$or"] = [
@@ -4033,10 +4033,16 @@ UPLOAD_ROOT = Path(os.environ.get("UPLOAD_DIR", str(ROOT_DIR / "uploads")))
 SITE_VISIT_UPLOAD_DIR = UPLOAD_ROOT / "site-visits"
 SITE_VISIT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+# GridFS bucket for persistent photo storage. Container disk is ephemeral on
+# Kubernetes (every redeploy wipes /app/backend/uploads), so we store photo
+# bytes in MongoDB GridFS. The bucket name `site_visit_photos` becomes the
+# `site_visit_photos.files` + `.chunks` collections inside the same DB.
+_photo_bucket = AsyncIOMotorGridFSBucket(db, bucket_name="site_visit_photos")
+
 
 def _photo_to_image_reader(p: dict) -> Optional[ImageReader]:
     """Resolve a SiteVisitPhoto dict to a reportlab ImageReader.
-    Supports both base64 data_url and uploaded file URL."""
+    Supports base64 data_url, on-disk legacy file, or GridFS-stored bytes."""
     if p.get("data_url"):
         bio = _base64_image_from_data_url(p["data_url"])
         if bio:
@@ -4046,41 +4052,133 @@ def _photo_to_image_reader(p: dict) -> Optional[ImageReader]:
                 return None
     url = p.get("url") or ""
     if url:
-        # url is /api/uploads/site-visits/<fname>
+        # url is /api/uploads/site-visits/<fname>. Try disk first (legacy),
+        # then fall back to GridFS using the filename as the GridFS filename.
         fname = url.rsplit("/", 1)[-1]
         fpath = SITE_VISIT_UPLOAD_DIR / fname
         if fpath.exists():
             try:
                 return ImageReader(str(fpath))
             except Exception:
-                return None
+                pass
+        # GridFS fallback — we have to read synchronously for ReportLab so we
+        # spawn a small async helper from the surrounding (already-async) PDF
+        # builder. This branch is exercised by `_render_visit_pdf` which calls
+        # `await _load_photo_bytes(url)` upstream and stuffs the bytes back
+        # into the photo dict before calling us. So here we just bail.
     return None
+
+
+async def _load_photo_bytes(url: str) -> Optional[bytes]:
+    """Download a site-visit photo's raw bytes for the PDF builder. Tries disk
+    first (legacy files), then GridFS by filename."""
+    if not url:
+        return None
+    fname = url.rsplit("/", 1)[-1]
+    fpath = SITE_VISIT_UPLOAD_DIR / fname
+    if fpath.exists():
+        try:
+            return fpath.read_bytes()
+        except Exception:
+            pass
+    try:
+        stream = await _photo_bucket.open_download_stream_by_name(fname)
+        try:
+            return await stream.read()
+        finally:
+            try:
+                stream.close()
+            except Exception:
+                pass
+    except Exception:
+        return None
 
 
 @api_router.post("/site-visits/uploads")
 async def upload_site_visit_photo(file: UploadFile = File(...)):
-    """Accept a single image file from the engineer's phone and return its URL.
-    Files are stored under /app/backend/uploads/site-visits/<random>.<ext>."""
+    """Accept a single image file from the engineer's phone, store the bytes in
+    MongoDB GridFS (so they survive container redeploys on Kubernetes), and
+    return the canonical URL `/api/uploads/site-visits/<filename>` that the
+    frontend can later <img src=...>."""
     if not file.filename:
         raise HTTPException(400, "Missing filename")
     ext = (file.filename.rsplit(".", 1)[-1] or "jpg").lower()
     if ext not in {"jpg", "jpeg", "png", "webp", "heic", "heif", "gif"}:
         raise HTTPException(400, "Only image files are allowed")
     fname = f"{secrets.token_urlsafe(16)}.{ext}"
-    fpath = SITE_VISIT_UPLOAD_DIR / fname
-    with fpath.open("wb") as out:
-        shutil.copyfileobj(file.file, out)
+    content_type = file.content_type or f"image/{ 'jpeg' if ext == 'jpg' else ext }"
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty upload")
+    # Persist in GridFS keyed by filename. We always write a fresh doc per
+    # upload so retries don't clobber each other.
+    await _photo_bucket.upload_from_stream(
+        fname, io.BytesIO(data), metadata={"content_type": content_type},
+    )
     return {"url": f"/api/uploads/site-visits/{fname}", "filename": fname}
+
+
+@auth_public_router.get("/uploads/site-visits/{filename}")
+async def serve_site_visit_photo(filename: str):
+    """Stream a site-visit photo back to the browser. Looks in GridFS first
+    (where new uploads live), then falls back to the legacy on-disk path."""
+    # GridFS lookup by filename — `open_download_stream_by_name` always picks
+    # the most recently uploaded revision if duplicates exist.
+    try:
+        stream = await _photo_bucket.open_download_stream_by_name(filename)
+        ct = (getattr(stream, "metadata", None) or {}).get("content_type") or "image/jpeg"
+
+        async def gen():
+            try:
+                while True:
+                    chunk = await stream.readchunk()
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+
+        return StreamingResponse(
+            gen(),
+            media_type=ct,
+            headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        )
+    except Exception:
+        pass
+    # Legacy: file may still exist on disk (older preview uploads)
+    fpath = SITE_VISIT_UPLOAD_DIR / filename
+    if fpath.exists() and fpath.is_file():
+        ext = filename.rsplit(".", 1)[-1].lower()
+        ct = f"image/{ 'jpeg' if ext == 'jpg' else ext }"
+        return StreamingResponse(
+            iter([fpath.read_bytes()]),
+            media_type=ct,
+            headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        )
+    raise HTTPException(404, "Photo not found")
 
 
 @api_router.delete("/site-visits/uploads/{filename}")
 async def delete_site_visit_upload(filename: str):
+    # Disk (legacy)
     fpath = SITE_VISIT_UPLOAD_DIR / filename
     if fpath.exists() and fpath.is_file():
         try:
             fpath.unlink()
         except Exception:
             pass
+    # GridFS — delete all matching docs
+    try:
+        async for grid_doc in _photo_bucket.find({"filename": filename}):
+            try:
+                await _photo_bucket.delete(grid_doc._id)
+            except Exception:
+                pass
+    except Exception:
+        pass
     return {"ok": True}
 
 
@@ -4372,6 +4470,7 @@ async def site_visit_pdf(vid: str):
     if not v:
         raise HTTPException(404, "Site visit not found")
     await _enrich_site_visit(v)
+    await _preload_visit_photo_bytes(v)
     return _render_site_visit_pdf_response(v)
 
 
@@ -4382,7 +4481,22 @@ async def site_visit_public_pdf(token: str):
     if not v:
         raise HTTPException(404, "Site visit not found or link expired")
     await _enrich_site_visit(v)
+    await _preload_visit_photo_bytes(v)
     return _render_site_visit_pdf_response(v)
+
+
+async def _preload_visit_photo_bytes(v: dict) -> None:
+    """Mutate v.photos[i] to add `_raw_bytes` for photos that only have a URL.
+    This is needed because the PDF renderer is sync but photos now live in
+    GridFS (async-only access)."""
+    for p in (v.get("photos") or []):
+        if p.get("data_url") or p.get("_raw_bytes"):
+            continue
+        if p.get("url"):
+            try:
+                p["_raw_bytes"] = await _load_photo_bytes(p["url"])
+            except Exception:
+                p["_raw_bytes"] = None
 
 
 def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
@@ -4508,6 +4622,11 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
         col = 0
         for p in photos:
             img_reader = _photo_to_image_reader(p)
+            if not img_reader and p.get("_raw_bytes"):
+                try:
+                    img_reader = ImageReader(io.BytesIO(p["_raw_bytes"]))
+                except Exception:
+                    img_reader = None
             if not img_reader:
                 continue
             x = margin + col * (img_w + 6 * mm)

@@ -173,7 +173,9 @@ const SiteVisitsPage = () => {
                 data-testid={`site-visit-card-${v.visit_code}`}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="font-mono-data font-bold text-sm" style={{ color: 'var(--cc-dark-green)' }}>{v.visit_code}</span>
+                  <span className="font-mono-data font-bold text-sm" style={{ color: 'var(--cc-dark-green)' }}>
+                    {v.visit_code}{v.job_no ? ` · Job ${v.job_no}` : ''}
+                  </span>
                   <StatusBadge status={v.status} />
                 </div>
                 <div className="font-semibold text-sm leading-tight mb-0.5">{v.inspection_title || '—'}</div>
@@ -204,7 +206,10 @@ const SiteVisitsPage = () => {
               <tbody>
                 {filtered.map((v) => (
                   <tr key={v.id} className="border-t hover:bg-emerald-50/30" style={{ borderColor: 'var(--cc-border)' }} data-testid={`site-visit-row-${v.visit_code}`}>
-                    <td className="px-3 py-2 font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{v.visit_code}</td>
+                    <td className="px-3 py-2 font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>
+                      <div>{v.visit_code}</div>
+                      {v.job_no && <div className="text-[10px]" style={{ color: 'var(--cc-accent)' }}>Job {v.job_no}</div>}
+                    </td>
                     <td className="px-3 py-2">{v.inspection_title || '—'}</td>
                     <td className="px-3 py-2 font-mono-data text-xs">{v.project_code || '—'}</td>
                     <td className="px-3 py-2 text-xs">
