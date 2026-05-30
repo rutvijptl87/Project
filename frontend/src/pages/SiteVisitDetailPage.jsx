@@ -125,9 +125,24 @@ const SiteVisitDetailPage = () => {
             </h1>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => downloadFile(`${API}/site-visits/${v.id}/pdf`, `${v.visit_code}.pdf`)} className="btn btn-primary" data-testid="btn-download-pdf">
-              <FileText size={14}/> Download PDF
-            </button>
+            {/* Plain anchor (not async-then-click) so mobile browsers can
+                fire the download from the original user gesture. Uses the
+                visit's public_token + the no-auth public PDF endpoint. */}
+            {v.public_token ? (
+              <a
+                href={`${BACKEND}/api/site-visits/public/${v.public_token}/pdf`}
+                download={`${v.visit_code}.pdf`}
+                rel="noopener"
+                className="btn btn-primary"
+                data-testid="btn-download-pdf"
+              >
+                <FileText size={14}/> Download PDF
+              </a>
+            ) : (
+              <button onClick={() => downloadFile(`${API}/site-visits/${v.id}/pdf`, `${v.visit_code}.pdf`)} className="btn btn-primary" data-testid="btn-download-pdf">
+                <FileText size={14}/> Download PDF
+              </button>
+            )}
             <button onClick={togglePin} className="btn btn-outline" title={v.is_pinned ? 'Unpin this visit from the project page' : 'Pin to the project page'} data-testid="btn-toggle-pin">
               {v.is_pinned ? <><PinOff size={14}/> Unpin</> : <><Pin size={14}/> Pin to project</>}
             </button>

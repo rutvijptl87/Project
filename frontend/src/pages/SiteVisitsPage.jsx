@@ -7,6 +7,8 @@ import { useUndo } from '../lib/undo';
 import { downloadFile } from '../lib/download';
 import MySvWeeklyChart from '../components/MySvWeeklyChart';
 
+const BACKEND = process.env.REACT_APP_BACKEND_URL;
+
 const StatusBadge = ({ status }) => {
   const cls = status === 'draft' ? 'badge-pending' : 'badge-settled';
   return <span className={`badge ${cls}`} style={{ fontSize: '10px' }}>{(status || 'submitted').toUpperCase()}</span>;
@@ -222,7 +224,20 @@ const SiteVisitsPage = () => {
                     <td className="px-3 py-2 text-right">
                       <div className="inline-flex gap-1">
                         <Link to={`/site-visits/${v.id}`} className="btn btn-outline btn-sm" title="View" data-testid={`btn-view-${v.visit_code}`}><Eye size={13}/></Link>
-                        <button onClick={() => downloadFile(`${API}/site-visits/${v.id}/pdf`, `${v.visit_code}.pdf`)} className="btn btn-outline btn-sm" title="PDF" data-testid={`btn-pdf-${v.visit_code}`}><FileText size={13}/></button>
+                        {v.public_token ? (
+                          <a
+                            href={`${BACKEND}/api/site-visits/public/${v.public_token}/pdf`}
+                            download={`${v.visit_code}.pdf`}
+                            rel="noopener"
+                            className="btn btn-outline btn-sm"
+                            title="PDF"
+                            data-testid={`btn-pdf-${v.visit_code}`}
+                          >
+                            <FileText size={13}/>
+                          </a>
+                        ) : (
+                          <button onClick={() => downloadFile(`${API}/site-visits/${v.id}/pdf`, `${v.visit_code}.pdf`)} className="btn btn-outline btn-sm" title="PDF" data-testid={`btn-pdf-${v.visit_code}`}><FileText size={13}/></button>
+                        )}
                         {!isEngineer && (
                           <button onClick={() => removeVisit(v)} className="btn btn-outline btn-sm" title="Delete" data-testid={`btn-delete-${v.visit_code}`}><Trash2 size={13}/></button>
                         )}

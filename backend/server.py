@@ -3933,6 +3933,12 @@ async def get_site_visit(vid: str):
     v = await db.site_visits.find_one({"id": vid}, {"_id": 0})
     if not v:
         raise HTTPException(404, "Site visit not found")
+    # Lazy-mint a public_token for legacy visits created before tokens existed.
+    # This token powers the WhatsApp share + mobile-friendly PDF download.
+    if not v.get("public_token"):
+        tok = secrets.token_urlsafe(20)
+        await db.site_visits.update_one({"id": vid}, {"$set": {"public_token": tok}})
+        v["public_token"] = tok
     await _enrich_site_visit(v)
     return v
 
