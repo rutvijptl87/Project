@@ -2,7 +2,7 @@
 // and we always want fresh API responses.
 // Bump CACHE_NAME on EVERY deploy that touches the JS bundle so engineers'
 // PWAs auto-pick up fixes (otherwise they'd be stuck on the old bundle).
-const CACHE_NAME = 'cc-shell-v6-20260530c';
+const CACHE_NAME = 'cc-shell-v7-20260530d';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME));
