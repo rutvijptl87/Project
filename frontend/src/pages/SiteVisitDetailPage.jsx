@@ -127,12 +127,16 @@ const SiteVisitDetailPage = () => {
           <div className="flex flex-wrap gap-2">
             {/* Plain anchor (not async-then-click) so mobile browsers can
                 fire the download from the original user gesture. Uses the
-                visit's public_token + the no-auth public PDF endpoint. */}
+                visit's public_token + the no-auth public PDF endpoint.
+                `target="_blank"` is critical for installed PWAs — Android
+                Chrome treats `download` as a hint and falls back to opening
+                the PDF in the system browser, from which the user can save. */}
             {v.public_token ? (
               <a
                 href={`${BACKEND}/api/site-visits/public/${v.public_token}/pdf`}
-                download={`${v.visit_code}.pdf`}
+                target="_blank"
                 rel="noopener"
+                download={`${v.visit_code}.pdf`}
                 className="btn btn-primary"
                 data-testid="btn-download-pdf"
               >

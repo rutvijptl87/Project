@@ -1,6 +1,8 @@
 // Minimal service worker — kept light on purpose since the app is data-heavy
 // and we always want fresh API responses.
-const CACHE_NAME = 'cc-shell-v2';
+// Bump CACHE_NAME on EVERY deploy that touches the JS bundle so engineers'
+// PWAs auto-pick up fixes (otherwise they'd be stuck on the old bundle).
+const CACHE_NAME = 'cc-shell-v4-20260530';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME));
@@ -18,7 +20,12 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
+  // Never cache or intercept the API or PDF download endpoints — the engineer
+  // needs the freshest response, and intercepting the public PDF link breaks
+  // the synchronous <a download> flow on mobile PWAs.
   if (req.url.includes('/api/')) return;
+  if (req.url.includes('/uploads/')) return;
+  if (req.url.endsWith('.pdf')) return;
   if (req.mode === 'navigate') {
     event.respondWith(
       fetch(req)

@@ -227,8 +227,9 @@ const SiteVisitsPage = () => {
                         {v.public_token ? (
                           <a
                             href={`${BACKEND}/api/site-visits/public/${v.public_token}/pdf`}
-                            download={`${v.visit_code}.pdf`}
+                            target="_blank"
                             rel="noopener"
+                            download={`${v.visit_code}.pdf`}
                             className="btn btn-outline btn-sm"
                             title="PDF"
                             data-testid={`btn-pdf-${v.visit_code}`}
