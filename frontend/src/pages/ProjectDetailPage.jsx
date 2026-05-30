@@ -6,6 +6,7 @@ import { formatINR, formatDate } from '../lib/format';
 import { downloadFile } from '../lib/download';
 import { useUserDirectory } from '../lib/userDirectory';
 import { logger } from '../lib/logger';
+import { useAuth } from '../lib/auth';
 import InitialsBadge from '../components/InitialsBadge';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import {
@@ -28,6 +29,8 @@ const ProjectDetailPage = () => {
   const navigate = useNavigate();
   const { schedule } = useUndo();
   const { byUsername } = useUserDirectory();
+  const { user } = useAuth();
+  const isEngineer = user?.role === 'engineer';
   const [project, setProject] = useState(null);
   const [payments, setPayments] = useState([]);
   const [revisions, setRevisions] = useState([]);
@@ -75,19 +78,21 @@ const ProjectDetailPage = () => {
   };
 
   const load = useCallback(async () => {
+    // Engineers must NEVER hit payments / revisions (they'd 403 anyway).
+    const empty = Promise.resolve({ data: [] });
     const [p, pay, rev, act, sv] = await Promise.all([
       api.get(`/projects/${id}`),
-      api.get('/payments', { params: { project_id: id } }),
-      api.get(`/projects/${id}/revisions`),
-      api.get(`/projects/${id}/activity`),
+      isEngineer ? empty : api.get('/payments', { params: { project_id: id } }),
+      isEngineer ? empty : api.get(`/projects/${id}/revisions`),
+      api.get(`/projects/${id}/activity`).catch(() => ({ data: [] })),
       api.get('/site-visits', { params: { project_id: id } }).catch(() => ({ data: [] })),
     ]);
     setProject(p.data);
-    setPayments(pay.data);
-    setRevisions(rev.data);
-    setActivity(act.data);
+    setPayments(pay.data || []);
+    setRevisions(rev.data || []);
+    setActivity(act.data || []);
     setSiteVisits((sv?.data) || []);
-  }, [id]);
+  }, [id, isEngineer]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -198,25 +203,33 @@ const ProjectDetailPage = () => {
                 </span>
               </>
             )}
-            <span className={`badge ml-2 ${project.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`}>{project.status}</span>
+            {!isEngineer && (
+              <span className={`badge ml-2 ${project.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`}>{project.status}</span>
+            )}
           </div>
         </div>
         <div className="flex gap-2 flex-wrap">
           <Link to={`/site-visits/new?project_id=${id}`} className="btn btn-accent" data-testid="detail-btn-new-site-visit"><ClipboardList size={15}/> New Site Visit</Link>
-          <button onClick={downloadExcel} className="btn btn-outline" data-testid="detail-btn-excel"><Download size={15}/> Export Excel</button>
-          <button onClick={downloadInvoice} className="btn btn-outline" data-testid="detail-btn-invoice"><FileText size={15}/> Invoice PDF</button>
-          <Link to={`/projects/${id}/edit`} className="btn btn-outline" data-testid="detail-btn-edit"><Pencil size={15}/> Edit</Link>
-          <button onClick={handleArchive} className="btn btn-outline" data-testid="detail-btn-archive"><Archive size={15}/> Archive</button>
-          <button onClick={handleDelete} className="btn btn-danger" data-testid="detail-btn-delete"><Trash2 size={15}/> Delete</button>
+          {!isEngineer && (
+            <>
+              <button onClick={downloadExcel} className="btn btn-outline" data-testid="detail-btn-excel"><Download size={15}/> Export Excel</button>
+              <button onClick={downloadInvoice} className="btn btn-outline" data-testid="detail-btn-invoice"><FileText size={15}/> Invoice PDF</button>
+              <Link to={`/projects/${id}/edit`} className="btn btn-outline" data-testid="detail-btn-edit"><Pencil size={15}/> Edit</Link>
+              <button onClick={handleArchive} className="btn btn-outline" data-testid="detail-btn-archive"><Archive size={15}/> Archive</button>
+              <button onClick={handleDelete} className="btn btn-danger" data-testid="detail-btn-delete"><Trash2 size={15}/> Delete</button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* KPIs */}
-      <div className="grid md:grid-cols-3 gap-4 mb-6">
-        <KpiCard label="Current Quoted Amount" value={formatINR(project.quoted_amount)} color="var(--cc-dark-green)" />
-        <KpiCard label="Total Received" value={formatINR(project.received_amount)} color="var(--cc-accent)" />
-        <KpiCard label="Outstanding" value={formatINR(project.outstanding_amount)} color="#DC2626" />
-      </div>
+      {/* KPIs — money is hidden from engineers */}
+      {!isEngineer && (
+        <div className="grid md:grid-cols-3 gap-4 mb-6">
+          <KpiCard label="Current Quoted Amount" value={formatINR(project.quoted_amount)} color="var(--cc-dark-green)" />
+          <KpiCard label="Total Received" value={formatINR(project.received_amount)} color="var(--cc-accent)" />
+          <KpiCard label="Outstanding" value={formatINR(project.outstanding_amount)} color="#DC2626" />
+        </div>
+      )}
 
       {/* Contacts quick row */}
       {(project.client_phone || project.client_email || project.architect_phone || project.architect_email) && (
@@ -228,7 +241,7 @@ const ProjectDetailPage = () => {
               <div className="flex gap-3 mt-1 flex-wrap">
                 {project.client_phone && <a href={`tel:${project.client_phone}`} className="text-xs inline-flex items-center gap-1 link-underline" data-testid="detail-client-call"><Phone size={11}/> {project.client_phone}</a>}
                 {project.client_email && <a href={`mailto:${project.client_email}`} className="text-xs inline-flex items-center gap-1 link-underline" data-testid="detail-client-email"><Mail size={11}/> {project.client_email}</a>}
-                {project.client_phone && (
+                {project.client_phone && !isEngineer && (
                   <a
                     href={`https://wa.me/${(project.client_phone || '').replace(/\D/g, '')}?text=${encodeURIComponent(`Hi ${project.client_name}, regarding ${project.name} (${project.project_code}) — outstanding is ${formatINR(project.outstanding_amount, { withSymbol: false })}.`)}`}
                     target="_blank" rel="noreferrer"
@@ -338,7 +351,8 @@ const ProjectDetailPage = () => {
         </div>
       )}
 
-      {/* Payments */}
+      {/* Payments — hidden from engineers (financial data) */}
+      {!isEngineer && (
       <div className="card mb-6 overflow-hidden" data-testid="payments-card">
         <div className="p-5 border-b flex items-center justify-between" style={{ borderColor: 'var(--cc-border)' }}>
           <h2 className="font-head text-lg font-bold flex items-center gap-2" style={{ color: 'var(--cc-dark-green)' }}>
@@ -378,8 +392,10 @@ const ProjectDetailPage = () => {
           </table>
         </div>
       </div>
+      )}
 
-      {/* Quote Revisions */}
+      {/* Quote Revisions — hidden from engineers */}
+      {!isEngineer && (
       <div className="card mb-6 overflow-hidden" data-testid="revisions-card">
         <div className="p-5 border-b" style={{ borderColor: 'var(--cc-border)' }}>
           <h2 className="font-head text-lg font-bold flex items-center gap-2" style={{ color: 'var(--cc-dark-green)' }}>
@@ -442,6 +458,7 @@ const ProjectDetailPage = () => {
           </table>
         </div>
       </div>
+      )}
 
       {/* Pinned site visits — admin-promoted key inspections shown front & center */}
       {siteVisits.filter((v) => v.is_pinned).length > 0 && (

@@ -4,6 +4,7 @@ import { api, API } from '../lib/api';
 import { formatINR } from '../lib/format';
 import { downloadFile } from '../lib/download';
 import { useUserDirectory } from '../lib/userDirectory';
+import { useAuth } from '../lib/auth';
 import InitialsBadge from '../components/InitialsBadge';
 import DashboardKPI from '../components/DashboardKPI';
 import MonthlyRevenueChart from '../components/MonthlyRevenueChart';
@@ -15,7 +16,8 @@ import {
   FileText, Archive, ArchiveRestore, ArrowUpDown, ArrowUp, ArrowDown,
   Phone, Mail,
 } from 'lucide-react';
-const SORTABLE_COLUMNS = {
+// Columns visible to admins/staff. Engineers see a slimmed list (no money).
+const SORTABLE_COLUMNS_FULL = {
   project_code: 'Project ID',
   name: 'Project Name',
   client_name: 'Client',
@@ -25,11 +27,20 @@ const SORTABLE_COLUMNS = {
   outstanding_amount: 'Outstanding',
   status: 'Status',
 };
+const SORTABLE_COLUMNS_ENGINEER = {
+  project_code: 'Project ID',
+  name: 'Project Name',
+  client_name: 'Client',
+  architect_name: 'Architect',
+};
 
 const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
   const navigate = useNavigate();
   const { schedule } = useUndo();
   const { byUsername } = useUserDirectory();
+  const { user } = useAuth();
+  const isEngineer = user?.role === 'engineer';
+  const SORTABLE_COLUMNS = isEngineer ? SORTABLE_COLUMNS_ENGINEER : SORTABLE_COLUMNS_FULL;
   const [projects, setProjects] = useState([]);
   const [stats, setStats] = useState(null);
   const [svStats, setSvStats] = useState(null);
@@ -50,9 +61,10 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
       const params = {};
       if (search) params.search = search;
       if (showArchived) params.archived_only = true;
+      // Engineers don't get to see financial stats — skip those calls entirely.
       const [p, s, sv] = await Promise.all([
         api.get('/projects', { params }),
-        api.get('/dashboard/stats'),
+        isEngineer ? Promise.resolve({ data: null }) : api.get('/dashboard/stats'),
         api.get('/dashboard/site-visit-stats', { params: { days: 7 } }).catch(() => ({ data: null })),
       ]);
       setProjects(p.data);
@@ -210,8 +222,8 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
         </div>
       </div>
 
-      {!showArchived && <DashboardKPI stats={stats} svStats={svStats} />}
-      {!showArchived && <MonthlyRevenueChart />}
+      {!showArchived && !isEngineer && <DashboardKPI stats={stats} svStats={svStats} />}
+      {!showArchived && !isEngineer && <MonthlyRevenueChart />}
 
       <form onSubmit={handleSearch} className="card p-3 mb-4 flex gap-2" data-testid="search-form">
         <div className="flex-1 relative">
@@ -240,10 +252,10 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
                 <th onClick={() => toggleSort('client_name')} className="cursor-pointer select-none" data-testid="sort-client_name">Client<SortIcon col="client_name"/></th>
                 <th onClick={() => toggleSort('architect_name')} className="cursor-pointer select-none" data-testid="sort-architect_name">Architect<SortIcon col="architect_name"/></th>
                 <th>Site Location</th>
-                <th onClick={() => toggleSort('quoted_amount')} className="cursor-pointer select-none text-right" data-testid="sort-quoted_amount">Quoted (₹)<SortIcon col="quoted_amount"/></th>
-                <th onClick={() => toggleSort('received_amount')} className="cursor-pointer select-none text-right" data-testid="sort-received_amount">Received (₹)<SortIcon col="received_amount"/></th>
-                <th onClick={() => toggleSort('outstanding_amount')} className="cursor-pointer select-none text-right" data-testid="sort-outstanding_amount">Outstanding (₹)<SortIcon col="outstanding_amount"/></th>
-                <th onClick={() => toggleSort('status')} className="cursor-pointer select-none" data-testid="sort-status">Status<SortIcon col="status"/></th>
+                {!isEngineer && <th onClick={() => toggleSort('quoted_amount')} className="cursor-pointer select-none text-right" data-testid="sort-quoted_amount">Quoted (₹)<SortIcon col="quoted_amount"/></th>}
+                {!isEngineer && <th onClick={() => toggleSort('received_amount')} className="cursor-pointer select-none text-right" data-testid="sort-received_amount">Received (₹)<SortIcon col="received_amount"/></th>}
+                {!isEngineer && <th onClick={() => toggleSort('outstanding_amount')} className="cursor-pointer select-none text-right" data-testid="sort-outstanding_amount">Outstanding (₹)<SortIcon col="outstanding_amount"/></th>}
+                {!isEngineer && <th onClick={() => toggleSort('status')} className="cursor-pointer select-none" data-testid="sort-status">Status<SortIcon col="status"/></th>}
                 <th>Edited By</th>
                 <th className="text-right">Actions</th>
               </tr>
@@ -337,12 +349,14 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
                     ) : <span className="text-gray-400">None</span>}
                   </td>
                   <td className="max-w-[220px]"><div className="line-clamp-2 text-xs">{p.site_location || '—'}</div></td>
-                  <td className="num">{formatINR(p.quoted_amount, { withSymbol: false })}</td>
-                  <td className="num">{formatINR(p.received_amount, { withSymbol: false })}</td>
-                  <td className="num font-semibold">{formatINR(p.outstanding_amount, { withSymbol: false })}</td>
-                  <td>
-                    <span className={`badge ${p.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`} data-testid={`status-${p.project_code}`}>{p.status}</span>
-                  </td>
+                  {!isEngineer && <td className="num">{formatINR(p.quoted_amount, { withSymbol: false })}</td>}
+                  {!isEngineer && <td className="num">{formatINR(p.received_amount, { withSymbol: false })}</td>}
+                  {!isEngineer && <td className="num font-semibold">{formatINR(p.outstanding_amount, { withSymbol: false })}</td>}
+                  {!isEngineer && (
+                    <td>
+                      <span className={`badge ${p.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`} data-testid={`status-${p.project_code}`}>{p.status}</span>
+                    </td>
+                  )}
                   <td>
                     <div className="flex gap-1 justify-end flex-wrap">
                       {showArchived ? (
@@ -359,21 +373,25 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
                           <button onClick={() => navigate(`/projects/${p.id}`)} className="btn btn-outline btn-sm" title="View" data-testid={`btn-view-${p.project_code}`}>
                             <Eye size={13}/> View
                           </button>
-                          <button onClick={() => openPay(p.id)} className="btn btn-accent btn-sm" title="Record Payment" data-testid={`btn-pay-${p.project_code}`}>
-                            <IndianRupee size={13}/> Pay
-                          </button>
-                          <button onClick={() => handleInvoice(p.id)} className="btn btn-outline btn-sm" title="Download Invoice PDF" data-testid={`btn-invoice-${p.project_code}`}>
-                            <FileText size={13}/>
-                          </button>
-                          <button onClick={() => navigate(`/projects/${p.id}/edit`)} className="btn btn-outline btn-sm" title="Edit" data-testid={`btn-edit-${p.project_code}`}>
-                            <Pencil size={13}/>
-                          </button>
-                          <button onClick={() => handleArchive(p.id, p.project_code)} className="btn btn-outline btn-sm" title="Archive" data-testid={`btn-archive-${p.project_code}`}>
-                            <Archive size={13}/>
-                          </button>
-                          <button onClick={() => handleDelete(p.id, p.project_code)} className="btn btn-danger btn-sm" title="Delete permanently" data-testid={`btn-delete-${p.project_code}`}>
-                            <Trash2 size={13}/>
-                          </button>
+                          {!isEngineer && (
+                            <>
+                              <button onClick={() => openPay(p.id)} className="btn btn-accent btn-sm" title="Record Payment" data-testid={`btn-pay-${p.project_code}`}>
+                                <IndianRupee size={13}/> Pay
+                              </button>
+                              <button onClick={() => handleInvoice(p.id)} className="btn btn-outline btn-sm" title="Download Invoice PDF" data-testid={`btn-invoice-${p.project_code}`}>
+                                <FileText size={13}/>
+                              </button>
+                              <button onClick={() => navigate(`/projects/${p.id}/edit`)} className="btn btn-outline btn-sm" title="Edit" data-testid={`btn-edit-${p.project_code}`}>
+                                <Pencil size={13}/>
+                              </button>
+                              <button onClick={() => handleArchive(p.id, p.project_code)} className="btn btn-outline btn-sm" title="Archive" data-testid={`btn-archive-${p.project_code}`}>
+                                <Archive size={13}/>
+                              </button>
+                              <button onClick={() => handleDelete(p.id, p.project_code)} className="btn btn-danger btn-sm" title="Delete permanently" data-testid={`btn-delete-${p.project_code}`}>
+                                <Trash2 size={13}/>
+                              </button>
+                            </>
+                          )}
                         </>
                       )}
                     </div>

@@ -108,9 +108,9 @@ class Project(BaseModel):
     architect_phone: Optional[str] = ""
     architect_email: Optional[str] = ""
     site_location: str = ""
-    quoted_amount: float = 0.0
-    received_amount: float = 0.0
-    outstanding_amount: float = 0.0
+    quoted_amount: Optional[float] = 0.0
+    received_amount: Optional[float] = 0.0
+    outstanding_amount: Optional[float] = 0.0
     status: str = "Outstanding"
     notes: str = ""
     archived: bool = False
@@ -712,7 +712,37 @@ async def delete_architect(architect_id: str):
     return {"ok": True}
 
 
+def _deny_engineer():
+    """Raise 403 if the calling user is an engineer. Used to lock financial /
+    accounting endpoints (payments, audits, monthly revenue, etc.) so engineers
+    can never read amounts even via direct API access."""
+    user = get_current_user_safe()
+    if user and user.get("role") == "engineer":
+        raise HTTPException(status_code=403, detail="Engineers are not allowed to view financial data")
+
+
 # ---------------------- PROJECTS ----------------------
+def _strip_financials_for_engineer(items):
+    """If the caller is an engineer, blank out money fields on project payload(s).
+    Engineers should never see quoted/received/outstanding amounts or payments.
+    Accepts a single dict or a list and mutates in place."""
+    user = get_current_user_safe()
+    if not user or user.get("role") != "engineer":
+        return items
+    blanked = ["quoted_amount", "received_amount", "outstanding_amount"]
+    targets = items if isinstance(items, list) else [items]
+    for t in targets:
+        if not isinstance(t, dict):
+            continue
+        for k in blanked:
+            if k in t:
+                t[k] = None
+        # Status (Outstanding / Settled) is derived from money, so hide it too.
+        if "status" in t:
+            t["status"] = ""
+    return items
+
+
 @api_router.get("/projects", response_model=List[Project])
 async def list_projects(search: Optional[str] = None, include_archived: bool = False, archived_only: bool = False):
     query = {}
@@ -736,7 +766,7 @@ async def list_projects(search: Optional[str] = None, include_archived: bool = F
         ]
     items = await db.projects.find(query, {"_id": 0}).sort("created_at", -1).to_list(5000)
     await _enrich_projects_batch(items)
-    return items
+    return _strip_financials_for_engineer(items)
 
 
 @api_router.get("/projects/{project_id}", response_model=Project)
@@ -745,7 +775,7 @@ async def get_project(project_id: str):
     if not p:
         raise HTTPException(404, "Project not found")
     await _enrich_project(p)
-    return p
+    return _strip_financials_for_engineer(p)
 
 
 @api_router.post("/projects", response_model=Project)
@@ -820,6 +850,7 @@ async def unarchive_project(project_id: str):
 # ---------------------- PAYMENTS ----------------------
 @api_router.get("/payments", response_model=List[Payment])
 async def list_payments(project_id: Optional[str] = None):
+    _deny_engineer()
     q = {"project_id": project_id} if project_id else {}
     items = await db.payments.find(q, {"_id": 0}).sort("payment_date", -1).to_list(5000)
     return items
@@ -900,6 +931,7 @@ class QuoteRevisionIn(BaseModel):
 
 @api_router.get("/projects/{project_id}/revisions")
 async def list_revisions(project_id: str):
+    _deny_engineer()
     items = await db.quote_revisions.find({"project_id": project_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return items
 
@@ -1343,6 +1375,7 @@ async def _build_invoice_pdf(project: dict, client_doc: Optional[dict], architec
 
 @api_router.get("/payments/{payment_id}/receipt")
 async def payment_receipt_pdf(payment_id: str):
+    _deny_engineer()
     payment = await db.payments.find_one({"id": payment_id}, {"_id": 0})
     if not payment:
         raise HTTPException(404, "Payment not found")
@@ -1364,6 +1397,7 @@ async def payment_receipt_pdf(payment_id: str):
 
 @api_router.get("/projects/{project_id}/invoice")
 async def project_invoice_pdf(project_id: str):
+    _deny_engineer()
     project = await db.projects.find_one({"id": project_id}, {"_id": 0})
     if not project:
         raise HTTPException(404, "Project not found")
@@ -1485,6 +1519,7 @@ async def _log_audit_activity(audit_id: str, audit_code: str, action: str, detai
 
 @api_router.get("/audits", response_model=List[Audit])
 async def list_audits(archived: Optional[bool] = False, search: Optional[str] = None):
+    _deny_engineer()
     query = {"archived": bool(archived)}
     if search:
         s = search.strip()
@@ -1503,6 +1538,7 @@ async def list_audits(archived: Optional[bool] = False, search: Optional[str] = 
 
 @api_router.get("/audits/{audit_id}", response_model=Audit)
 async def get_audit(audit_id: str):
+    _deny_engineer()
     a = await db.audits.find_one({"id": audit_id}, {"_id": 0})
     if not a:
         raise HTTPException(404, "Audit not found")
@@ -2351,6 +2387,7 @@ async def offer_pdf(offer_id: str):
 
 @api_router.get("/dashboard/stats")
 async def dashboard_stats():
+    _deny_engineer()
     # Lightweight projection: we only need amounts + status for totals (no client/architect joins needed)
     projects = await db.projects.find(
         {},
@@ -2387,6 +2424,7 @@ async def dashboard_stats():
 
 @api_router.get("/dashboard/monthly-revenue")
 async def dashboard_monthly_revenue(months: int = 12):
+    _deny_engineer()
     """Aggregate received payments (projects + audits) per month for the last `months` months."""
     months = max(1, min(int(months or 12), 36))
     from collections import OrderedDict
