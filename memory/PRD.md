@@ -312,3 +312,25 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
 - P3: Split server.py into routers
 - P3: Native mobile (Expo) if PWA proves insufficient
 - Op: Google Drive re-auth from production domain
+
+
+---
+
+## Session 18 — 2026-02 (Production Hotfix: GridFS Photos + Engineer Projects + Linked Financials)
+Four critical issues reported on production (`creatorconsultant.online`) after the first real engineer-submitted site visit. All fixed in preview, verified end-to-end, ready for redeploy.
+
+### Fixes
+- **(P0) Engineer's project picker was empty.** Removed `assigned_engineer_ids` filter on `list_projects`. Engineers now browse all non-archived projects (write endpoints still RBAC-locked).
+- **(P0) Photos broke when admin viewed engineer's uploads.** Root cause: photos stored on the pod's ephemeral local disk. Fix: switched to **MongoDB GridFS** (bucket `site_visit_photos`). Upload writes to GridFS; new public `GET /api/uploads/site-visits/{filename}` streams from GridFS with disk fallback. PDF builder gets bytes pre-loaded asynchronously via `_preload_visit_photo_bytes`.
+- **(P1) Accounting hidden from admin's site visit review.** SiteVisitDetailPage now fetches the linked project and renders a Linked Project card (admin/staff only) with Quoted/Received/Outstanding tiles.
+- **(NEW) Visit code listings now show Job No.** Both card and table views show `SV-NNNN · Job NNNN`.
+
+### Tests
+- 22/22 backend pytest green (`test_iteration18_gridfs_photos_and_engineer_projects.py` + iter17 regression)
+- 100% frontend e2e via testing_agent_v3_fork (`iteration_18.json`)
+- Photo persistence verified across backend restart
+
+### Production redeploy notes
+- Code-only changes — no manual migration
+- GridFS bucket auto-creates on first upload
+- **Legacy production photos uploaded BEFORE this fix are still lost** (pod disk wiped). Going forward all uploads persist.
