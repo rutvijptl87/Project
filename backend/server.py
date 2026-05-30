@@ -3695,6 +3695,50 @@ async def _next_visit_code() -> str:
     return f"SV-{seq:04d}"
 
 
+# ----- Admin: edit the Site Visit number series (next visit code) -----
+class SiteVisitSeqIn(BaseModel):
+    next_seq: int = Field(..., ge=1, le=999999)
+
+
+@api_router.get("/site-visits/series")
+async def get_site_visit_series():
+    """Return the next visit code that will be assigned. Admins only."""
+    _deny_engineer()
+    counter = await db.counters.find_one({"_id": "site_visit"}, {"_id": 0})
+    current_seq = (counter or {}).get("seq", 0)
+    next_seq = current_seq + 1
+    return {
+        "current_seq": current_seq,
+        "next_seq": next_seq,
+        "next_code": f"SV-{next_seq:04d}",
+        "prefix": "SV",
+    }
+
+
+@api_router.put("/site-visits/series")
+async def set_site_visit_series(body: SiteVisitSeqIn, user: dict = Depends(auth_module.get_current_user)):
+    """Admin sets the NEXT visit code. e.g. next_seq=100 → next visit is SV-0100.
+    Internally we set `counter.seq = next_seq - 1` so the next $inc returns
+    `next_seq`. Refuses to overwrite if any existing visit already uses the
+    proposed code (would collide)."""
+    _deny_engineer()
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Only admins can edit the visit number series")
+    next_seq = int(body.next_seq)
+    proposed = f"SV-{next_seq:04d}"
+    if await db.site_visits.find_one({"visit_code": proposed}, {"_id": 1}):
+        raise HTTPException(
+            400,
+            f"Cannot set next code to {proposed} — a site visit with this code already exists.",
+        )
+    await db.counters.update_one(
+        {"_id": "site_visit"},
+        {"$set": {"seq": next_seq - 1}},
+        upsert=True,
+    )
+    return {"ok": True, "next_seq": next_seq, "next_code": proposed}
+
+
 @api_router.get("/site-visit-templates", response_model=List[SiteVisitTemplate])
 async def list_sv_templates():
     rows = await db.site_visit_templates.find({}, {"_id": 0}).sort("name", 1).to_list(500)
@@ -4104,30 +4148,40 @@ def _apply_letterhead(pdf_bytes: bytes) -> bytes:
     If the letterhead is missing or merging fails, returns the input unchanged.
     The letterhead page is scaled to match each content page's media box, so
     Letter-size letterhead works under A4 content (and vice versa).
+
+    NOTE: We re-open the letterhead PDF fresh on every call and use
+    `add_blank_page` + `merge_transformed_page` + `merge_page` instead of
+    `deepcopy(template)`. PyPDF PageObjects share IndirectObject references
+    with their parent reader; `copy.deepcopy` does NOT fully decouple them,
+    so reusing a deepcopy across iterations causes content streams to bleed
+    together into a single page in the output (every page's content stacked
+    on top of each other under one letterhead).
     """
-    if not _letterhead_reader or not _letterhead_reader.pages:
+    if not LETTERHEAD_PATH.exists():
         return pdf_bytes
     try:
         from pypdf import PdfReader, PdfWriter, Transformation
-        from pypdf.generic import RectangleObject
         src = PdfReader(io.BytesIO(pdf_bytes))
-        writer = PdfWriter()
-        lh_template = _letterhead_reader.pages[0]
+        lh_reader = PdfReader(str(LETTERHEAD_PATH))
+        if not lh_reader.pages:
+            return pdf_bytes
+        lh_template = lh_reader.pages[0]
         lh_w = float(lh_template.mediabox.width)
         lh_h = float(lh_template.mediabox.height)
+        writer = PdfWriter()
         for page in src.pages:
             pw = float(page.mediabox.width)
             ph = float(page.mediabox.height)
-            # Deep-copy so we don't mutate the cached template page across requests
-            bg = copy.deepcopy(lh_template)
+            # Fresh, independent page for this iteration
+            new_page = writer.add_blank_page(width=pw, height=ph)
+            # Layer 1 — letterhead at the bottom (scaled to fit)
             sx = pw / lh_w
             sy = ph / lh_h
-            bg.add_transformation(Transformation().scale(sx=sx, sy=sy))
-            bg.mediabox = RectangleObject((0, 0, pw, ph))
-            bg.cropbox = RectangleObject((0, 0, pw, ph))
-            # Draw content ON TOP of the letterhead
-            bg.merge_page(page)
-            writer.add_page(bg)
+            new_page.merge_transformed_page(
+                lh_template, Transformation().scale(sx=sx, sy=sy),
+            )
+            # Layer 2 — site visit content on top
+            new_page.merge_page(page)
         out = io.BytesIO()
         writer.write(out)
         return out.getvalue()

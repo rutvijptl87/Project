@@ -7,6 +7,7 @@ import UserManagementCard from '../components/UserManagementCard';
 import UserActivityCard from '../components/UserActivityCard';
 import DocumentTypesCard from '../components/DocumentTypesCard';
 import SiteVisitTemplatesCard from '../components/SiteVisitTemplatesCard';
+import SiteVisitNumberSeriesCard from '../components/SiteVisitNumberSeriesCard';
 import DefaultSignatureCard from '../components/DefaultSignatureCard';
 import MobileNotificationsCard from '../components/MobileNotificationsCard';
 
@@ -80,6 +81,9 @@ const SettingsPage = () => {
 
       {/* Site visit checklist templates */}
       <div className="mb-4"><SiteVisitTemplatesCard /></div>
+
+      {/* Site Visit Report Numbering — admin can set the next SV-NNNN */}
+      <SiteVisitNumberSeriesCard />
 
       {/* Per-user activity feed */}
       <div className="mb-4"><UserActivityCard /></div>

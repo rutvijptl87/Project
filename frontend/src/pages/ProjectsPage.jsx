@@ -18,7 +18,6 @@ import {
 } from 'lucide-react';
 // Columns visible to admins/staff. Engineers see a slimmed list (no money).
 const SORTABLE_COLUMNS_FULL = {
-  project_code: 'Project ID',
   name: 'Project Name',
   client_name: 'Client',
   architect_name: 'Architect',
@@ -28,7 +27,6 @@ const SORTABLE_COLUMNS_FULL = {
   status: 'Status',
 };
 const SORTABLE_COLUMNS_ENGINEER = {
-  project_code: 'Project ID',
   name: 'Project Name',
   client_name: 'Client',
   architect_name: 'Architect',
@@ -247,7 +245,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
           <table className="cc-table" data-testid="projects-table">
             <thead>
               <tr>
-                <th onClick={() => toggleSort('project_code')} className="cursor-pointer select-none" data-testid="sort-project_code">Project ID<SortIcon col="project_code"/></th>
+                <th className="w-12" data-testid="col-sr-no">Sr. No</th>
                 <th onClick={() => toggleSort('name')} className="cursor-pointer select-none" data-testid="sort-name">Project Name<SortIcon col="name"/></th>
                 <th onClick={() => toggleSort('client_name')} className="cursor-pointer select-none" data-testid="sort-client_name">Client<SortIcon col="client_name"/></th>
                 <th onClick={() => toggleSort('architect_name')} className="cursor-pointer select-none" data-testid="sort-architect_name">Architect<SortIcon col="architect_name"/></th>
@@ -269,9 +267,9 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
                   <div className="text-sm mb-4" style={{ color: 'var(--cc-text-muted)' }}>{showArchived ? 'Archived projects will appear here.' : 'Start by creating your first project.'}</div>
                   {!showArchived && <Link to="/projects/new" className="btn btn-primary inline-flex" data-testid="btn-empty-new-project"><Plus size={15}/> New Project</Link>}
                 </td></tr>
-              ) : sortedProjects.map((p) => (
+              ) : sortedProjects.map((p, idx) => (
                 <tr key={p.id} data-testid={`project-row-${p.project_code}`}>
-                  <td className="font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{p.project_code}</td>
+                  <td className="font-mono-data text-center" style={{ color: 'var(--cc-text-muted)' }} data-testid={`sr-no-${p.project_code}`}>{idx + 1}</td>
                   <td className="font-medium">
                     <div className="flex items-center gap-2 flex-wrap">
                       {p.offer_type && (
