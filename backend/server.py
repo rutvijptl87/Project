@@ -1423,6 +1423,12 @@ class AuditIn(BaseModel):
     audit_offer: str = ""                # e.g. "Structural Audit" (free text)
     report_id: Optional[str] = ""        # editable; auto-filled if blank
     client_id: Optional[str] = None
+    # Free-text client contact fields. When set, override whatever would be
+    # enriched from the linked Client record. Used for one-off audits where
+    # the customer isn't a recurring client.
+    client_name_override: Optional[str] = ""
+    client_phone_override: Optional[str] = ""
+    client_email_override: Optional[str] = ""
     total_amount: float = 0.0
     status: Optional[str] = "Outstanding"
     notes: Optional[str] = ""
@@ -1439,6 +1445,9 @@ class Audit(BaseModel):
     client_name: Optional[str] = ""
     client_phone: Optional[str] = ""
     client_email: Optional[str] = ""
+    client_name_override: Optional[str] = ""
+    client_phone_override: Optional[str] = ""
+    client_email_override: Optional[str] = ""
     total_amount: float = 0.0
     received_amount: float = 0.0
     outstanding_amount: float = 0.0
@@ -1485,6 +1494,15 @@ async def _enrich_audit(a: dict) -> dict:
         a["client_name"] = a.get("client_name") or ""
         a["client_phone"] = a.get("client_phone") or ""
         a["client_email"] = a.get("client_email") or ""
+    # Per-audit overrides win over the enriched client fields. Useful for
+    # one-off audits where the customer isn't a recurring client, or where
+    # the engineer wants to record a different point-of-contact for THIS audit.
+    if a.get("client_name_override"):
+        a["client_name"] = a["client_name_override"]
+    if a.get("client_phone_override"):
+        a["client_phone"] = a["client_phone_override"]
+    if a.get("client_email_override"):
+        a["client_email"] = a["client_email_override"]
     total = float(a.get("total_amount", 0) or 0)
     received = float(a.get("received_amount", 0) or 0)
     outstanding = max(0.0, total - received)

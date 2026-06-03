@@ -28,6 +28,9 @@ const emptyAudit = {
   audit_offer: '',
   report_id: '',
   client_id: '',
+  client_name_override: '',
+  client_phone_override: '',
+  client_email_override: '',
   total_amount: '',
   status: 'Outstanding',
   notes: '',
@@ -133,6 +136,9 @@ const AuditsPage = () => {
       audit_offer: a.audit_offer || '',
       report_id: a.report_id || '',
       client_id: a.client_id || '',
+      client_name_override: a.client_name_override || '',
+      client_phone_override: a.client_phone_override || '',
+      client_email_override: a.client_email_override || '',
       total_amount: a.total_amount != null ? String(a.total_amount) : '',
       status: a.status || 'Outstanding',
       notes: a.notes || '',
@@ -153,6 +159,9 @@ const AuditsPage = () => {
         audit_offer: form.audit_offer.trim(),
         report_id: (form.report_id || '').trim(),
         client_id: form.client_id || null,
+        client_name_override: (form.client_name_override || '').trim(),
+        client_phone_override: (form.client_phone_override || '').trim(),
+        client_email_override: (form.client_email_override || '').trim(),
         total_amount: parseFloat(form.total_amount) || 0,
         status: form.status || 'Outstanding',
         notes: form.notes || '',
@@ -341,6 +350,47 @@ const AuditsPage = () => {
               onItemsChange={setClients}
               testIdPrefix="audit-form-client-"
             />
+            <div className="text-[11px] mt-1" style={{ color: 'var(--cc-text-muted)' }}>
+              Pick an existing client OR leave blank and fill the fields below to record a one-off contact for this audit.
+            </div>
+          </div>
+
+          {/* Direct contact fields — override the linked client's contact, or
+              record an ad-hoc contact when no client is selected. */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="label">Client Name</label>
+              <input
+                className="input"
+                value={form.client_name_override}
+                onChange={(e) => update('client_name_override', e.target.value)}
+                placeholder="e.g. Vijay Mishra"
+                data-testid="audit-form-client-name"
+              />
+            </div>
+            <div>
+              <label className="label">Phone</label>
+              <input
+                className="input"
+                type="tel"
+                inputMode="tel"
+                value={form.client_phone_override}
+                onChange={(e) => update('client_phone_override', e.target.value)}
+                placeholder="+91 98xxxxxxxx"
+                data-testid="audit-form-client-phone"
+              />
+            </div>
+            <div>
+              <label className="label">Email</label>
+              <input
+                className="input"
+                type="email"
+                value={form.client_email_override}
+                onChange={(e) => update('client_email_override', e.target.value)}
+                placeholder="name@example.com"
+                data-testid="audit-form-client-email"
+              />
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
