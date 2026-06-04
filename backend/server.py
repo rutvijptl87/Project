@@ -3134,7 +3134,6 @@ async def seed_demo():
 # ---------------------- DOCUMENTS MODULE ----------------------
 
 DEFAULT_DOCUMENT_TYPES = [
-    ("Audit Offer", "AUD-OFR"),
     ("Quotation", "QT"),
     ("PMC Quotation", "PMC-QT"),
     ("Inspection Report Letter", "INSP"),
