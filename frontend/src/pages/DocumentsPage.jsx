@@ -250,7 +250,7 @@ const DocumentsPage = () => {
 
   const openConfirm = async (d) => {
     // Auto-detect: audit-related doc types default to audit picker; everything else to project.
-    const auditPrefixes = ['AUD-OFR', 'AUD-RPT'];
+    const auditPrefixes = ['AUD-RPT'];
     const type = types.find((t) => t.id === d.doc_type_id);
     const isAuditDoc = type && auditPrefixes.includes((type.prefix || '').toUpperCase());
     // For "Move" (already-confirmed doc), keep the existing link kind.

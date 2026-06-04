@@ -334,3 +334,30 @@ Four critical issues reported on production (`creatorconsultant.online`) after t
 - Code-only changes — no manual migration
 - GridFS bucket auto-creates on first upload
 - **Legacy production photos uploaded BEFORE this fix are still lost** (pod disk wiped). Going forward all uploads persist.
+
+
+---
+
+## Session 19 — 2026-02 (Remove Audit Offer Numbering)
+
+User requested removal of the "Audit Offer" entry from the Documents tab AND from the
+Document Number Series in Settings. Audit Offer Numbers are now entered manually on
+the Audit form (no auto-numbering).
+
+### Changes
+- **Backend** (`/app/backend/server.py`):
+  - `_seed_document_types_if_missing` now deletes any existing `AUD-OFR` document type
+    on startup (one-shot migration) and no longer back-fills it.
+  - `create_audit` no longer auto-generates `audit_offer` from the AUD-OFR counter.
+    The engineer types the number directly; blank values are accepted.
+- **Frontend**:
+  - `AuditsPage.jsx`: removed `offerPreview` state + `/document-types/by-prefix/AUD-OFR/preview`
+    call. Placeholder/help text updated to "Type Audit Offer Number" with no auto-fill hint.
+  - `DocumentsPage.jsx`: removed `AUD-OFR` from `auditPrefixes` auto-link detection list
+    (only `AUD-RPT` remains for the Audit-picker default).
+
+### Verified
+- DB: `db.document_types.find({prefix:'AUD-OFR'})` returns nothing.
+- `GET /api/document-types` lists 18 types (no AUD-OFR).
+- `POST /api/audits` with `{audit_offer:"MANUAL/AUD/2026/001"}` stores value as-is.
+- Settings → User Management page HTML contains no "AUD-OFR" / "Audit Offer" strings.

@@ -1570,12 +1570,8 @@ async def create_audit(data: AuditIn):
     doc["id"] = _new_id()
     doc["audit_code"] = (doc.get("audit_code") or "").strip() or await _next_audit_code()
     doc["report_id"] = (doc.get("report_id") or "").strip() or await _next_report_id()
-    # If the engineer didn't override the Audit Offer Number, auto-generate it
-    # from the AUD-OFR document-type counter (managed in Settings).
-    if not (doc.get("audit_offer") or "").strip():
-        dt = await db.document_types.find_one({"prefix": "AUD-OFR"}, {"_id": 0})
-        if dt:
-            doc["audit_offer"] = await _next_document_number(dt)
+    # Audit Offer Number is entered manually by the engineer (no auto-numbering).
+    doc["audit_offer"] = (doc.get("audit_offer") or "").strip()
     doc["received_amount"] = 0.0
     doc["archived"] = False
     doc["created_at"] = _now()
@@ -3163,19 +3159,9 @@ async def _seed_document_types_if_missing():
             "prefix": "AUD-RPT",
             "$or": [{"counter": {"$lte": 0}}, {"counter": {"$exists": False}}],
         })
-        # Backfill: if AUD-OFR doesn't exist (e.g. removed earlier), recreate it
-        # so the audit-offer numbering settings are available.
-        if not await db.document_types.find_one({"prefix": "AUD-OFR"}):
-            await db.document_types.insert_one({
-                "id": _new_id(),
-                "name": "Audit Offer",
-                "prefix": "AUD-OFR",
-                "description": "",
-                "year_reset": True,
-                "counter": 0,
-                "last_year": 0,
-                "created_at": _now(),
-            })
+        # One-shot migration: drop "Audit Offer" doc type entirely. Audit offer
+        # numbers are now entered manually on the Audit form (no auto-numbering).
+        await db.document_types.delete_many({"prefix": "AUD-OFR"})
         return
     now = _now()
     docs = []

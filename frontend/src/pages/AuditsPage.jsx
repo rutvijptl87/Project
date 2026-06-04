@@ -57,20 +57,6 @@ const AuditsPage = () => {
   const [payOpen, setPayOpen] = useState(false);
   const [payAuditId, setPayAuditId] = useState(null);
   const [toast, setToast] = useState(null);
-  const [offerPreview, setOfferPreview] = useState('');
-
-  // Fetch the upcoming Audit Offer Number from the AUD-OFR document-type
-  // counter (managed in Settings → Document Number Series). Used as a
-  // placeholder on the New Audit form so the engineer sees what number will
-  // be assigned.
-  const loadOfferPreview = async () => {
-    try {
-      const r = await api.get('/document-types/by-prefix/AUD-OFR/preview');
-      setOfferPreview(r.data?.number || '');
-    } catch {
-      setOfferPreview('');
-    }
-  };
 
   const load = async () => {
     setLoading(true);
@@ -126,7 +112,6 @@ const AuditsPage = () => {
     setEditing(null);
     setForm(emptyAudit);
     setFormError('');
-    loadOfferPreview();
     setModalOpen(true);
   };
   const openEdit = (a) => {
@@ -333,11 +318,11 @@ const AuditsPage = () => {
               className="input font-mono-data"
               value={form.audit_offer}
               onChange={(e) => update('audit_offer', e.target.value)}
-              placeholder={offerPreview ? `Auto (${offerPreview}) — leave blank to auto-fill` : 'Auto (STR/AUD-OFR/YYYY/NNN) — or type custom'}
+              placeholder="Type Audit Offer Number (e.g. STR/AUD-OFR/2026/007)"
               data-testid="audit-form-offer"
             />
             <div className="text-[11px] mt-1" style={{ color: 'var(--cc-text-muted)' }}>
-              Auto-generated from the <strong>Audit Offer (AUD-OFR)</strong> series in Settings → Document Number Series. Edit only if you want a custom number.
+              Enter the Audit Offer Number manually.
             </div>
           </div>
           <div>
