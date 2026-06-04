@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { formatINR } from '../lib/format';
-import { ArrowLeft, Phone, Mail, Eye, FileText, Users, Building2, FileSignature, Pencil, Trash2, Save, X } from 'lucide-react';
+import { ArrowLeft, Phone, Mail, Eye, FileText, Users, Building2, FileSignature, Pencil, Trash2, Save, X, ArrowRightLeft } from 'lucide-react';
 import { downloadFile } from '../lib/download';
 import Modal from '../components/Modal';
 
@@ -15,6 +15,50 @@ const ClientDetailPage = () => {
   const [editForm, setEditForm] = useState({ name: '', phone: '', email: '', company: '', address: '' });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
+  // Move document → reassign a document to a different client.
+  const [docMove, setDocMove] = useState(null);
+  const [docMoveQuery, setDocMoveQuery] = useState('');
+  const [docMoveBusy, setDocMoveBusy] = useState(false);
+  const [allClients, setAllClients] = useState([]);
+
+  const openDocMove = async (d) => {
+    setDocMove(d);
+    setDocMoveQuery('');
+    if (allClients.length === 0) {
+      try {
+        const r = await api.get('/clients');
+        setAllClients(r.data);
+      } catch {}
+    }
+  };
+
+  const performDocMove = async (targetClientId) => {
+    if (!docMove) return;
+    setDocMoveBusy(true);
+    try {
+      const payload = {
+        doc_type_id: docMove.doc_type_id,
+        doc_number: docMove.doc_number || '',
+        document_date: docMove.document_date || null,
+        client_id: targetClientId || null,
+        architect_id: docMove.architect_id || null,
+        plot_place: docMove.plot_place || '',
+        phase: docMove.phase || '',
+        number_field: docMove.number_field || '',
+        remark: docMove.remark || '',
+        contact_person: docMove.contact_person || '',
+        mobile: docMove.mobile || '',
+        other_comments: docMove.other_comments || '',
+        update_date: docMove.update_date || null,
+      };
+      await api.put(`/documents/${docMove.id}`, payload);
+      setDocMove(null);
+      load();
+    } catch (e) {
+      // eslint-disable-next-line no-alert
+      alert(e?.response?.data?.detail || 'Failed to move document');
+    } finally { setDocMoveBusy(false); }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -34,6 +78,14 @@ const ClientDetailPage = () => {
   const { client: c, projects, stats } = data;
   const documents = data.documents || [];
   const waPhone = c.phone ? String(c.phone).replace(/[^0-9]/g, '') : '';
+
+  const docMoveTargets = (allClients || []).filter((x) => x.id !== c.id);
+  const docMoveFiltered = docMoveQuery.trim()
+    ? docMoveTargets.filter((x) => {
+        const q = docMoveQuery.toLowerCase();
+        return ['name', 'company', 'phone', 'email'].some((k) => (x[k] || '').toLowerCase().includes(q));
+      })
+    : docMoveTargets;
 
   const openEdit = () => {
     setEditForm({ name: c.name || '', phone: c.phone || '', email: c.email || '', company: c.company || '', address: c.address || '' });
@@ -216,6 +268,14 @@ const ClientDetailPage = () => {
                   <td className="text-xs font-mono-data">{(d.document_date || '').slice(0, 10) || '—'}</td>
                   <td>
                     <div className="flex gap-1 justify-end">
+                      <button
+                        onClick={() => openDocMove(d)}
+                        className="btn btn-outline btn-sm"
+                        title="Move to another client"
+                        data-testid={`client-doc-move-${d.id}`}
+                      >
+                        <ArrowRightLeft size={13}/>
+                      </button>
                       <button onClick={() => downloadFile(`${API}/documents/${d.id}/pdf`)} className="btn btn-outline btn-sm" title="Download PDF" data-testid={`client-doc-pdf-${d.id}`}>
                         <FileText size={13}/>
                       </button>
@@ -227,6 +287,58 @@ const ClientDetailPage = () => {
           </table>
         </div>
       </div>
+
+      <Modal
+        open={!!docMove}
+        onClose={() => setDocMove(null)}
+        title={docMove ? `Move document ${docMove.doc_number} to another client` : ''}
+        testId="move-document-modal"
+      >
+        <div className="space-y-3">
+          <div className="text-sm" style={{ color: 'var(--cc-text-muted)' }}>
+            Currently linked to <span className="font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{c.name}</span>. Pick a new client below — or unlink the document entirely.
+          </div>
+          <input
+            className="input"
+            value={docMoveQuery}
+            onChange={(e) => setDocMoveQuery(e.target.value)}
+            placeholder="Search client by name, company, phone, email…"
+            autoFocus
+            data-testid="move-document-search"
+          />
+          <div className="rounded-lg border max-h-80 overflow-y-auto" style={{ borderColor: 'var(--cc-border)' }}>
+            <button
+              type="button"
+              onClick={() => performDocMove(null)}
+              disabled={docMoveBusy}
+              className="w-full text-left px-3 py-2 text-sm italic hover:bg-gray-50 border-b"
+              style={{ color: 'var(--cc-text-muted)', borderColor: 'var(--cc-border)' }}
+              data-testid="move-document-unassign"
+            >
+              — Unlink client (leave blank) —
+            </button>
+            {docMoveFiltered.length === 0 ? (
+              <div className="px-3 py-4 text-sm text-center" style={{ color: 'var(--cc-text-muted)' }}>No other clients match.</div>
+            ) : docMoveFiltered.map((x) => (
+              <button
+                key={x.id}
+                type="button"
+                onClick={() => performDocMove(x.id)}
+                disabled={docMoveBusy}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b last:border-b-0"
+                style={{ borderColor: 'var(--cc-border)' }}
+                data-testid={`move-document-target-${x.id}`}
+              >
+                <div className="font-medium">{x.name}{x.company ? <span className="font-normal text-xs ml-1.5" style={{ color: 'var(--cc-text-muted)' }}>· {x.company}</span> : null}</div>
+                {(x.phone || x.email) && (
+                  <div className="text-xs" style={{ color: 'var(--cc-text-muted)' }}>{x.phone}{x.phone && x.email ? ' · ' : ''}{x.email}</div>
+                )}
+              </button>
+            ))}
+          </div>
+          {docMoveBusy && <div className="text-xs text-center" style={{ color: 'var(--cc-text-muted)' }}>Moving…</div>}
+        </div>
+      </Modal>
 
       <Modal
         open={editOpen}

@@ -23,6 +23,10 @@ const ArchitectDetailPage = () => {
   const [editForm, setEditForm] = useState({ name: '', phone: '', email: '', firm: '' });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
+  // Documents move modal — re-assigns a confirmed/draft document to a different architect
+  const [docMove, setDocMove] = useState(null); // {doc, query, busy}
+  const [docMoveQuery, setDocMoveQuery] = useState('');
+  const [docMoveBusy, setDocMoveBusy] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -95,6 +99,56 @@ const ArchitectDetailPage = () => {
     setEditError('');
     setEditOpen(true);
   };
+
+  // Open the document-move modal (lazy-loads architect list if needed).
+  const openDocMove = async (d) => {
+    setDocMove(d);
+    setDocMoveQuery('');
+    if (allArchitects.length === 0) {
+      try {
+        const r = await api.get('/architects');
+        setAllArchitects(r.data);
+      } catch (e) { logger.warn('Failed to load architects for doc move:', e); }
+    }
+  };
+
+  // Reassign the document to a different architect via PUT /documents/:id.
+  // We send the full existing payload + the new architect_id so the server
+  // doesn't blank out other fields.
+  const performDocMove = async (targetArchitectId) => {
+    if (!docMove) return;
+    setDocMoveBusy(true);
+    try {
+      const payload = {
+        doc_type_id: docMove.doc_type_id,
+        doc_number: docMove.doc_number || '',
+        document_date: docMove.document_date || null,
+        client_id: docMove.client_id || null,
+        architect_id: targetArchitectId || null,
+        plot_place: docMove.plot_place || '',
+        phase: docMove.phase || '',
+        number_field: docMove.number_field || '',
+        remark: docMove.remark || '',
+        contact_person: docMove.contact_person || '',
+        mobile: docMove.mobile || '',
+        other_comments: docMove.other_comments || '',
+        update_date: docMove.update_date || null,
+      };
+      await api.put(`/documents/${docMove.id}`, payload);
+      setDocMove(null);
+      load();
+    } catch (e) {
+      // eslint-disable-next-line no-alert
+      alert(e?.response?.data?.detail || 'Failed to move document');
+    } finally { setDocMoveBusy(false); }
+  };
+
+  const docMoveFilteredTargets = (docMoveQuery.trim()
+    ? moveTargets.filter((x) => {
+        const q = docMoveQuery.toLowerCase();
+        return ['name', 'firm', 'phone', 'email'].some((k) => (x[k] || '').toLowerCase().includes(q));
+      })
+    : moveTargets);
 
   const submitEdit = async (e) => {
     e.preventDefault();
@@ -272,6 +326,14 @@ const ArchitectDetailPage = () => {
                   <td className="text-xs font-mono-data">{(d.document_date || '').slice(0, 10) || '—'}</td>
                   <td>
                     <div className="flex gap-1 justify-end">
+                      <button
+                        onClick={() => openDocMove(d)}
+                        className="btn btn-outline btn-sm"
+                        title="Move to another architect"
+                        data-testid={`architect-doc-move-${d.id}`}
+                      >
+                        <ArrowRightLeft size={13}/>
+                      </button>
                       <button onClick={() => downloadFile(`${API}/documents/${d.id}/pdf`)} className="btn btn-outline btn-sm" title="Download PDF" data-testid={`architect-doc-pdf-${d.id}`}>
                         <FileText size={13}/>
                       </button>
@@ -333,6 +395,58 @@ const ArchitectDetailPage = () => {
             ))}
           </div>
           {moveBusy && <div className="text-xs text-center" style={{ color: 'var(--cc-text-muted)' }}>Moving…</div>}
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!docMove}
+        onClose={() => setDocMove(null)}
+        title={docMove ? `Move document ${docMove.doc_number} to another architect` : ''}
+        testId="move-document-modal"
+      >
+        <div className="space-y-3">
+          <div className="text-sm" style={{ color: 'var(--cc-text-muted)' }}>
+            Currently linked to <span className="font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{a.name}</span>. Pick a new architect below — or unlink the document entirely.
+          </div>
+          <input
+            className="input"
+            value={docMoveQuery}
+            onChange={(e) => setDocMoveQuery(e.target.value)}
+            placeholder="Search architect by name, firm, phone, email…"
+            autoFocus
+            data-testid="move-document-search"
+          />
+          <div className="rounded-lg border max-h-80 overflow-y-auto" style={{ borderColor: 'var(--cc-border)' }}>
+            <button
+              type="button"
+              onClick={() => performDocMove(null)}
+              disabled={docMoveBusy}
+              className="w-full text-left px-3 py-2 text-sm italic hover:bg-gray-50 border-b"
+              style={{ color: 'var(--cc-text-muted)', borderColor: 'var(--cc-border)' }}
+              data-testid="move-document-unassign"
+            >
+              — Unlink architect (leave blank) —
+            </button>
+            {docMoveFilteredTargets.length === 0 ? (
+              <div className="px-3 py-4 text-sm text-center" style={{ color: 'var(--cc-text-muted)' }}>No other architects match.</div>
+            ) : docMoveFilteredTargets.map((x) => (
+              <button
+                key={x.id}
+                type="button"
+                onClick={() => performDocMove(x.id)}
+                disabled={docMoveBusy}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b last:border-b-0"
+                style={{ borderColor: 'var(--cc-border)' }}
+                data-testid={`move-document-target-${x.id}`}
+              >
+                <div className="font-medium">{x.name}{x.firm ? <span className="font-normal text-xs ml-1.5" style={{ color: 'var(--cc-text-muted)' }}>· {x.firm}</span> : null}</div>
+                {(x.phone || x.email) && (
+                  <div className="text-xs" style={{ color: 'var(--cc-text-muted)' }}>{x.phone}{x.phone && x.email ? ' · ' : ''}{x.email}</div>
+                )}
+              </button>
+            ))}
+          </div>
+          {docMoveBusy && <div className="text-xs text-center" style={{ color: 'var(--cc-text-muted)' }}>Moving…</div>}
         </div>
       </Modal>
 
