@@ -6,7 +6,7 @@ import { downloadFile } from '../lib/download';
 import Modal from '../components/Modal';
 import InlinePicker from '../components/InlinePicker';
 import { logger } from '../lib/logger';
-import { Plus, Search, FileText, Pencil, Trash2, Archive, ArchiveRestore, FileSignature, CheckCircle2, RotateCcw, ArrowUp, ArrowDown, Link2, PauseCircle, XCircle } from 'lucide-react';
+import { Plus, Search, FileText, Pencil, Trash2, Archive, ArchiveRestore, FileSignature, CheckCircle2, RotateCcw, ArrowUp, ArrowDown, Link2, PauseCircle, XCircle, ArrowRightLeft } from 'lucide-react';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -253,7 +253,14 @@ const DocumentsPage = () => {
     const auditPrefixes = ['AUD-OFR', 'AUD-RPT'];
     const type = types.find((t) => t.id === d.doc_type_id);
     const isAuditDoc = type && auditPrefixes.includes((type.prefix || '').toUpperCase());
-    setLinkKind(isAuditDoc ? 'audit' : 'project');
+    // For "Move" (already-confirmed doc), keep the existing link kind.
+    if (d.status === 'confirmed' && d.linked_audit_id) {
+      setLinkKind('audit');
+    } else if (d.status === 'confirmed' && d.linked_project_id) {
+      setLinkKind('project');
+    } else {
+      setLinkKind(isAuditDoc ? 'audit' : 'project');
+    }
     setConfirmModal(d);
     setProjectQuery('');
     try {
@@ -268,6 +275,7 @@ const DocumentsPage = () => {
 
   const performConfirm = async (targetId) => {
     if (!confirmModal) return;
+    const wasConfirmed = confirmModal.status === 'confirmed';
     setConfirmBusy(true);
     try {
       const payload = targetId
@@ -276,10 +284,12 @@ const DocumentsPage = () => {
       await api.post(`/documents/${confirmModal.id}/confirm`, payload);
       setConfirmModal(null);
       load();
-      const linkLabel = targetId ? `Order confirmed and linked to ${linkKind}` : 'Order confirmed';
+      const linkLabel = wasConfirmed
+        ? (targetId ? `Moved to new ${linkKind}` : 'Unlinked')
+        : (targetId ? `Order confirmed and linked to ${linkKind}` : 'Order confirmed');
       showToast(linkLabel);
     } catch (e) {
-      showToast(e?.response?.data?.detail || 'Failed to confirm', 'error');
+      showToast(e?.response?.data?.detail || 'Failed', 'error');
     } finally { setConfirmBusy(false); }
   };
 
@@ -504,6 +514,11 @@ const DocumentsPage = () => {
                           <CheckCircle2 size={13}/>
                         </button>
                       )}
+                      {st === 'confirmed' && (d.linked_project_id || d.linked_audit_id) && (
+                        <button onClick={() => openConfirm(d)} className="btn btn-outline btn-sm" title="Move to another project / audit" data-testid={`btn-move-${d.id}`}>
+                          <ArrowRightLeft size={13}/>
+                        </button>
+                      )}
                       {st !== 'on_hold' && (
                         <button onClick={() => setHold(d)} className="btn btn-sm" style={{ background: '#F59E0B', color: '#fff', border: '1px solid #F59E0B' }} title="Put on hold" data-testid={`btn-hold-${d.id}`}>
                           <PauseCircle size={13}/>
@@ -632,7 +647,7 @@ const DocumentsPage = () => {
       <Modal
         open={!!confirmModal}
         onClose={() => setConfirmModal(null)}
-        title={confirmModal ? `Confirm order for ${confirmModal.doc_number}` : ''}
+        title={confirmModal ? (confirmModal.status === 'confirmed' ? `Move ${confirmModal.doc_number} to another ${linkKind}` : `Confirm order for ${confirmModal.doc_number}`) : ''}
         testId="confirm-order-modal"
         maxWidth="640px"
       >
