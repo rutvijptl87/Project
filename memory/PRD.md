@@ -406,6 +406,18 @@ Three independent UI/UX requests delivered in one batch.
 
 Frontend visual verification — account user lands on `/`, sees correct nav and hidden chart; admin user still sees compact chart at 245px card height.
 
+### Session 20b — Account role refinement
+User asked for two follow-ups on the account role:
+1. **Hide SITE VISITS (7D) KPI card** on the dashboard for account users → `DashboardKPI` now accepts a `hideSiteVisits` prop, drops the grid from `md:grid-cols-5` to `md:grid-cols-4`, and skips the SV card.
+2. **Make Projects fully editable** for account users (Create/Edit/Delete). Everything else (audits/clients/architects/payments/site visits) stays read-only/blocked.
+
+**Backend (`/app/backend/auth.py`)** — middleware now permits POST/PUT/DELETE on `/api/projects` and `/api/projects/{id}/*` for the account role.
+
+**Frontend** — `App.js` re-enables `/projects/new` and `/projects/:id/edit` for account; `Navbar.jsx` shows "New Project" button (still no Record Payment); `ProjectsPage.jsx` shows Edit/Archive/Delete/Invoice row buttons (no Pay) and the New Project + Export Excel header buttons (Import Historic stays hidden).
+
+**Verified:** account user can POST → 200 (created CC-0145), PUT → 200, DELETE → 200. Still blocked: POST /payments → 403, POST /audits → 403, POST /clients → 403, GET /site-visits → 403. UI screenshot confirms 4-column KPI grid and full project action buttons.
+
+
 - `GET /api/document-types` lists 18 types (no AUD-OFR).
 - `POST /api/audits` with `{audit_offer:"MANUAL/AUD/2026/001"}` stores value as-is.
 - Settings → User Management page HTML contains no "AUD-OFR" / "Audit Offer" strings.

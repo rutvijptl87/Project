@@ -72,8 +72,8 @@ const ProtectedApp = () => {
                   {!isEngineer && <Route path="/clients/:id" element={<ClientDetailPage />} />}
                   {!isEngineer && <Route path="/architects" element={<ArchitectsPage />} />}
                   {!isEngineer && <Route path="/architects/:id" element={<ArchitectDetailPage />} />}
-                  {!isEngineer && !isAccount && <Route path="/projects/new" element={<ProjectFormPage />} />}
-                  {!isEngineer && !isAccount && <Route path="/projects/:id/edit" element={<ProjectFormPage />} />}
+                  {!isEngineer && <Route path="/projects/new" element={<ProjectFormPage />} />}
+                  {!isEngineer && <Route path="/projects/:id/edit" element={<ProjectFormPage />} />}
                   <Route path="/projects/:id" element={<ProjectDetailPage />} />
                   <Route path="/projects" element={<ProjectsPage showPayModal={showPayModal} setShowPayModal={setShowPayModal} />} />
                   {!isEngineer && !isAccount && <Route path="/settings" element={<SettingsPage />} />}

@@ -26,11 +26,11 @@ const KPICard = ({ label, value, icon: Icon, accent, delay = 0, testId, sub }) =
   </div>
 );
 
-const DashboardKPI = ({ stats, svStats }) => {
+const DashboardKPI = ({ stats, svStats, hideSiteVisits = false }) => {
   if (!stats) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-        {[0, 1, 2, 3, 4].map((i) => (
+      <div className={`grid grid-cols-1 ${hideSiteVisits ? 'md:grid-cols-4' : 'md:grid-cols-5'} gap-4 mb-6`}>
+        {(hideSiteVisits ? [0, 1, 2, 3] : [0, 1, 2, 3, 4]).map((i) => (
           <div key={i} className="card p-5 animate-pulse h-[110px]" />
         ))}
       </div>
@@ -43,7 +43,7 @@ const DashboardKPI = ({ stats, svStats }) => {
     : 'Loading…';
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+    <div className={`grid grid-cols-2 ${hideSiteVisits ? 'md:grid-cols-4' : 'md:grid-cols-5'} gap-4 mb-6`}>
       <KPICard
         label="Total Quoted"
         value={formatINR(stats.total_quoted)}
@@ -76,25 +76,27 @@ const DashboardKPI = ({ stats, svStats }) => {
         delay={240}
         testId="kpi-total-projects"
       />
-      <div className="card p-5 kpi-enter" style={{ animationDelay: '320ms' }} data-testid="kpi-site-visits">
-        <div className="flex items-start justify-between mb-3">
-          <Link to="/site-visits" className="text-xs font-semibold tracking-[0.12em] uppercase hover:underline" style={{ color: 'var(--cc-text-muted)' }}>Site Visits (7d)</Link>
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#0E749020' }}>
-            <ClipboardList size={16} color="#0E7490" />
+      {!hideSiteVisits && (
+        <div className="card p-5 kpi-enter" style={{ animationDelay: '320ms' }} data-testid="kpi-site-visits">
+          <div className="flex items-start justify-between mb-3">
+            <Link to="/site-visits" className="text-xs font-semibold tracking-[0.12em] uppercase hover:underline" style={{ color: 'var(--cc-text-muted)' }}>Site Visits (7d)</Link>
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#0E749020' }}>
+              <ClipboardList size={16} color="#0E7490" />
+            </div>
           </div>
-        </div>
-        <div className="font-mono-data text-2xl md:text-3xl font-semibold tracking-tight" style={{ color: 'var(--cc-dark-green)' }}>
-          {svValue}
-        </div>
-        {svStats && (
-          <div className="mt-1.5 text-[11px] flex items-center gap-1 flex-wrap" data-testid="kpi-site-visits-sub">
-            <Link to="/site-visits?status=draft" className="hover:underline font-semibold" style={{ color: svStats.draft > 0 ? '#92400E' : 'var(--cc-text-muted)' }} data-testid="kpi-sv-draft-link">{svStats.draft} draft</Link>
-            <span style={{ color: 'var(--cc-text-muted)' }}>·</span>
-            <Link to="/site-visits?status=submitted" className="hover:underline font-semibold" style={{ color: svStats.submitted > 0 ? '#065F46' : 'var(--cc-text-muted)' }} data-testid="kpi-sv-submitted-link">{svStats.submitted} submitted</Link>
-            <span style={{ color: 'var(--cc-text-muted)' }}>(last {svStats.days || 7} days)</span>
+          <div className="font-mono-data text-2xl md:text-3xl font-semibold tracking-tight" style={{ color: 'var(--cc-dark-green)' }}>
+            {svValue}
           </div>
-        )}
-      </div>
+          {svStats && (
+            <div className="mt-1.5 text-[11px] flex items-center gap-1 flex-wrap" data-testid="kpi-site-visits-sub">
+              <Link to="/site-visits?status=draft" className="hover:underline font-semibold" style={{ color: svStats.draft > 0 ? '#92400E' : 'var(--cc-text-muted)' }} data-testid="kpi-sv-draft-link">{svStats.draft} draft</Link>
+              <span style={{ color: 'var(--cc-text-muted)' }}>·</span>
+              <Link to="/site-visits?status=submitted" className="hover:underline font-semibold" style={{ color: svStats.submitted > 0 ? '#065F46' : 'var(--cc-text-muted)' }} data-testid="kpi-sv-submitted-link">{svStats.submitted} submitted</Link>
+              <span style={{ color: 'var(--cc-text-muted)' }}>(last {svStats.days || 7} days)</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

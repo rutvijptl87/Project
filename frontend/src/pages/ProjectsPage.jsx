@@ -219,14 +219,19 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
             </Link>
           </>}
           {!showArchived && isAccount && (
-            <button onClick={handleExport} className="btn btn-outline" data-testid="btn-export-excel">
-              <Download size={15} /> Export Excel
-            </button>
+            <>
+              <button onClick={handleExport} className="btn btn-outline" data-testid="btn-export-excel">
+                <Download size={15} /> Export Excel
+              </button>
+              <Link to="/projects/new" className="btn btn-primary" data-testid="btn-new-project">
+                <Plus size={15} /> New Project
+              </Link>
+            </>
           )}
         </div>
       </div>
 
-      {!showArchived && !isEngineer && <DashboardKPI stats={stats} svStats={svStats} />}
+      {!showArchived && !isEngineer && <DashboardKPI stats={stats} svStats={svStats} hideSiteVisits={isAccount} />}
       {!showArchived && !isEngineer && !isAccount && <MonthlyRevenueChart />}
 
       <form onSubmit={handleSearch} className="card p-3 mb-4 flex gap-2" data-testid="search-form">
@@ -397,9 +402,20 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
                             </>
                           )}
                           {isAccount && (
-                            <button onClick={() => handleInvoice(p.id)} className="btn btn-outline btn-sm" title="Download Invoice PDF" data-testid={`btn-invoice-${p.project_code}`}>
-                              <FileText size={13}/>
-                            </button>
+                            <>
+                              <button onClick={() => handleInvoice(p.id)} className="btn btn-outline btn-sm" title="Download Invoice PDF" data-testid={`btn-invoice-${p.project_code}`}>
+                                <FileText size={13}/>
+                              </button>
+                              <button onClick={() => navigate(`/projects/${p.id}/edit`)} className="btn btn-outline btn-sm" title="Edit" data-testid={`btn-edit-${p.project_code}`}>
+                                <Pencil size={13}/>
+                              </button>
+                              <button onClick={() => handleArchive(p.id, p.project_code)} className="btn btn-outline btn-sm" title="Archive" data-testid={`btn-archive-${p.project_code}`}>
+                                <Archive size={13}/>
+                              </button>
+                              <button onClick={() => handleDelete(p.id, p.project_code)} className="btn btn-danger btn-sm" title="Delete permanently" data-testid={`btn-delete-${p.project_code}`}>
+                                <Trash2 size={13}/>
+                              </button>
+                            </>
                           )}
                         </>
                       )}

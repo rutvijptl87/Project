@@ -49,7 +49,11 @@ const Navbar = ({ onRecordPayment }) => {
             <Link to="/site-visits/new" className="btn btn-accent btn-sm" data-testid="btn-nav-new-site-visit">
               <Plus size={14} /> <span className="hidden sm:inline">New Inspection</span>
             </Link>
-          ) : isAccount ? null : (
+          ) : isAccount ? (
+            <Link to="/projects/new" className="btn btn-outline hidden sm:inline-flex" data-testid="btn-nav-new-project">
+              <Plus size={16} /> New Project
+            </Link>
+          ) : (
             <>
               <Link to="/projects/new" className="btn btn-outline hidden sm:inline-flex" data-testid="btn-nav-new-project">
                 <Plus size={16} /> New Project
