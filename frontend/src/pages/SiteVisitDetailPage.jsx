@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate, Navigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { ArrowLeft, FileText, Edit3, Trash2, Share2, ImageIcon, ClipboardList, MapPin, Calendar, User, Pin, PinOff, Phone, MessageCircle, IndianRupee, ExternalLink } from 'lucide-react';
 import { useAuth } from '../lib/auth';
@@ -89,6 +89,7 @@ const SiteVisitDetailPage = () => {
     return digits ? `https://wa.me/${digits}?text=${msg}` : `https://wa.me/?text=${msg}`;
   };
 
+  if (user?.role === 'account') return <Navigate to="/" replace />;
   if (loading) return <div className="max-w-[1100px] mx-auto px-4 py-8 text-sm" style={{ color: 'var(--cc-text-muted)' }}>Loading…</div>;
   if (err || !v) return (
     <div className="max-w-[1100px] mx-auto px-4 py-8">
@@ -98,6 +99,9 @@ const SiteVisitDetailPage = () => {
   );
 
   const isEngineer = user?.role === 'engineer';
+  const isAccount = user?.role === 'account';
+  const canDelete = !isEngineer && !isAccount;
+  const canEdit = !isAccount;
 
   return (
     <div className="max-w-[1100px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8" data-testid="site-visit-detail-page">
@@ -135,11 +139,11 @@ const SiteVisitDetailPage = () => {
             <button onClick={() => setShowShare(true)} className="btn btn-accent" data-testid="btn-share-whatsapp">
               <Share2 size={14}/> Share via WhatsApp
             </button>
-            {!isEngineer && (
-              <>
-                <Link to={`/site-visits/${v.id}/edit`} className="btn btn-outline" data-testid="btn-edit-visit"><Edit3 size={14}/> Edit</Link>
-                <button onClick={onDelete} className="btn btn-outline" style={{ color: '#B91C1C' }} data-testid="btn-delete-visit"><Trash2 size={14}/> Delete</button>
-              </>
+            {canEdit && (
+              <Link to={`/site-visits/${v.id}/edit`} className="btn btn-outline" data-testid="btn-edit-visit"><Edit3 size={14}/> Edit</Link>
+            )}
+            {canDelete && (
+              <button onClick={onDelete} className="btn btn-outline" style={{ color: '#B91C1C' }} data-testid="btn-delete-visit"><Trash2 size={14}/> Delete</button>
             )}
           </div>
         </div>

@@ -149,6 +149,19 @@ async def get_current_user(request: Request) -> dict:
     user = await _db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    # Account role is read-only — block any non-GET request except a small
+    # allow-list (own password / username changes).
+    if user.get("role") == "account" and request.method.upper() not in ("GET", "HEAD", "OPTIONS"):
+        allowed_paths = {
+            "/api/auth/change-password",
+            "/api/auth/change-username",
+            "/api/auth/logout",
+        }
+        if request.url.path not in allowed_paths:
+            raise HTTPException(status_code=403, detail="Account users have read-only access")
+    # Block Site Visits module entirely for the account role.
+    if user.get("role") == "account" and request.url.path.startswith("/api/site-visits"):
+        raise HTTPException(status_code=403, detail="Site Visits module is not available for your role")
     current_user_var.set(user)
     return user
 
@@ -314,8 +327,8 @@ async def create_user(body: UserCreateIn, _: dict = Depends(require_admin)):
     username = body.username.strip().lower()
     if await _db.users.find_one({"username": username}):
         raise HTTPException(status_code=400, detail="Username already exists")
-    if body.role not in ("admin", "staff", "engineer"):
-        raise HTTPException(status_code=400, detail="Role must be 'admin', 'staff' or 'engineer'")
+    if body.role not in ("admin", "staff", "engineer", "account"):
+        raise HTTPException(status_code=400, detail="Role must be 'admin', 'staff', 'engineer' or 'account'")
     doc = {
         "id": _new_id(),
         "username": username,
@@ -348,8 +361,8 @@ async def update_user(user_id: str, body: UserUpdateIn, current: dict = Depends(
     if body.name is not None:
         update["name"] = body.name
     if body.role is not None:
-        if body.role not in ("admin", "staff", "engineer"):
-            raise HTTPException(400, "Role must be 'admin', 'staff' or 'engineer'")
+        if body.role not in ("admin", "staff", "engineer", "account"):
+            raise HTTPException(400, "Role must be 'admin', 'staff', 'engineer' or 'account'")
         # Prevent demoting the only remaining admin
         if target.get("role") == "admin" and body.role != "admin":
             admin_count = await _db.users.count_documents({"role": "admin"})

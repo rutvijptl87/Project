@@ -212,6 +212,7 @@ const UserManagementCard = () => {
             <select className="select md:col-span-1" value={newRole} onChange={(e) => setNewRole(e.target.value)} data-testid="add-user-role">
               <option value="staff">Staff</option>
               <option value="engineer">Site Engineer</option>
+              <option value="account">Account (Read-only)</option>
               <option value="admin">Admin</option>
             </select>
             <button type="submit" disabled={adding} className="btn btn-primary md:col-span-1" data-testid="btn-add-user">
@@ -247,6 +248,7 @@ const UserManagementCard = () => {
                         >
                           <option value="staff">Staff</option>
                           <option value="engineer">Engineer</option>
+                          <option value="account">Account</option>
                           <option value="admin">Admin</option>
                         </select>
                       ) : (

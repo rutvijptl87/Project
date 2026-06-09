@@ -35,6 +35,7 @@ const ProtectedApp = () => {
   if (loading) return <SplashLoading />;
 
   const isEngineer = user?.role === 'engineer';
+  const isAccount = user?.role === 'account';
 
   return (
     <Routes>
@@ -57,11 +58,11 @@ const ProtectedApp = () => {
                     <Route path="/" element={<ProjectsPage showPayModal={showPayModal} setShowPayModal={setShowPayModal} />} />
                   )}
 
-                  {/* Site visits — everyone */}
-                  <Route path="/site-visits" element={<SiteVisitsPage />} />
-                  <Route path="/site-visits/new" element={<SiteVisitFormPage />} />
-                  <Route path="/site-visits/:id" element={<SiteVisitDetailPage />} />
-                  <Route path="/site-visits/:id/edit" element={<SiteVisitFormPage />} />
+                  {/* Site visits — everyone except account role */}
+                  {!isAccount && <Route path="/site-visits" element={<SiteVisitsPage />} />}
+                  {!isAccount && <Route path="/site-visits/new" element={<SiteVisitFormPage />} />}
+                  {!isAccount && <Route path="/site-visits/:id" element={<SiteVisitDetailPage />} />}
+                  {!isAccount && <Route path="/site-visits/:id/edit" element={<SiteVisitFormPage />} />}
 
                   {/* Engineer can also browse projects read-only — admin/staff get full app */}
                   {!isEngineer && <Route path="/audits" element={<AuditsPage />} />}
@@ -71,11 +72,11 @@ const ProtectedApp = () => {
                   {!isEngineer && <Route path="/clients/:id" element={<ClientDetailPage />} />}
                   {!isEngineer && <Route path="/architects" element={<ArchitectsPage />} />}
                   {!isEngineer && <Route path="/architects/:id" element={<ArchitectDetailPage />} />}
-                  {!isEngineer && <Route path="/projects/new" element={<ProjectFormPage />} />}
-                  {!isEngineer && <Route path="/projects/:id/edit" element={<ProjectFormPage />} />}
+                  {!isEngineer && !isAccount && <Route path="/projects/new" element={<ProjectFormPage />} />}
+                  {!isEngineer && !isAccount && <Route path="/projects/:id/edit" element={<ProjectFormPage />} />}
                   <Route path="/projects/:id" element={<ProjectDetailPage />} />
                   <Route path="/projects" element={<ProjectsPage showPayModal={showPayModal} setShowPayModal={setShowPayModal} />} />
-                  {!isEngineer && <Route path="/settings" element={<SettingsPage />} />}
+                  {!isEngineer && !isAccount && <Route path="/settings" element={<SettingsPage />} />}
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="*" element={<Navigate to={isEngineer ? '/site-visits' : '/'} replace />} />
                 </Routes>

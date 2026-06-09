@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { formatINR } from '../lib/format';
 import { TrendingUp } from 'lucide-react';
+import { useAuth } from '../lib/auth';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
@@ -41,22 +42,26 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
-const CHART_MARGIN = { top: 10, right: 10, left: 0, bottom: 10 };
-const AXIS_TICK = { fontSize: 11, fill: '#6B7280' };
+const CHART_MARGIN = { top: 4, right: 6, left: 0, bottom: 4 };
+const AXIS_TICK = { fontSize: 9, fill: '#6B7280' };
 const AXIS_LINE = { stroke: '#E5E7EB' };
 const TOOLTIP_CURSOR = { fill: 'rgba(16, 185, 129, 0.08)' };
-const LEGEND_STYLE = { fontSize: 11 };
+const LEGEND_STYLE = { fontSize: 10 };
 const BAR_RADIUS_FLAT = [0, 0, 0, 0];
 const BAR_RADIUS_TOP = [4, 4, 0, 0];
-const CONTAINER_STYLE = { width: '100%', height: 280 };
+const CONTAINER_STYLE = { width: '100%', height: 160 };
 
 const MonthlyRevenueChart = () => {
+  const { user } = useAuth();
   const [data, setData] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState(12);
 
+  const isAccount = user?.role === 'account';
+
   useEffect(() => {
+    if (isAccount) { setLoading(false); return; }
     let cancelled = false;
     setLoading(true);
     api.get('/dashboard/monthly-revenue', { params: { months: range } })
@@ -72,24 +77,23 @@ const MonthlyRevenueChart = () => {
       .catch(() => { setData([]); setTotal(0); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [range]);
+  }, [range, isAccount]);
+
+  if (isAccount) return null;
 
   const hasAny = data.some((d) => (d.total || 0) > 0);
 
   return (
-    <div className="card p-5 mb-6" data-testid="monthly-revenue-card">
+    <div className="card p-3 mb-4" data-testid="monthly-revenue-card">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
-          <h2 className="font-head text-lg font-bold flex items-center gap-2" style={{ color: 'var(--cc-dark-green)' }}>
-            <TrendingUp size={18}/> Monthly Revenue
+          <h2 className="font-head text-sm font-bold flex items-center gap-2" style={{ color: 'var(--cc-dark-green)' }}>
+            <TrendingUp size={14}/> Monthly Revenue
           </h2>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--cc-text-muted)' }}>
-            Payments received from Projects and Audits per month.
-          </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <div className="text-right">
-            <div className="text-[10px] uppercase tracking-widest" style={{ color: 'var(--cc-text-muted)' }}>Last {range} months</div>
+            <div className="text-[10px] uppercase tracking-widest" style={{ color: 'var(--cc-text-muted)' }}>Last {range} mo</div>
             <div className="font-mono-data text-lg font-semibold" style={{ color: 'var(--cc-dark-green)' }} data-testid="monthly-revenue-total">{formatINR(total)}</div>
           </div>
           <select
@@ -97,7 +101,7 @@ const MonthlyRevenueChart = () => {
             value={range}
             onChange={(e) => setRange(parseInt(e.target.value, 10))}
             data-testid="monthly-revenue-range"
-            style={{ width: 130 }}
+            style={{ width: 110, fontSize: 11 }}
           >
             <option value={6}>Last 6 months</option>
             <option value={12}>Last 12 months</option>
@@ -118,7 +122,7 @@ const MonthlyRevenueChart = () => {
             <BarChart data={data} margin={CHART_MARGIN}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" vertical={false} />
               <XAxis dataKey="label" tick={AXIS_TICK} axisLine={AXIS_LINE} tickLine={false} />
-              <YAxis tick={AXIS_TICK} axisLine={AXIS_LINE} tickLine={false} tickFormatter={compactINR} width={70} />
+              <YAxis tick={AXIS_TICK} axisLine={AXIS_LINE} tickLine={false} tickFormatter={compactINR} width={48} />
               <Tooltip content={<CustomTooltip />} cursor={TOOLTIP_CURSOR} />
               <Legend wrapperStyle={LEGEND_STYLE} iconType="circle" />
               <Bar dataKey="project_amount" stackId="a" name="Projects" fill="#10B981" radius={BAR_RADIUS_FLAT} />

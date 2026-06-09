@@ -7,6 +7,7 @@ import NotificationBell from './NotificationBell';
 const Navbar = ({ onRecordPayment }) => {
   const { user, logout } = useAuth();
   const isEngineer = user?.role === 'engineer';
+  const isAccount = user?.role === 'account';
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b" style={{ borderColor: 'var(--cc-border)' }} data-testid="main-navbar">
@@ -31,10 +32,14 @@ const Navbar = ({ onRecordPayment }) => {
               <NavLink to="/" end className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-projects">Projects</NavLink>
               <NavLink to="/audits" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-audits">Audits</NavLink>
               <NavLink to="/documents" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-documents">Documents</NavLink>
-              <NavLink to="/site-visits" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-site-visits"><ClipboardList size={14} className="inline mr-1"/>Site Visits</NavLink>
+              {!isAccount && (
+                <NavLink to="/site-visits" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-site-visits"><ClipboardList size={14} className="inline mr-1"/>Site Visits</NavLink>
+              )}
               <NavLink to="/clients" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-clients">Clients</NavLink>
               <NavLink to="/architects" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-architects">Architects</NavLink>
-              <NavLink to="/settings" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-settings"><SettingsIcon size={14} className="inline mr-1" />Settings</NavLink>
+              {!isAccount && (
+                <NavLink to="/settings" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-settings"><SettingsIcon size={14} className="inline mr-1" />Settings</NavLink>
+              )}
             </>
           )}
         </nav>
@@ -44,7 +49,7 @@ const Navbar = ({ onRecordPayment }) => {
             <Link to="/site-visits/new" className="btn btn-accent btn-sm" data-testid="btn-nav-new-site-visit">
               <Plus size={14} /> <span className="hidden sm:inline">New Inspection</span>
             </Link>
-          ) : (
+          ) : isAccount ? null : (
             <>
               <Link to="/projects/new" className="btn btn-outline hidden sm:inline-flex" data-testid="btn-nav-new-project">
                 <Plus size={16} /> New Project
@@ -66,6 +71,7 @@ const Navbar = ({ onRecordPayment }) => {
                 <span className="text-xs font-mono-data">{user.username}</span>
                 {user.role === 'admin' && <span className="badge badge-settled" style={{ fontSize: '9px', padding: '1px 6px' }}>admin</span>}
                 {user.role === 'engineer' && <span className="badge badge-pending" style={{ fontSize: '9px', padding: '1px 6px', background: '#0E7490', color: 'white' }}>engineer</span>}
+                {user.role === 'account' && <span className="badge badge-pending" style={{ fontSize: '9px', padding: '1px 6px', background: '#7C3AED', color: 'white' }}>account</span>}
               </Link>
               <button
                 onClick={logout}

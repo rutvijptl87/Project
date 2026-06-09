@@ -38,6 +38,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
   const { byUsername } = useUserDirectory();
   const { user } = useAuth();
   const isEngineer = user?.role === 'engineer';
+  const isAccount = user?.role === 'account';
   const SORTABLE_COLUMNS = isEngineer ? SORTABLE_COLUMNS_ENGINEER : SORTABLE_COLUMNS_FULL;
   const [projects, setProjects] = useState([]);
   const [stats, setStats] = useState(null);
@@ -205,7 +206,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
           >
             <Archive size={15}/> {showArchived ? 'Back to Active' : 'View Archived'}
           </button>
-          {!showArchived && <>
+          {!showArchived && !isAccount && <>
             <button onClick={handleExport} className="btn btn-outline" data-testid="btn-export-excel">
               <Download size={15} /> Export Excel
             </button>
@@ -217,11 +218,16 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
               <Plus size={15} /> New Project
             </Link>
           </>}
+          {!showArchived && isAccount && (
+            <button onClick={handleExport} className="btn btn-outline" data-testid="btn-export-excel">
+              <Download size={15} /> Export Excel
+            </button>
+          )}
         </div>
       </div>
 
       {!showArchived && !isEngineer && <DashboardKPI stats={stats} svStats={svStats} />}
-      {!showArchived && !isEngineer && <MonthlyRevenueChart />}
+      {!showArchived && !isEngineer && !isAccount && <MonthlyRevenueChart />}
 
       <form onSubmit={handleSearch} className="card p-3 mb-4 flex gap-2" data-testid="search-form">
         <div className="flex-1 relative">
@@ -371,7 +377,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
                           <button onClick={() => navigate(`/projects/${p.id}`)} className="btn btn-outline btn-sm" title="View" data-testid={`btn-view-${p.project_code}`}>
                             <Eye size={13}/> View
                           </button>
-                          {!isEngineer && (
+                          {!isEngineer && !isAccount && (
                             <>
                               <button onClick={() => openPay(p.id)} className="btn btn-accent btn-sm" title="Record Payment" data-testid={`btn-pay-${p.project_code}`}>
                                 <IndianRupee size={13}/> Pay
@@ -389,6 +395,11 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
                                 <Trash2 size={13}/>
                               </button>
                             </>
+                          )}
+                          {isAccount && (
+                            <button onClick={() => handleInvoice(p.id)} className="btn btn-outline btn-sm" title="Download Invoice PDF" data-testid={`btn-invoice-${p.project_code}`}>
+                              <FileText size={13}/>
+                            </button>
                           )}
                         </>
                       )}

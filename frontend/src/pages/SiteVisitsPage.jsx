@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, Navigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { Plus, Search, Eye, FileText, Trash2, ClipboardList, MapPin, Calendar, FileSpreadsheet } from 'lucide-react';
 import { useAuth } from '../lib/auth';
@@ -19,6 +19,7 @@ const SiteVisitsPage = () => {
   const { user } = useAuth();
   const undo = useUndo();
   const isEngineer = user?.role === 'engineer';
+  const isAccount = user?.role === 'account';
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -77,6 +78,7 @@ const SiteVisitsPage = () => {
   };
 
   return (
+    isAccount ? <Navigate to="/" replace /> :
     <div className="max-w-[1200px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8" data-testid="site-visits-page">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-5">
         <div>

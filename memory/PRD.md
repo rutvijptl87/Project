@@ -358,6 +358,54 @@ the Audit form (no auto-numbering).
 
 ### Verified
 - DB: `db.document_types.find({prefix:'AUD-OFR'})` returns nothing.
+
+---
+
+## Session 20 — 2026-02 (Engineer Edit + Compact Revenue Chart + 'Account' Role)
+
+Three independent UI/UX requests delivered in one batch.
+
+### 1. Engineer can now edit submitted site visits
+- `SiteVisitDetailPage.jsx` — Edit button is shown for ALL roles (admin/staff/engineer) regardless of visit status (draft/submitted). Delete button stays admin/staff-only via new `canDelete` flag.
+
+### 2. MonthlyRevenueChart compacted
+- Card padding `p-5 → p-3`, `mb-6 → mb-4`
+- Container height `280px → 160px`
+- Title `text-lg → text-sm`, icon `18 → 14`
+- Subtitle removed
+- Axis ticks `11 → 9`, Y-axis width `70 → 48`, legend `11 → 10`
+- Chart margins `{top:10,right:10,left:0,bottom:10} → {top:4,right:6,left:0,bottom:4}`
+- Range dropdown width `130 → 110`, added `fontSize: 11`
+- Label `Last {range} months → Last {range} mo`
+- Verified card height collapses from ~400px to 245px in production.
+
+### 3. New `account` (read-only) role
+**Backend (`/app/backend/auth.py`):**
+- `account` accepted by `POST /api/auth/users` and `PUT /api/auth/users/{id}` (validation expanded from 3 → 4 roles).
+- `get_current_user` middleware rejects any non-GET request for `account` users (except `/auth/change-password`, `/auth/change-username`, `/auth/logout`) with **403 read-only**.
+- `get_current_user` middleware blocks **all** `/api/site-visits*` access for the `account` role.
+
+**Frontend:**
+- `App.js` — `account` users have no `/site-visits/*`, `/projects/new`, `/projects/:id/edit`, `/settings` routes.
+- `Navbar.jsx` — `account` users see Projects + Audits + Documents + Clients + Architects only (no Site Visits, no Settings). New Project / Record Payment buttons hidden. Purple "ACCOUNT" badge in user chip.
+- `ProjectsPage.jsx` — `MonthlyRevenueChart` hidden, all row write-actions (Pay/Edit/Archive/Delete) hidden; only View + Invoice PDF shown. "New Project" and "Import Historic" hidden; "Export Excel" still allowed.
+- `MonthlyRevenueChart.jsx` — defensive `useAuth` check renders `null` for `account` role.
+- `SiteVisitsPage.jsx` & `SiteVisitDetailPage.jsx` — render `<Navigate to="/" replace />` if user is `account`.
+- `UserManagementCard.jsx` — admin can pick "Account (Read-only)" in the new-user form and switch any existing user to the `account` role.
+
+### Verification (curl on production preview)
+| Endpoint | account user expectation | result |
+|---|---|---|
+| `GET /api/projects` | 200 | ✅ 200 |
+| `GET /api/dashboard/stats` | 200 | ✅ 200 |
+| `GET /api/audits / clients / documents / payments / monthly-revenue` | 200 each | ✅ all 200 |
+| `GET /api/site-visits` | 403 | ✅ 403 |
+| `POST /api/projects` | 403 | ✅ 403 |
+| `DELETE /api/projects/x` | 403 | ✅ 403 |
+| `POST /api/auth/users` with `role:"hacker"` | 400 | ✅ "Role must be 'admin', 'staff', 'engineer' or 'account'" |
+
+Frontend visual verification — account user lands on `/`, sees correct nav and hidden chart; admin user still sees compact chart at 245px card height.
+
 - `GET /api/document-types` lists 18 types (no AUD-OFR).
 - `POST /api/audits` with `{audit_offer:"MANUAL/AUD/2026/001"}` stores value as-is.
 - Settings → User Management page HTML contains no "AUD-OFR" / "Audit Offer" strings.
