@@ -421,3 +421,40 @@ User asked for two follow-ups on the account role:
 - `GET /api/document-types` lists 18 types (no AUD-OFR).
 - `POST /api/audits` with `{audit_offer:"MANUAL/AUD/2026/001"}` stores value as-is.
 - Settings → User Management page HTML contains no "AUD-OFR" / "Audit Offer" strings.
+
+
+---
+
+## Session 20c — Remove Invoice/Archive globally + Account = Admin minus Site Visits
+
+**Final shape of the account role:**
+- Same as admin in every way EXCEPT:
+  - `/api/site-visits*` blocked (403) and no Site Visits nav/route
+  - SITE VISITS (7D) KPI card hidden (`hideSiteVisits` prop on `DashboardKPI`)
+  - Monthly Revenue Chart hidden
+
+**Global UI cleanup (all roles):**
+- Removed per-project-row **Invoice PDF** download button (`btn-invoice-*`)
+- Removed per-project-row **Archive** button (`btn-archive-*`)
+- Removed Project Detail page **Invoice PDF** + **Archive** buttons (`detail-btn-invoice`, `detail-btn-archive`)
+- Header "View Archived" toggle kept so legacy archived projects can still be restored
+
+**Backend (`auth.py`):** Account write-blocking middleware simplified — only blocks `/api/site-visits*`. All other POST/PUT/DELETE on projects, payments, audits, clients, architects, documents allowed.
+
+**Frontend:** App.js / Navbar.jsx / ProjectsPage.jsx / ProjectDetailPage.jsx all collapsed the special-cased `isAccount` branches; account now uses the admin code paths everywhere else.
+
+### Verified
+| Account user request | Expected | Actual |
+|---|---|---|
+| POST /api/payments | not 403 | ✅ 422 (validation) |
+| POST /api/audits | 200 | ✅ 200 |
+| POST /api/clients | 200 | ✅ 200 |
+| POST /api/site-visits | 403 | ✅ 403 |
+| GET /api/site-visits | 403 | ✅ 403 |
+| UI: Settings nav | VISIBLE | ✅ |
+| UI: Record Payment btn | VISIBLE | ✅ |
+| UI: SITE VISITS KPI | HIDDEN | ✅ |
+| UI: Monthly Revenue Chart | HIDDEN | ✅ |
+| UI: Site Visits nav | HIDDEN | ✅ |
+| UI: Invoice/Archive row btns | 0 | ✅ (was 89 each) |
+| Admin UI: Detail page Invoice/Archive | REMOVED | ✅ |

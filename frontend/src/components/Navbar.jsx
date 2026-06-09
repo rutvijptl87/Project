@@ -37,9 +37,7 @@ const Navbar = ({ onRecordPayment }) => {
               )}
               <NavLink to="/clients" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-clients">Clients</NavLink>
               <NavLink to="/architects" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-architects">Architects</NavLink>
-              {!isAccount && (
-                <NavLink to="/settings" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-settings"><SettingsIcon size={14} className="inline mr-1" />Settings</NavLink>
-              )}
+              <NavLink to="/settings" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-settings"><SettingsIcon size={14} className="inline mr-1" />Settings</NavLink>
             </>
           )}
         </nav>
@@ -48,10 +46,6 @@ const Navbar = ({ onRecordPayment }) => {
           {isEngineer ? (
             <Link to="/site-visits/new" className="btn btn-accent btn-sm" data-testid="btn-nav-new-site-visit">
               <Plus size={14} /> <span className="hidden sm:inline">New Inspection</span>
-            </Link>
-          ) : isAccount ? (
-            <Link to="/projects/new" className="btn btn-outline hidden sm:inline-flex" data-testid="btn-nav-new-project">
-              <Plus size={16} /> New Project
             </Link>
           ) : (
             <>

@@ -213,9 +213,7 @@ const ProjectDetailPage = () => {
           {!isEngineer && (
             <>
               <button onClick={downloadExcel} className="btn btn-outline" data-testid="detail-btn-excel"><Download size={15}/> Export Excel</button>
-              <button onClick={downloadInvoice} className="btn btn-outline" data-testid="detail-btn-invoice"><FileText size={15}/> Invoice PDF</button>
               <Link to={`/projects/${id}/edit`} className="btn btn-outline" data-testid="detail-btn-edit"><Pencil size={15}/> Edit</Link>
-              <button onClick={handleArchive} className="btn btn-outline" data-testid="detail-btn-archive"><Archive size={15}/> Archive</button>
               <button onClick={handleDelete} className="btn btn-danger" data-testid="detail-btn-delete"><Trash2 size={15}/> Delete</button>
             </>
           )}

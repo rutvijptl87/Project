@@ -206,7 +206,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
           >
             <Archive size={15}/> {showArchived ? 'Back to Active' : 'View Archived'}
           </button>
-          {!showArchived && !isAccount && <>
+          {!showArchived && <>
             <button onClick={handleExport} className="btn btn-outline" data-testid="btn-export-excel">
               <Download size={15} /> Export Excel
             </button>
@@ -218,16 +218,6 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
               <Plus size={15} /> New Project
             </Link>
           </>}
-          {!showArchived && isAccount && (
-            <>
-              <button onClick={handleExport} className="btn btn-outline" data-testid="btn-export-excel">
-                <Download size={15} /> Export Excel
-              </button>
-              <Link to="/projects/new" className="btn btn-primary" data-testid="btn-new-project">
-                <Plus size={15} /> New Project
-              </Link>
-            </>
-          )}
         </div>
       </div>
 
@@ -382,35 +372,13 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
                           <button onClick={() => navigate(`/projects/${p.id}`)} className="btn btn-outline btn-sm" title="View" data-testid={`btn-view-${p.project_code}`}>
                             <Eye size={13}/> View
                           </button>
-                          {!isEngineer && !isAccount && (
+                          {!isEngineer && (
                             <>
                               <button onClick={() => openPay(p.id)} className="btn btn-accent btn-sm" title="Record Payment" data-testid={`btn-pay-${p.project_code}`}>
                                 <IndianRupee size={13}/> Pay
                               </button>
-                              <button onClick={() => handleInvoice(p.id)} className="btn btn-outline btn-sm" title="Download Invoice PDF" data-testid={`btn-invoice-${p.project_code}`}>
-                                <FileText size={13}/>
-                              </button>
                               <button onClick={() => navigate(`/projects/${p.id}/edit`)} className="btn btn-outline btn-sm" title="Edit" data-testid={`btn-edit-${p.project_code}`}>
                                 <Pencil size={13}/>
-                              </button>
-                              <button onClick={() => handleArchive(p.id, p.project_code)} className="btn btn-outline btn-sm" title="Archive" data-testid={`btn-archive-${p.project_code}`}>
-                                <Archive size={13}/>
-                              </button>
-                              <button onClick={() => handleDelete(p.id, p.project_code)} className="btn btn-danger btn-sm" title="Delete permanently" data-testid={`btn-delete-${p.project_code}`}>
-                                <Trash2 size={13}/>
-                              </button>
-                            </>
-                          )}
-                          {isAccount && (
-                            <>
-                              <button onClick={() => handleInvoice(p.id)} className="btn btn-outline btn-sm" title="Download Invoice PDF" data-testid={`btn-invoice-${p.project_code}`}>
-                                <FileText size={13}/>
-                              </button>
-                              <button onClick={() => navigate(`/projects/${p.id}/edit`)} className="btn btn-outline btn-sm" title="Edit" data-testid={`btn-edit-${p.project_code}`}>
-                                <Pencil size={13}/>
-                              </button>
-                              <button onClick={() => handleArchive(p.id, p.project_code)} className="btn btn-outline btn-sm" title="Archive" data-testid={`btn-archive-${p.project_code}`}>
-                                <Archive size={13}/>
                               </button>
                               <button onClick={() => handleDelete(p.id, p.project_code)} className="btn btn-danger btn-sm" title="Delete permanently" data-testid={`btn-delete-${p.project_code}`}>
                                 <Trash2 size={13}/>

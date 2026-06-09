@@ -76,7 +76,7 @@ const ProtectedApp = () => {
                   {!isEngineer && <Route path="/projects/:id/edit" element={<ProjectFormPage />} />}
                   <Route path="/projects/:id" element={<ProjectDetailPage />} />
                   <Route path="/projects" element={<ProjectsPage showPayModal={showPayModal} setShowPayModal={setShowPayModal} />} />
-                  {!isEngineer && !isAccount && <Route path="/settings" element={<SettingsPage />} />}
+                  {!isEngineer && <Route path="/settings" element={<SettingsPage />} />}
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="*" element={<Navigate to={isEngineer ? '/site-visits' : '/'} replace />} />
                 </Routes>

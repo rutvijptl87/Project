@@ -149,20 +149,8 @@ async def get_current_user(request: Request) -> dict:
     user = await _db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
-    # Account role is read-only EXCEPT for project writes (admins delegate
-    # project edits to the accountant). Block any non-GET request except
-    # /api/projects/* writes and the small auth allow-list.
-    if user.get("role") == "account" and request.method.upper() not in ("GET", "HEAD", "OPTIONS"):
-        allowed_paths = {
-            "/api/auth/change-password",
-            "/api/auth/change-username",
-            "/api/auth/logout",
-        }
-        path = request.url.path
-        is_project_write = path == "/api/projects" or path.startswith("/api/projects/")
-        if path not in allowed_paths and not is_project_write:
-            raise HTTPException(status_code=403, detail="Account users have read-only access (except Projects)")
-    # Block Site Visits module entirely for the account role.
+    # Account role has near-admin access — only the Site Visits module is
+    # blocked. All other GET/POST/PUT/DELETE are allowed.
     if user.get("role") == "account" and request.url.path.startswith("/api/site-visits"):
         raise HTTPException(status_code=403, detail="Site Visits module is not available for your role")
     current_user_var.set(user)
