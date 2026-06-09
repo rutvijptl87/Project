@@ -39,6 +39,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
   const { user } = useAuth();
   const isEngineer = user?.role === 'engineer';
   const isAccount = user?.role === 'account';
+  const isAdmin = user?.role === 'admin';
   const SORTABLE_COLUMNS = isEngineer ? SORTABLE_COLUMNS_ENGINEER : SORTABLE_COLUMNS_FULL;
   const [projects, setProjects] = useState([]);
   const [stats, setStats] = useState(null);
@@ -221,8 +222,8 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
         </div>
       </div>
 
-      {!showArchived && !isEngineer && <DashboardKPI stats={stats} svStats={svStats} hideSiteVisits={isAccount} />}
-      {!showArchived && !isEngineer && !isAccount && <MonthlyRevenueChart />}
+      {!showArchived && isAdmin && <DashboardKPI stats={stats} svStats={svStats} hideSiteVisits={isAccount} />}
+      {!showArchived && isAdmin && <MonthlyRevenueChart />}
 
       <form onSubmit={handleSearch} className="card p-3 mb-4 flex gap-2" data-testid="search-form">
         <div className="flex-1 relative">
