@@ -536,10 +536,8 @@ const DocumentsPage = () => {
                       )}
                       <button onClick={() => downloadPdf(d)} className="btn btn-outline btn-sm" title="Download PDF" data-testid={`btn-doc-pdf-${d.id}`}><FileText size={13}/></button>
                       <button onClick={() => openEdit(d)} className="btn btn-outline btn-sm" title="Edit" data-testid={`btn-doc-edit-${d.id}`}><Pencil size={13}/></button>
-                      {d.archived ? (
+                      {d.archived && (
                         <button onClick={() => handleUnarchive(d)} className="btn btn-outline btn-sm" title="Restore" data-testid={`btn-doc-restore-${d.id}`}><ArchiveRestore size={13}/></button>
-                      ) : (
-                        <button onClick={() => handleArchive(d)} className="btn btn-outline btn-sm" title="Archive" data-testid={`btn-doc-archive-${d.id}`}><Archive size={13}/></button>
                       )}
                       <button onClick={() => handleDelete(d)} className="btn btn-danger btn-sm" title="Delete" data-testid={`btn-doc-delete-${d.id}`}><Trash2 size={13}/></button>
                     </div>

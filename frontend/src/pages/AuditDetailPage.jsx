@@ -182,8 +182,6 @@ const AuditDetailPage = () => {
         </div>
         <div className="flex gap-2 flex-wrap">
           <button onClick={downloadExcel} className="btn btn-outline" data-testid="audit-detail-btn-excel"><Download size={15}/> Export Excel</button>
-          <button onClick={downloadInvoice} className="btn btn-outline" data-testid="audit-detail-btn-invoice"><FileText size={15}/> Invoice PDF</button>
-          <button onClick={handleArchive} className="btn btn-outline" data-testid="audit-detail-btn-archive"><Archive size={15}/> Archive</button>
           <button onClick={handleDelete} className="btn btn-danger" data-testid="audit-detail-btn-delete"><Trash2 size={15}/> Delete</button>
         </div>
       </div>

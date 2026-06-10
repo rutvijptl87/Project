@@ -224,9 +224,6 @@ const ClientDetailPage = () => {
                       <Link to={`/projects/${p.id}`} className="btn btn-outline btn-sm">
                         <Eye size={13}/> View
                       </Link>
-                      <a href={`${API}/projects/${p.id}/invoice`} target="_blank" rel="noreferrer" className="btn btn-outline btn-sm" title="Invoice PDF">
-                        <FileText size={13}/>
-                      </a>
                     </div>
                   </td>
                 </tr>

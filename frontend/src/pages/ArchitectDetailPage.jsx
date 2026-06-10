@@ -276,9 +276,6 @@ const ArchitectDetailPage = () => {
                       <Link to={`/projects/${p.id}`} className="btn btn-outline btn-sm" data-testid={`arch-view-${p.project_code}`} title="View project">
                         <Eye size={13}/>
                       </Link>
-                      <a href={`${API}/projects/${p.id}/invoice`} target="_blank" rel="noreferrer" className="btn btn-outline btn-sm" title="Invoice PDF">
-                        <FileText size={13}/>
-                      </a>
                       <button onClick={() => openMove(p)} className="btn btn-outline btn-sm" title="Move to another architect" data-testid={`arch-move-${p.project_code}`}>
                         <ArrowRightLeft size={13}/>
                       </button>

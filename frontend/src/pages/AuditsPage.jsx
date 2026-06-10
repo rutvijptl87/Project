@@ -285,15 +285,12 @@ const AuditsPage = () => {
                   <td>
                     <div className="flex gap-1 justify-end flex-wrap">
                       <Link to={`/audits/${a.id}`} className="btn btn-outline btn-sm" title="View details" data-testid={`btn-view-audit-${a.audit_code}`}><Eye size={13}/></Link>
-                      <button onClick={() => downloadInvoice(a.id)} className="btn btn-outline btn-sm" title="Download Invoice PDF" data-testid={`btn-invoice-audit-${a.audit_code}`}><FileText size={13}/></button>
                       {!a.archived && (
                         <button onClick={() => openPay(a.id)} className="btn btn-accent btn-sm" title="Record Payment" data-testid={`btn-pay-audit-${a.audit_code}`}><IndianRupee size={13}/> Pay</button>
                       )}
                       <button onClick={() => openEdit(a)} className="btn btn-outline btn-sm" title="Edit" data-testid={`btn-edit-audit-${a.audit_code}`}><Pencil size={13}/></button>
-                      {a.archived ? (
+                      {a.archived && (
                         <button onClick={() => handleUnarchive(a)} className="btn btn-outline btn-sm" title="Restore" data-testid={`btn-restore-audit-${a.audit_code}`}><ArchiveRestore size={13}/></button>
-                      ) : (
-                        <button onClick={() => handleArchive(a)} className="btn btn-outline btn-sm" title="Archive" data-testid={`btn-archive-audit-${a.audit_code}`}><Archive size={13}/></button>
                       )}
                       <button onClick={() => handleDelete(a)} className="btn btn-danger btn-sm" title="Delete permanently" data-testid={`btn-delete-audit-${a.audit_code}`}><Trash2 size={13}/></button>
                     </div>
