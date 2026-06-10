@@ -19,6 +19,7 @@ const SiteVisitFormPage = () => {
   const presetProjectId = searchParams.get('project_id') || '';
   const isEdit = !!id;
   const fileRef = useRef(null);
+  const galleryRef = useRef(null);
 
   const [templates, setTemplates] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -349,6 +350,7 @@ const SiteVisitFormPage = () => {
       }
     }
     if (fileRef.current) fileRef.current.value = '';
+    if (galleryRef.current) galleryRef.current.value = '';
   };
 
   const removePhoto = (idx) => setForm((f) => ({ ...f, photos: f.photos.filter((_, i) => i !== idx) }));
@@ -635,10 +637,14 @@ const SiteVisitFormPage = () => {
 
       {/* Photos */}
       <div className="card p-4 mb-3">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h2 className="font-head text-sm font-bold flex items-center gap-2" style={{ color: 'var(--cc-dark-green)' }}><Camera size={15}/> Photos</h2>
-          <button type="button" onClick={() => fileRef.current?.click()} className="btn btn-accent btn-sm" data-testid="btn-add-photo"><ImagePlus size={13}/> Add photo</button>
+          <div className="flex gap-2 flex-wrap">
+            <button type="button" onClick={() => fileRef.current?.click()} className="btn btn-accent btn-sm" data-testid="btn-add-photo"><Camera size={13}/> Take Photo</button>
+            <button type="button" onClick={() => galleryRef.current?.click()} className="btn btn-outline btn-sm" data-testid="btn-add-photo-gallery"><ImagePlus size={13}/> From Gallery</button>
+          </div>
           <input ref={fileRef} type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={handlePhotoPick} data-testid="input-photo-file"/>
+          <input ref={galleryRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoPick} data-testid="input-photo-gallery"/>
         </div>
         {form.photos.length === 0 ? (
           <p className="text-xs italic" style={{ color: 'var(--cc-text-muted)' }}>Photos taken on site will show here. You can capture from camera or pick from gallery.</p>
