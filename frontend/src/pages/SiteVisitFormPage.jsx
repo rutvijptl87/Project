@@ -311,17 +311,20 @@ const SiteVisitFormPage = () => {
     );
   });
 
-  const handlePhotoPick = async (e) => {
+  const handlePhotoPick = async (e, { skipGeo = false } = {}) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
     for (const original of files) {
       try {
         const [file, coords] = await Promise.all([
           compressImage(original),
-          // Don't bother re-asking if the visit already has GPS — re-use it as the baseline.
-          form.latitude != null
-            ? Promise.resolve({ latitude: form.latitude, longitude: form.longitude, accuracy: form.geo_accuracy })
-            : getOneShotGps(),
+          // Gallery uploads → no geotagging at all.
+          // Camera captures → reuse visit GPS if known, otherwise request a fresh fix.
+          skipGeo
+            ? Promise.resolve(null)
+            : (form.latitude != null
+                ? Promise.resolve({ latitude: form.latitude, longitude: form.longitude, accuracy: form.geo_accuracy })
+                : getOneShotGps()),
         ]);
         const fd = new FormData();
         fd.append('file', file);
@@ -335,8 +338,9 @@ const SiteVisitFormPage = () => {
           geo_accuracy: coords?.accuracy ?? null,
         };
         // If the visit doesn't have a GPS yet, promote the first photo's location to it.
+        // Skip promotion when this batch was a gallery upload (no GPS).
         setForm((f) => {
-          const promote = f.latitude == null && coords;
+          const promote = !skipGeo && f.latitude == null && coords;
           return {
             ...f,
             photos: [...f.photos, photo],
@@ -643,8 +647,8 @@ const SiteVisitFormPage = () => {
             <button type="button" onClick={() => fileRef.current?.click()} className="btn btn-accent btn-sm" data-testid="btn-add-photo"><Camera size={13}/> Take Photo</button>
             <button type="button" onClick={() => galleryRef.current?.click()} className="btn btn-outline btn-sm" data-testid="btn-add-photo-gallery"><ImagePlus size={13}/> From Gallery</button>
           </div>
-          <input ref={fileRef} type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={handlePhotoPick} data-testid="input-photo-file"/>
-          <input ref={galleryRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoPick} data-testid="input-photo-gallery"/>
+          <input ref={fileRef} type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={(e) => handlePhotoPick(e)} data-testid="input-photo-file"/>
+          <input ref={galleryRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => handlePhotoPick(e, { skipGeo: true })} data-testid="input-photo-gallery"/>
         </div>
         {form.photos.length === 0 ? (
           <p className="text-xs italic" style={{ color: 'var(--cc-text-muted)' }}>Photos taken on site will show here. You can capture from camera or pick from gallery.</p>
