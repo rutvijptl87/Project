@@ -72,7 +72,10 @@ const SiteVisitsPage = () => {
     setItems((cur) => cur.filter((x) => x.id !== v.id));
     undo.schedule({
       label: `Site visit ${v.visit_code} deleted`,
-      onCommit: async () => { try { await api.delete(`/site-visits/${v.id}`); } catch {} },
+      onCommit: async () => {
+        try { await api.delete(`/site-visits/${v.id}`); }
+        catch (err) { console.error('Site visit delete failed', err); }
+      },
       onUndo: () => setItems((cur) => [v, ...cur]),
     });
   };

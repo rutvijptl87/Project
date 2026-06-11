@@ -159,8 +159,8 @@ const SiteVisitDetailPage = () => {
             { icon: User, label: 'Customer', value: v.customer || '—' },
             { icon: MapPin, label: 'Site Location', value: v.site_location || v.plot_no || '—' },
             { icon: ClipboardList, label: 'Job No', value: v.job_no || '—' },
-          ].map((m, i) => (
-            <div key={i} className="rounded-md p-2.5" style={{ background: 'var(--cc-surface)' }}>
+          ].map((m) => (
+            <div key={m.label} className="rounded-md p-2.5" style={{ background: 'var(--cc-surface)' }}>
               <div className="flex items-center gap-1 mb-0.5" style={{ color: 'var(--cc-text-muted)' }}>
                 <m.icon size={11}/><span className="uppercase tracking-wide" style={{ fontSize: '10px' }}>{m.label}</span>
               </div>
@@ -216,8 +216,8 @@ const SiteVisitDetailPage = () => {
               { label: 'Quoted', value: project.quoted_amount, color: 'var(--cc-dark-green)' },
               { label: 'Received', value: project.received_amount, color: '#0E7490' },
               { label: 'Outstanding', value: project.outstanding_amount, color: (project.outstanding_amount || 0) > 0 ? '#B91C1C' : '#10B981' },
-            ].map((m, i) => (
-              <div key={i} className="rounded-md p-3" style={{ background: 'var(--cc-surface)' }}>
+            ].map((m) => (
+              <div key={m.label} className="rounded-md p-3" style={{ background: 'var(--cc-surface)' }}>
                 <div className="uppercase tracking-wide mb-1" style={{ fontSize: '10px', color: 'var(--cc-text-muted)' }}>{m.label}</div>
                 <div className="font-head font-bold text-base inline-flex items-center gap-0.5" style={{ color: m.color }}>
                   <IndianRupee size={13}/>{formatINR(m.value || 0).replace('₹', '')}
@@ -245,7 +245,7 @@ const SiteVisitDetailPage = () => {
                 {v.checklist.map((c, i) => {
                   const color = c.compliance === 'yes' ? '#10B981' : c.compliance === 'no' ? '#DC2626' : '#9CA3AF';
                   return (
-                    <tr key={i} className="border-t" style={{ borderColor: 'var(--cc-border)' }}>
+                    <tr key={c.__uid || c.id || `${c.label}-${i}`} className="border-t" style={{ borderColor: 'var(--cc-border)' }}>
                       <td className="px-2 py-2">{c.label}</td>
                       <td className="px-2 py-2 text-center">
                         <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase" style={{ background: color, color: 'white' }}>{(c.compliance || 'yes').toUpperCase()}</span>
@@ -265,7 +265,7 @@ const SiteVisitDetailPage = () => {
         <div className="card p-5 mb-4">
           <h2 className="font-head text-lg font-bold mb-3" style={{ color: 'var(--cc-dark-green)' }}>Observations</h2>
           <ol className="list-decimal pl-5 space-y-1 text-sm">
-            {v.observations.map((o, i) => <li key={i}>{o}</li>)}
+            {v.observations.map((o, i) => <li key={`obs-${i}-${(o || '').slice(0, 32)}`}>{o}</li>)}
           </ol>
         </div>
       )}
@@ -318,8 +318,8 @@ const SiteVisitDetailPage = () => {
             {[
               ['Structural Engineer', v.engineer_name, v.engineer_signature, null],
               ['Site Person', v.site_person_name, v.site_person_signature, v.site_person_phone],
-            ].map(([label, name, sig, phone], i) => (
-              <div key={i} className="rounded-md p-3" style={{ background: 'var(--cc-surface)' }}>
+            ].map(([label, name, sig, phone]) => (
+              <div key={label} className="rounded-md p-3" style={{ background: 'var(--cc-surface)' }}>
                 <div className="text-xs font-semibold mb-1" style={{ color: 'var(--cc-text-muted)' }}>{label}</div>
                 <div className="bg-white rounded h-20 flex items-center justify-center overflow-hidden" style={{ border: '1px dashed var(--cc-border)' }}>
                   {sig ? <img src={sig} alt="signature" className="max-h-full" /> : <span className="text-xs italic" style={{ color: 'var(--cc-text-muted)' }}>Not signed</span>}

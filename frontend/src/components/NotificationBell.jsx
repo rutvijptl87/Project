@@ -29,7 +29,9 @@ const NotificationBell = () => {
       const r = await api.get('/notifications', { params: { limit: 20 } });
       setItems(r.data.items || []);
       setUnread(r.data.unread || 0);
-    } catch {}
+    } catch (err) {
+      console.error('Failed to load notifications', err);
+    }
   };
 
   useEffect(() => {
@@ -50,13 +52,15 @@ const NotificationBell = () => {
 
   const markRead = async (n) => {
     if (n.is_read) return;
-    try { await api.post(`/notifications/${n.id}/read`); } catch {}
+    try { await api.post(`/notifications/${n.id}/read`); }
+    catch (err) { console.warn('Mark-as-read failed', err); }
     setItems((cur) => cur.map((x) => x.id === n.id ? { ...x, is_read: true } : x));
     setUnread((u) => Math.max(0, u - 1));
   };
 
   const markAllRead = async () => {
-    try { await api.post('/notifications/read-all'); } catch {}
+    try { await api.post('/notifications/read-all'); }
+    catch (err) { console.warn('Mark-all-read failed', err); }
     setItems((cur) => cur.map((x) => ({ ...x, is_read: true })));
     setUnread(0);
   };

@@ -28,7 +28,9 @@ const ClientDetailPage = () => {
       try {
         const r = await api.get('/clients');
         setAllClients(r.data);
-      } catch {}
+      } catch (err) {
+        console.error('Failed to load clients for doc-move picker', err);
+      }
     }
   };
 

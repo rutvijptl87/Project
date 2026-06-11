@@ -24,7 +24,9 @@ const SiteVisitNumberSeriesCard = () => {
       const r = await api.get('/site-visits/series');
       setSeries(r.data);
       setDraft(String(r.data?.next_seq || ''));
-    } catch {}
+    } catch (err) {
+      console.error('Failed to load site visit series', err);
+    }
   };
 
   useEffect(() => {

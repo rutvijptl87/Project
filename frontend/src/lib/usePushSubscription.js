@@ -89,7 +89,8 @@ export const usePushSubscription = () => {
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.getSubscription();
       if (sub) {
-        try { await api.post('/push/unsubscribe', { endpoint: sub.endpoint }); } catch {}
+        try { await api.post('/push/unsubscribe', { endpoint: sub.endpoint }); }
+        catch (err) { console.warn('Push unsubscribe (server) failed; continuing local cleanup', err); }
         await sub.unsubscribe();
       }
       setSubscribed(false);
