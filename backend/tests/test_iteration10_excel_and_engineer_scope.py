@@ -6,10 +6,11 @@ import requests
 import openpyxl
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://beginner-coder-hub-2.preview.emergentagent.com").rstrip("/")
-ADMIN_USER = "rutvij0213"
-ADMIN_PASS = "Rutvij4141*"
-ENG_USERNAME = "test_engineer"
-ENG_PASSWORD = "EngTest123!"
+ADMIN_USER = os.environ.get("TEST_ADMIN_USER", "rutvij0213")
+ADMIN_PASS = os.environ.get("TEST_ADMIN_PASS", "")
+ENG_USERNAME = os.environ.get("TEST_ENG_USER", "test_engineer")
+ENG_PASSWORD = os.environ.get("TEST_ENG_PASS", "")
+assert ADMIN_PASS and ENG_PASSWORD, "Set TEST_ADMIN_PASS and TEST_ENG_PASS env vars (see memory/test_credentials.md)"
 
 
 # ---------- Shared fixtures ----------

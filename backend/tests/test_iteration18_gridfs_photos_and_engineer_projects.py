@@ -11,6 +11,7 @@ Covers:
 import base64
 import io
 import os
+import subprocess
 import time
 import pytest
 import requests
@@ -204,9 +205,14 @@ class TestPersistenceAcrossBackendRestart:
         u = requests.post(f"{BASE_URL}/api/site-visits/uploads", files=files, headers=eng_headers, timeout=30)
         assert u.status_code == 200
         body = u.json()
-        # Restart backend
-        rc = os.system("sudo supervisorctl restart backend > /dev/null 2>&1")
-        assert rc == 0
+        # Restart backend (shell=False, fixed argv → safe from injection)
+        result = subprocess.run(
+            ["sudo", "supervisorctl", "restart", "backend"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        assert result.returncode == 0
         # Wait for backend to come back
         for _ in range(30):
             time.sleep(1)

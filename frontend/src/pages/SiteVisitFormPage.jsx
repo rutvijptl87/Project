@@ -160,7 +160,9 @@ const SiteVisitFormPage = () => {
         ]);
         setTemplates(t.data || []);
         setProjects(p.data || []);
-      } catch {}
+      } catch (err) {
+        console.error('Failed to load templates/projects', err);
+      }
     })();
   }, []);
 
@@ -176,7 +178,9 @@ const SiteVisitFormPage = () => {
         if (sig) {
           setForm((f) => (f.engineer_signature ? f : { ...f, engineer_signature: sig }));
         }
-      } catch {}
+      } catch (err) {
+        console.error('Failed to load default signature', err);
+      }
     })();
     // eslint-disable-next-line
   }, [isEdit]);
@@ -187,7 +191,13 @@ const SiteVisitFormPage = () => {
       setLoading(true);
       try {
         const r = await api.get(`/site-visits/${id}`);
-        setForm({ ...blank, ...r.data });
+        const data = r.data || {};
+        // Assign client-side __uid to each checklist item so React keys stay stable
+        // when items are added/removed during edit.
+        if (Array.isArray(data.checklist)) {
+          data.checklist = data.checklist.map((c) => ({ ...c, __uid: c.__uid || _uid() }));
+        }
+        setForm({ ...blank, ...data });
       } catch (e) {
         setError('Could not load this site visit');
       } finally {
@@ -196,6 +206,8 @@ const SiteVisitFormPage = () => {
     })();
     // eslint-disable-next-line
   }, [id]);
+
+  const _uid = () => `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 
   const pickTemplate = (tid) => {
     const t = templates.find((x) => x.id === tid);
@@ -208,7 +220,7 @@ const SiteVisitFormPage = () => {
       template_id: t.id,
       template_name: t.name,
       inspection_title: f.inspection_title || t.name,
-      checklist: (t.checklist || []).map((label) => ({ label, compliance: 'yes', remark: '' })),
+      checklist: (t.checklist || []).map((label) => ({ __uid: _uid(), label, compliance: 'yes', remark: '' })),
     }));
   };
 
@@ -218,7 +230,7 @@ const SiteVisitFormPage = () => {
       checklist: f.checklist.map((c, i) => (i === idx ? { ...c, ...patch } : c)),
     }));
   };
-  const addChecklistItem = () => setForm((f) => ({ ...f, checklist: [...f.checklist, { label: '', compliance: 'yes', remark: '' }] }));
+  const addChecklistItem = () => setForm((f) => ({ ...f, checklist: [...f.checklist, { __uid: _uid(), label: '', compliance: 'yes', remark: '' }] }));
   const removeChecklistItem = (idx) => setForm((f) => ({ ...f, checklist: f.checklist.filter((_, i) => i !== idx) }));
 
   const addObservation = () => setForm((f) => ({ ...f, observations: [...f.observations, ''] }));
@@ -283,7 +295,7 @@ const SiteVisitFormPage = () => {
           ctx.fillStyle = 'rgba(255,255,255,0.85)';
           ctx.font = `400 ${baseFont}px system-ui, -apple-system, "Segoe UI", sans-serif`;
           ctx.fillText(line2, x + padX, y + padY + baseFont + gap);
-        } catch (_e) { /* if watermark fails (e.g. very small canvas), just skip it */ }
+        } catch (err) { console.warn('Watermark draw failed, continuing without it', err); }
 
         canvas.toBlob((blob) => {
           if (!blob) { resolve(file); return; }
@@ -568,7 +580,7 @@ const SiteVisitFormPage = () => {
         ) : (
           <div className="space-y-2.5">
             {form.checklist.map((c, idx) => (
-              <div key={idx} className="rounded-md p-2.5" style={{ background: 'var(--cc-surface)', border: '1px solid var(--cc-border)' }} data-testid={`checklist-item-${idx}`}>
+              <div key={c.__uid || `cl-${idx}`} className="rounded-md p-2.5" style={{ background: 'var(--cc-surface)', border: '1px solid var(--cc-border)' }} data-testid={`checklist-item-${idx}`}>
                 <div className="flex items-start gap-2">
                   <input
                     className="input flex-1"
@@ -657,7 +669,7 @@ const SiteVisitFormPage = () => {
             {form.photos.map((p, idx) => {
               const src = p.url ? `${process.env.REACT_APP_BACKEND_URL}${p.url}` : p.data_url;
               return (
-                <div key={idx} className="rounded-md overflow-hidden relative group" style={{ border: '1px solid var(--cc-border)' }} data-testid={`photo-card-${idx}`}>
+                <div key={p.url || `ph-${idx}`} className="rounded-md overflow-hidden relative group" style={{ border: '1px solid var(--cc-border)' }} data-testid={`photo-card-${idx}`}>
                   <img src={src} alt={`photo-${idx + 1}`} className="block w-full h-32 object-cover" />
                   <button type="button" onClick={() => removePhoto(idx)} className="absolute top-1 right-1 rounded-full p-1 shadow" style={{ background: 'rgba(220,38,38,0.92)', color: 'white' }} data-testid={`photo-remove-${idx}`}>
                     <X size={12}/>

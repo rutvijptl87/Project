@@ -43,7 +43,9 @@ const UserActivityCard = () => {
         const eng = sorted.find((u) => u.role === 'engineer');
         if (eng) setSelectedId(eng.id);
         else if (sorted.length) setSelectedId(sorted[0].id);
-      } catch {}
+      } catch (err) {
+        console.error('Failed to load users for activity view', err);
+      }
     })();
   }, []);
 

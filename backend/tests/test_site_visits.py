@@ -25,7 +25,8 @@ def admin_headers(admin_token):
 def engineer_user(admin_headers):
     """Create (or reuse) an engineer user TEST_engineer / EngTest123!"""
     username = "TEST_engineer"
-    password = "EngTest123!"
+    password = os.environ.get("TEST_ENG_PASS", "")
+    assert password, "Set TEST_ENG_PASS env var (see memory/test_credentials.md)"
     # try create
     r = requests.post(f"{BASE_URL}/api/auth/users", headers=admin_headers,
                       json={"username": username, "password": password, "name": "Test Engineer", "role": "engineer"}, timeout=20)

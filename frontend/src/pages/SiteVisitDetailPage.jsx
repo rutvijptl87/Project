@@ -39,7 +39,9 @@ const SiteVisitDetailPage = () => {
           try {
             const pr = await api.get(`/projects/${r.data.project_id}`);
             setProject(pr.data);
-          } catch {}
+          } catch (err) {
+            console.warn('Linked project could not be loaded', err);
+          }
         }
       } catch (e) {
         setErr('Site visit not found');
@@ -54,7 +56,10 @@ const SiteVisitDetailPage = () => {
     if (!window.confirm(`Delete ${v.visit_code}? You can undo within 60s.`)) return;
     undo.schedule({
       label: `Site visit ${v.visit_code} deleted`,
-      onCommit: async () => { try { await api.delete(`/site-visits/${id}`); } catch {} },
+      onCommit: async () => {
+        try { await api.delete(`/site-visits/${id}`); }
+        catch (err) { console.error('Delete failed', err); }
+      },
       onUndo: () => {},
     });
     nav('/site-visits');
@@ -274,7 +279,7 @@ const SiteVisitDetailPage = () => {
               const src = p.url ? `${BACKEND}${p.url}` : p.data_url;
               const hasGps = p.latitude != null && p.longitude != null;
               return (
-                <div key={i} className="block rounded-md overflow-hidden relative" style={{ border: '1px solid var(--cc-border)' }}>
+                <div key={p.url || `ph-${i}`} className="block rounded-md overflow-hidden relative" style={{ border: '1px solid var(--cc-border)' }}>
                   <a href={src} target="_blank" rel="noreferrer" className="block">
                     <img src={src} alt={p.caption || `photo-${i+1}`} className="w-full h-32 object-cover" />
                     {p.caption && <div className="text-[11px] px-1.5 py-1 truncate" style={{ background: 'var(--cc-surface)' }}>{p.caption}</div>}

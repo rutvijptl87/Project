@@ -15,7 +15,9 @@ const SiteVisitTemplatesCard = () => {
     try {
       const r = await api.get('/site-visit-templates');
       setItems(r.data || []);
-    } catch {}
+    } catch (err) {
+      console.error('Failed to load templates', err);
+    }
   };
   useEffect(() => { load(); }, []);
 
@@ -46,7 +48,8 @@ const SiteVisitTemplatesCard = () => {
 
   const del = async (t) => {
     if (!window.confirm(`Delete template "${t.name}"? Existing visits keep their saved checklist.`)) return;
-    try { await api.delete(`/site-visit-templates/${t.id}`); await load(); } catch {}
+    try { await api.delete(`/site-visit-templates/${t.id}`); await load(); }
+    catch (err) { console.error('Template delete failed', err); }
   };
 
   return (
