@@ -16,9 +16,10 @@ const SignaturePad = ({ value, onChange, label = 'Signature', testId = 'sign' })
   const last = useRef({ x: 0, y: 0 });
   const [empty, setEmpty] = useState(!value);
 
-  // Restore signature if value supplied (e.g. editing an existing visit)
+  // Restore signature whenever the `value` prop arrives or changes
+  // (covers async pre-fill from default_signature, edit-mode load, etc.)
   useEffect(() => {
-    if (!value) return;
+    if (!value) { setEmpty(true); return; }
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -29,8 +30,7 @@ const SignaturePad = ({ value, onChange, label = 'Signature', testId = 'sign' })
       setEmpty(false);
     };
     img.src = value;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [value]);
 
   const point = (e) => {
     const rect = canvasRef.current.getBoundingClientRect();
