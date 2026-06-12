@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Depends, Form
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Depends, Form, Body
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
@@ -719,6 +719,14 @@ def _deny_engineer():
     user = get_current_user_safe()
     if user and user.get("role") == "engineer":
         raise HTTPException(status_code=403, detail="Engineers are not allowed to view financial data")
+
+
+def _require_admin():
+    """Raise 403 unless the calling user is an admin. Used to gate destructive
+    or counter-resetting endpoints (e.g. editing the Audit Offer numbering series)."""
+    user = get_current_user_safe()
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
 
 
 # ---------------------- PROJECTS ----------------------
@@ -1563,6 +1571,52 @@ async def audits_next_offer_preview():
     """Returns the next Audit Offer Number that will be assigned (for form hint)."""
     _deny_engineer()
     return {"number": await _peek_next_audit_offer_number()}
+
+
+@api_router.get("/audits/offer-series")
+async def get_audit_offer_series():
+    """Inspect the current Audit Offer year-counter for the Settings UI."""
+    _deny_engineer()
+    year = datetime.now(timezone.utc).year
+    doc = await db.counters.find_one({"_id": f"audit_offer_{year}"})
+    seq = (doc or {}).get("seq", 0)
+    next_seq = seq + 1
+    return {
+        "year": year,
+        "current_seq": seq,
+        "next_seq": next_seq,
+        "next_code": f"STR/AUD-OFR/{year}/{next_seq:03d}",
+    }
+
+
+@api_router.put("/audits/offer-series")
+async def set_audit_offer_series(payload: dict = Body(...)):
+    """Set the NEXT Audit Offer Number's serial (admin only). Won't allow a
+    rewind that would collide with an existing `STR/AUD-OFR/YYYY/NNN` audit."""
+    _require_admin()
+    year = datetime.now(timezone.utc).year
+    try:
+        next_seq = int(payload.get("next_seq"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "next_seq must be a positive integer")
+    if next_seq < 1:
+        raise HTTPException(400, "next_seq must be at least 1")
+
+    # Build the candidate code and refuse if an audit already uses it.
+    candidate = f"STR/AUD-OFR/{year}/{next_seq:03d}"
+    clash = await db.audits.find_one({"audit_offer": candidate}, {"_id": 0, "id": 1})
+    if clash:
+        raise HTTPException(400, f"An audit with offer number {candidate} already exists. Pick a different starting number.")
+
+    # Set the counter so the NEXT auto-generate returns `next_seq`.
+    # _next_audit_offer_number does {$inc: 1} then returns seq, so we need to
+    # store next_seq - 1 here.
+    await db.counters.update_one(
+        {"_id": f"audit_offer_{year}"},
+        {"$set": {"seq": next_seq - 1}},
+        upsert=True,
+    )
+    return {"ok": True, "year": year, "next_seq": next_seq, "next_code": candidate}
 
 
 
