@@ -1484,6 +1484,29 @@ async def _next_report_id() -> str:
     return f"RPT-{year}-{seq:03d}"
 
 
+async def _next_audit_offer_number() -> str:
+    """Auto-generate STR/AUD-OFR/YYYY/NNN — year-resetting counter."""
+    year = datetime.now(timezone.utc).year
+    doc = await db.counters.find_one_and_update(
+        {"_id": f"audit_offer_{year}"},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=True,
+    )
+    seq = doc.get("seq", 1) if doc else 1
+    return f"STR/AUD-OFR/{year}/{seq:03d}"
+
+
+async def _peek_next_audit_offer_number() -> str:
+    """Return what the NEXT auto-generated audit_offer would be, without
+    consuming the counter. Used for the form preview hint."""
+    year = datetime.now(timezone.utc).year
+    doc = await db.counters.find_one({"_id": f"audit_offer_{year}"})
+    seq = (doc or {}).get("seq", 0) + 1
+    return f"STR/AUD-OFR/{year}/{seq:03d}"
+
+
+
 async def _enrich_audit(a: dict) -> dict:
     if a.get("client_id"):
         c = await db.clients.find_one({"id": a["client_id"]}, {"_id": 0})
@@ -1535,6 +1558,14 @@ async def _log_audit_activity(audit_id: str, audit_code: str, action: str, detai
         logger.error(f"audit activity log error: {e}")
 
 
+@api_router.get("/audits/next-offer-preview")
+async def audits_next_offer_preview():
+    """Returns the next Audit Offer Number that will be assigned (for form hint)."""
+    _deny_engineer()
+    return {"number": await _peek_next_audit_offer_number()}
+
+
+
 @api_router.get("/audits", response_model=List[Audit])
 async def list_audits(archived: Optional[bool] = False, search: Optional[str] = None):
     _deny_engineer()
@@ -1570,8 +1601,9 @@ async def create_audit(data: AuditIn):
     doc["id"] = _new_id()
     doc["audit_code"] = (doc.get("audit_code") or "").strip() or await _next_audit_code()
     doc["report_id"] = (doc.get("report_id") or "").strip() or await _next_report_id()
-    # Audit Offer Number is entered manually by the engineer (no auto-numbering).
-    doc["audit_offer"] = (doc.get("audit_offer") or "").strip()
+    # Audit Offer Number — auto-generate STR/AUD-OFR/YYYY/NNN if the engineer
+    # didn't override it on the form.
+    doc["audit_offer"] = (doc.get("audit_offer") or "").strip() or await _next_audit_offer_number()
     doc["received_amount"] = 0.0
     doc["archived"] = False
     doc["created_at"] = _now()
