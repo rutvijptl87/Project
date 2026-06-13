@@ -1492,26 +1492,48 @@ async def _next_report_id() -> str:
     return f"RPT-{year}-{seq:03d}"
 
 
+async def _audit_offer_config() -> dict:
+    """Read the configurable Audit Offer numbering setup from the `settings`
+    collection. Falls back to the original hard-coded defaults so existing
+    deployments don't break before the admin opens Settings."""
+    doc = await db.settings.find_one({"_id": "audit_offer_series"}) or {}
+    return {
+        "prefix": (doc.get("prefix") or "STR/AUD-OFR").strip().strip("/"),
+        "year_reset": doc.get("year_reset", True),
+        "pad": int(doc.get("pad") or 3),
+    }
+
+
+def _format_audit_offer(prefix: str, year: int, seq: int, pad: int = 3, year_reset: bool = True) -> str:
+    body = f"{prefix}/{year}/{str(seq).zfill(pad)}" if year_reset else f"{prefix}/{str(seq).zfill(pad)}"
+    return body
+
+
 async def _next_audit_offer_number() -> str:
-    """Auto-generate STR/AUD-OFR/YYYY/NNN — year-resetting counter."""
+    """Auto-generate the next Audit Offer Number using the admin-configured prefix."""
+    cfg = await _audit_offer_config()
     year = datetime.now(timezone.utc).year
+    counter_id = f"audit_offer_{year}" if cfg["year_reset"] else "audit_offer_all"
     doc = await db.counters.find_one_and_update(
-        {"_id": f"audit_offer_{year}"},
+        {"_id": counter_id},
         {"$inc": {"seq": 1}},
         upsert=True,
         return_document=True,
     )
     seq = doc.get("seq", 1) if doc else 1
-    return f"STR/AUD-OFR/{year}/{seq:03d}"
+    return _format_audit_offer(cfg["prefix"], year, seq, cfg["pad"], cfg["year_reset"])
 
 
 async def _peek_next_audit_offer_number() -> str:
     """Return what the NEXT auto-generated audit_offer would be, without
     consuming the counter. Used for the form preview hint."""
+    cfg = await _audit_offer_config()
     year = datetime.now(timezone.utc).year
-    doc = await db.counters.find_one({"_id": f"audit_offer_{year}"})
+    counter_id = f"audit_offer_{year}" if cfg["year_reset"] else "audit_offer_all"
+    doc = await db.counters.find_one({"_id": counter_id})
     seq = (doc or {}).get("seq", 0) + 1
-    return f"STR/AUD-OFR/{year}/{seq:03d}"
+    return _format_audit_offer(cfg["prefix"], year, seq, cfg["pad"], cfg["year_reset"])
+
 
 
 
@@ -1575,48 +1597,86 @@ async def audits_next_offer_preview():
 
 @api_router.get("/audits/offer-series")
 async def get_audit_offer_series():
-    """Inspect the current Audit Offer year-counter for the Settings UI."""
+    """Inspect the current Audit Offer numbering config for the Settings UI."""
     _deny_engineer()
+    cfg = await _audit_offer_config()
     year = datetime.now(timezone.utc).year
-    doc = await db.counters.find_one({"_id": f"audit_offer_{year}"})
+    counter_id = f"audit_offer_{year}" if cfg["year_reset"] else "audit_offer_all"
+    doc = await db.counters.find_one({"_id": counter_id})
     seq = (doc or {}).get("seq", 0)
     next_seq = seq + 1
     return {
         "year": year,
+        "prefix": cfg["prefix"],
+        "year_reset": cfg["year_reset"],
+        "pad": cfg["pad"],
         "current_seq": seq,
         "next_seq": next_seq,
-        "next_code": f"STR/AUD-OFR/{year}/{next_seq:03d}",
+        "next_code": _format_audit_offer(cfg["prefix"], year, next_seq, cfg["pad"], cfg["year_reset"]),
     }
 
 
 @api_router.put("/audits/offer-series")
 async def set_audit_offer_series(payload: dict = Body(...)):
-    """Set the NEXT Audit Offer Number's serial (admin only). Won't allow a
-    rewind that would collide with an existing `STR/AUD-OFR/YYYY/NNN` audit."""
-    _require_admin()
-    year = datetime.now(timezone.utc).year
-    try:
-        next_seq = int(payload.get("next_seq"))
-    except (TypeError, ValueError):
-        raise HTTPException(400, "next_seq must be a positive integer")
-    if next_seq < 1:
-        raise HTTPException(400, "next_seq must be at least 1")
+    """Update the Audit Offer numbering config (admin only).
 
-    # Build the candidate code and refuse if an audit already uses it.
-    candidate = f"STR/AUD-OFR/{year}/{next_seq:03d}"
+    Body may include any of: `next_seq`, `prefix`, `year_reset`, `pad`.
+    Refuses changes that would collide with an existing audit_offer."""
+    _require_admin()
+    cfg = await _audit_offer_config()
+
+    # --- collect new values (fall back to current config) ---
+    new_prefix = str(payload.get("prefix", cfg["prefix"])).strip().strip("/")
+    if not new_prefix:
+        raise HTTPException(400, "Prefix cannot be empty")
+    new_year_reset = bool(payload.get("year_reset", cfg["year_reset"]))
+    try:
+        new_pad = int(payload.get("pad", cfg["pad"]))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "pad must be a positive integer")
+    if new_pad < 1 or new_pad > 6:
+        raise HTTPException(400, "pad must be between 1 and 6")
+
+    year = datetime.now(timezone.utc).year
+    counter_id = f"audit_offer_{year}" if new_year_reset else "audit_offer_all"
+    # Default next_seq = current counter + 1 (i.e. don't change it if not provided)
+    current_doc = await db.counters.find_one({"_id": counter_id})
+    current_seq = (current_doc or {}).get("seq", 0)
+    if "next_seq" in payload:
+        try:
+            next_seq = int(payload["next_seq"])
+        except (TypeError, ValueError):
+            raise HTTPException(400, "next_seq must be a positive integer")
+        if next_seq < 1:
+            raise HTTPException(400, "next_seq must be at least 1")
+    else:
+        next_seq = current_seq + 1
+
+    candidate = _format_audit_offer(new_prefix, year, next_seq, new_pad, new_year_reset)
     clash = await db.audits.find_one({"audit_offer": candidate}, {"_id": 0, "id": 1})
     if clash:
         raise HTTPException(400, f"An audit with offer number {candidate} already exists. Pick a different starting number.")
 
-    # Set the counter so the NEXT auto-generate returns `next_seq`.
-    # _next_audit_offer_number does {$inc: 1} then returns seq, so we need to
-    # store next_seq - 1 here.
+    # --- persist config + counter ---
+    await db.settings.update_one(
+        {"_id": "audit_offer_series"},
+        {"$set": {"prefix": new_prefix, "year_reset": new_year_reset, "pad": new_pad}},
+        upsert=True,
+    )
     await db.counters.update_one(
-        {"_id": f"audit_offer_{year}"},
+        {"_id": counter_id},
         {"$set": {"seq": next_seq - 1}},
         upsert=True,
     )
-    return {"ok": True, "year": year, "next_seq": next_seq, "next_code": candidate}
+    return {
+        "ok": True,
+        "year": year,
+        "prefix": new_prefix,
+        "year_reset": new_year_reset,
+        "pad": new_pad,
+        "next_seq": next_seq,
+        "next_code": candidate,
+    }
 
 
 
