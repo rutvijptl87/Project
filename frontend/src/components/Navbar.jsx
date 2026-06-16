@@ -1,13 +1,35 @@
 import React from 'react';
-import { NavLink, Link } from 'react-router-dom';
-import { Plus, IndianRupee, Settings as SettingsIcon, LogOut, User, ClipboardList } from 'lucide-react';
+import { NavLink, Link, useLocation } from 'react-router-dom';
+import { Plus, IndianRupee, Settings as SettingsIcon, LogOut, User, ClipboardList, MoreHorizontal, Users, Building2 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import NotificationBell from './NotificationBell';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
+
+const navLinkClass = ({ isActive }) => `nav-link ${isActive ? 'active' : ''}`;
+
+const moreLinkBaseClass = 'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors';
 
 const Navbar = ({ onRecordPayment }) => {
   const { user, logout } = useAuth();
+  const location = useLocation();
   const isEngineer = user?.role === 'engineer';
   const isAccount = user?.role === 'account';
+  const moreLinks = isEngineer
+    ? []
+    : [
+        { to: '/clients', label: 'Clients', icon: Users, testId: 'nav-more-clients' },
+        { to: '/architects', label: 'Architects', icon: Building2, testId: 'nav-more-architects' },
+        { to: '/settings', label: 'Settings', icon: SettingsIcon, testId: 'nav-more-settings' },
+        { to: '/profile', label: 'My Profile', icon: User, testId: 'nav-more-profile' },
+      ];
+  const isMoreActive = moreLinks.some((item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`));
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b" style={{ borderColor: 'var(--cc-border)' }} data-testid="main-navbar">
@@ -23,21 +45,45 @@ const Navbar = ({ onRecordPayment }) => {
         <nav className="hidden md:flex items-center gap-1 overflow-x-auto">
           {isEngineer ? (
             <>
-              <NavLink to="/site-visits" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-site-visits"><ClipboardList size={14} className="inline mr-1"/>Site Visits</NavLink>
-              <NavLink to="/projects" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-projects">Projects</NavLink>
-              <NavLink to="/profile" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-profile"><User size={14} className="inline mr-1"/>Profile</NavLink>
+              <NavLink to="/site-visits" className={navLinkClass} data-testid="nav-site-visits"><ClipboardList size={14} className="inline mr-1"/>Site Visits</NavLink>
+              <NavLink to="/projects" className={navLinkClass} data-testid="nav-projects">Projects</NavLink>
+              <NavLink to="/profile" className={navLinkClass} data-testid="nav-profile"><User size={14} className="inline mr-1"/>Profile</NavLink>
             </>
           ) : (
             <>
-              <NavLink to="/" end className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-projects">Projects</NavLink>
-              <NavLink to="/audits" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-audits">Audits</NavLink>
-              <NavLink to="/documents" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-documents">Documents</NavLink>
+              <NavLink to="/" end className={navLinkClass} data-testid="nav-projects">Projects</NavLink>
+              <NavLink to="/audits" className={navLinkClass} data-testid="nav-audits">Audits</NavLink>
+              <NavLink to="/documents" className={navLinkClass} data-testid="nav-documents">Documents</NavLink>
               {!isAccount && (
-                <NavLink to="/site-visits" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-site-visits"><ClipboardList size={14} className="inline mr-1"/>Site Visits</NavLink>
+                <NavLink to="/site-visits" className={navLinkClass} data-testid="nav-site-visits"><ClipboardList size={14} className="inline mr-1"/>Site Visits</NavLink>
               )}
-              <NavLink to="/clients" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-clients">Clients</NavLink>
-              <NavLink to="/architects" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-architects">Architects</NavLink>
-              <NavLink to="/settings" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-settings"><SettingsIcon size={14} className="inline mr-1" />Settings</NavLink>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  className={`nav-link inline-flex items-center gap-1.5 ${isMoreActive ? 'active' : ''}`}
+                  data-testid="nav-more"
+                >
+                  <MoreHorizontal size={15} />
+                  More
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52 border-[var(--cc-border)] bg-white p-2 text-[var(--cc-text)] shadow-xl">
+                  <DropdownMenuLabel className="px-3 py-2 text-xs uppercase tracking-[0.16em] text-[var(--cc-text-muted)]">
+                    More options
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator className="bg-[var(--cc-border)]" />
+                  {moreLinks.map(({ to, label, icon: Icon, testId }) => (
+                    <DropdownMenuItem key={to} asChild className="p-0 focus:bg-transparent">
+                      <NavLink
+                        to={to}
+                        className={({ isActive }) => `${moreLinkBaseClass} ${isActive ? 'bg-[var(--cc-surface)] font-semibold text-[var(--cc-dark-green)]' : 'text-[var(--cc-text-muted)] hover:bg-[var(--cc-surface)] hover:text-[var(--cc-dark-green)]'}`}
+                        data-testid={testId}
+                      >
+                        <Icon size={15} />
+                        <span>{label}</span>
+                      </NavLink>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </>
           )}
         </nav>

@@ -229,8 +229,13 @@ body {
 
 /* Nav */
 .nav-link {
+    display: inline-flex;
+    align-items: center;
+    border: 0;
+    background: transparent;
     font-size: 0.9rem;
     font-weight: 500;
+    font-family: inherit;
     color: var(--cc-text-muted);
     padding: 0.5rem 0.8rem;
     border-radius: 8px;
