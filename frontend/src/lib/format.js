@@ -5,7 +5,7 @@ export const formatINR = (value, { withSymbol = true, decimals = 2 } = {}) => {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   }).format(num);
-  return withSymbol ? `₹ ${formatted}` : formatted;
+  return withSymbol ? `₹\u00A0${formatted}` : formatted;
 };
 
 export const formatINRCompact = (value) => {

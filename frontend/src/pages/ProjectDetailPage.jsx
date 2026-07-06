@@ -11,7 +11,7 @@ import InitialsBadge from '../components/InitialsBadge';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import {
   ArrowLeft, Pencil, Trash2, FileText, Download, Archive, Folder, Copy,
-  Plus, MapPin, CreditCard, ClipboardList, Clock, Phone, Mail, MessageCircle, StickyNote, Save, X, Pin,
+  Plus, MapPin, CreditCard, ClipboardList, Clock, Phone, Mail, MessageCircle, StickyNote, Save, X, Pin, CheckSquare,
 } from 'lucide-react';
 
 const actionStyle = (action) => {
@@ -30,12 +30,13 @@ const ProjectDetailPage = () => {
   const { schedule } = useUndo();
   const { byUsername } = useUserDirectory();
   const { user } = useAuth();
-  const isEngineer = user?.role === 'engineer';
+  const isEngineer = user?.role === 'engineer' || user?.role === 'draftsman';
   const [project, setProject] = useState(null);
   const [payments, setPayments] = useState([]);
   const [revisions, setRevisions] = useState([]);
   const [activity, setActivity] = useState([]);
   const [siteVisits, setSiteVisits] = useState([]);
+  const [tasks, setTasks] = useState([]);
   const [showPay, setShowPay] = useState(false);
   const [newQuote, setNewQuote] = useState('');
   const [reviseReason, setReviseReason] = useState('');
@@ -80,18 +81,20 @@ const ProjectDetailPage = () => {
   const load = useCallback(async () => {
     // Engineers must NEVER hit payments / revisions (they'd 403 anyway).
     const empty = Promise.resolve({ data: [] });
-    const [p, pay, rev, act, sv] = await Promise.all([
+    const [p, pay, rev, act, sv, tsks] = await Promise.all([
       api.get(`/projects/${id}`),
       isEngineer ? empty : api.get('/payments', { params: { project_id: id } }),
       isEngineer ? empty : api.get(`/projects/${id}/revisions`),
       api.get(`/projects/${id}/activity`).catch(() => ({ data: [] })),
       api.get('/site-visits', { params: { project_id: id } }).catch(() => ({ data: [] })),
+      api.get('/tasks', { params: { project_id: id } }).catch(() => ({ data: [] })),
     ]);
     setProject(p.data);
     setPayments(pay.data || []);
     setRevisions(rev.data || []);
     setActivity(act.data || []);
     setSiteVisits((sv?.data) || []);
+    setTasks(tsks.data || []);
   }, [id, isEngineer]);
 
   useEffect(() => { load(); }, [load]);
@@ -208,7 +211,7 @@ const ProjectDetailPage = () => {
             )}
           </div>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto [&_.btn]:w-full sm:[&_.btn]:w-auto">
           <Link to={`/site-visits/new?project_id=${id}`} className="btn btn-accent" data-testid="detail-btn-new-site-visit"><ClipboardList size={15}/> New Site Visit</Link>
           {!isEngineer && (
             <>
@@ -349,6 +352,72 @@ const ProjectDetailPage = () => {
         </div>
       )}
 
+      {/* Linked Tasks */}
+      <div className="card mb-6 overflow-hidden">
+        <div className="p-5 border-b flex items-center justify-between" style={{ borderColor: 'var(--cc-border)' }}>
+          <h2 className="font-head text-lg font-bold flex items-center gap-2" style={{ color: 'var(--cc-dark-green)' }}>
+            <CheckSquare size={18}/> Linked Tasks for {project.project_code || project.name}
+          </h2>
+        </div>
+        {tasks.length === 0 ? (
+          <div className="text-center py-6 text-sm" style={{ color: 'var(--cc-text-muted)' }}>
+            No tasks linked to this project yet.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="cc-table w-full text-xs" style={{ minWidth: '600px' }}>
+              <thead>
+                <tr>
+                  <th style={{ width: 60 }}>Sr No</th>
+                  <th style={{ width: 100 }}>Category</th>
+                  <th>Work</th>
+                  <th style={{ width: 120 }}>Start Date</th>
+                  <th style={{ width: 120 }}>Due Date</th>
+                  <th>Assign To</th>
+                  <th className="text-center" style={{ width: 110 }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tasks.map((t, idx) => (
+                  <tr key={t.id}>
+                    <td className="font-mono-data text-gray-500">{idx + 1}</td>
+                    <td className="capitalize font-semibold text-gray-700">{t.category || '—'}</td>
+                    <td className="font-medium text-gray-900">{t.work}</td>
+                    <td className="font-mono-data">{(t.start_date || '').slice(0, 10) || '—'}</td>
+                    <td className="font-mono-data">{(t.due_date || '').slice(0, 10) || '—'}</td>
+                    <td>
+                      {t.assigned_to_name || t.assigned_to_username ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <span
+                            className="inline-flex items-center justify-center rounded-full text-white font-bold"
+                            style={{ width: 16, height: 16, background: t.assigned_to_color || '#0A2E1F', fontSize: 9 }}
+                            title={`${t.assigned_to_username} - ${t.assigned_to_name || ''}`}
+                          >
+                            {(t.assigned_to_name || t.assigned_to_username)[0].toUpperCase()}
+                          </span>
+                          <span className="text-gray-900 font-medium text-xs">{t.assigned_to_name || t.assigned_to_username}</span>
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className="text-center">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                        t.status === 'completed' 
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-red-50 text-red-600 border-red-200'
+                      }`}>
+                        {t.status === 'completed' ? 'Completed' : 'Pending'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Payments — hidden from engineers (financial data) */}
       {!isEngineer && (
       <div className="card mb-6 overflow-hidden" data-testid="payments-card">
@@ -363,10 +432,10 @@ const ProjectDetailPage = () => {
             <thead>
               <tr>
                 <th style={{ width: 50 }}>#</th>
-                <th className="text-right">Amount (₹)</th>
-                <th>Note</th>
-                <th>Date &amp; Time</th>
-                <th className="text-right">Actions</th>
+                <th>Amount (₹)</th>
+                <th className="hidden sm:table-cell">Note</th>
+                <th className="hidden md:table-cell">Date &amp; Time</th>
+                <th className="text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -375,13 +444,20 @@ const ProjectDetailPage = () => {
               ) : payments.map((p, i) => (
                 <tr key={p.id} data-testid={`payment-row-${p.id}`}>
                   <td className="font-mono-data text-xs" style={{ color: 'var(--cc-text-muted)' }}>{i + 1}</td>
-                  <td className="num font-semibold">{formatINR(p.amount, { withSymbol: false })}</td>
-                  <td className="text-sm">{p.notes || '—'}</td>
-                  <td className="text-xs font-mono-data">{formatDate(p.payment_date)}</td>
+                  <td className="num font-semibold" style={{ textAlign: 'left' }}>{formatINR(p.taxable_amount !== undefined && p.taxable_amount !== null ? p.taxable_amount : p.amount, { withSymbol: false })}</td>
+                  <td className="text-sm hidden sm:table-cell">
+                    {p.notes || '—'}
+                    {p.invoice_no && (
+                      <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200" style={{ backgroundColor: 'var(--cc-light-green)', color: 'var(--cc-dark-green)', borderColor: 'var(--cc-green)' }}>
+                        Inv: {p.invoice_no}
+                      </span>
+                    )}
+                  </td>
+                  <td className="text-xs font-mono-data hidden md:table-cell">{formatDate(p.payment_date)}</td>
                   <td>
-                    <div className="flex gap-1 justify-end">
+                    <div className="flex gap-1 justify-center">
                       <button onClick={() => downloadReceipt(p.id)} className="btn btn-outline btn-sm" data-testid={`btn-receipt-${p.id}`}><Download size={12}/> Receipt</button>
-                      <button onClick={() => handleDeletePayment(p.id)} className="btn btn-danger btn-sm" data-testid={`btn-delete-payment-${p.id}`}><Trash2 size={12}/></button>
+                      {/* <button onClick={() => handleDeletePayment(p.id)} className="btn btn-danger btn-sm" data-testid={`btn-delete-payment-${p.id}`}><Trash2 size={12}/></button> */}
                     </div>
                   </td>
                 </tr>
@@ -434,9 +510,9 @@ const ProjectDetailPage = () => {
             <thead>
               <tr>
                 <th style={{ width: 50 }}>#</th>
-                <th className="text-right">Old Amount (₹)</th>
+                <th className="text-right hidden sm:table-cell">Old Amount (₹)</th>
                 <th className="text-right">New Amount (₹)</th>
-                <th>Reason</th>
+                <th className="hidden md:table-cell">Reason</th>
                 <th>Date &amp; Time</th>
               </tr>
             </thead>
@@ -446,9 +522,9 @@ const ProjectDetailPage = () => {
               ) : revisions.map((r, i) => (
                 <tr key={r.id} data-testid={`revision-row-${r.id}`}>
                   <td className="font-mono-data text-xs" style={{ color: 'var(--cc-text-muted)' }}>{i + 1}</td>
-                  <td className="num">{formatINR(r.old_amount, { withSymbol: false })}</td>
+                  <td className="num hidden sm:table-cell">{formatINR(r.old_amount, { withSymbol: false })}</td>
                   <td className="num font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{formatINR(r.new_amount, { withSymbol: false })}</td>
-                  <td className="text-sm">{r.reason || '—'}</td>
+                  <td className="text-sm hidden md:table-cell">{r.reason || '—'}</td>
                   <td className="text-xs font-mono-data">{formatDate(r.created_at)}</td>
                 </tr>
               ))}
@@ -511,9 +587,9 @@ const ProjectDetailPage = () => {
                 <tr style={{ background: 'var(--cc-surface)', color: 'var(--cc-dark-green)' }}>
                   <th className="text-left px-3 py-2 font-semibold">Code</th>
                   <th className="text-left px-3 py-2 font-semibold">Inspection</th>
-                  <th className="text-left px-3 py-2 font-semibold">Date</th>
-                  <th className="text-left px-3 py-2 font-semibold">Engineer</th>
-                  <th className="text-left px-3 py-2 font-semibold">Status</th>
+                  <th className="text-left px-3 py-2 font-semibold hidden md:table-cell">Date</th>
+                  <th className="text-left px-3 py-2 font-semibold hidden lg:table-cell">Engineer</th>
+                  <th className="text-left px-3 py-2 font-semibold hidden sm:table-cell">Status</th>
                   <th className="text-right px-3 py-2 font-semibold">Open</th>
                 </tr>
               </thead>
@@ -527,9 +603,9 @@ const ProjectDetailPage = () => {
                       </span>
                     </td>
                     <td className="px-3 py-2">{v.inspection_title || '—'}</td>
-                    <td className="px-3 py-2 text-xs font-mono-data">{(v.visit_date || '').slice(0, 10) || '—'}</td>
-                    <td className="px-3 py-2 text-xs">{v.engineer_name || v.created_by_username || '—'}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 text-xs font-mono-data hidden md:table-cell">{(v.visit_date || '').slice(0, 10) || '—'}</td>
+                    <td className="px-3 py-2 text-xs hidden lg:table-cell">{v.engineer_name || v.created_by_username || '—'}</td>
+                    <td className="px-3 py-2 hidden sm:table-cell">
                       <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase" style={{ background: (v.status || '').toLowerCase() === 'draft' ? '#FEF3C7' : '#D1FAE5', color: (v.status || '').toLowerCase() === 'draft' ? '#92400E' : '#065F46' }}>
                         {(v.status || 'submitted').toUpperCase()}
                       </span>

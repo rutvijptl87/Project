@@ -26,7 +26,10 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
 if not BASE_URL:
     # Fall back to frontend/.env if env not exported
     try:
-        with open("/app/frontend/.env") as f:
+        env_path = "/app/frontend/.env"
+        if not os.path.exists(env_path):
+            env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", ".env")
+        with open(env_path) as f:
             for line in f:
                 if line.startswith("REACT_APP_BACKEND_URL="):
                     BASE_URL = line.split("=", 1)[1].strip().rstrip("/")

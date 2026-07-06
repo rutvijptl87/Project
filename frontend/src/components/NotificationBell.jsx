@@ -87,8 +87,10 @@ const NotificationBell = () => {
       </button>
 
       {open && (
+        <>
+        <div className="fixed inset-0 z-40 sm:hidden" onClick={() => setOpen(false)} />
         <div
-          className="absolute right-0 mt-2 w-80 rounded-lg shadow-lg z-50 overflow-hidden"
+          className="fixed top-14 left-2 right-2 sm:absolute sm:top-auto sm:left-auto sm:right-0 sm:mt-2 sm:w-80 rounded-lg shadow-2xl sm:shadow-lg z-50 overflow-hidden"
           style={{ background: 'white', border: '1px solid var(--cc-border)' }}
           data-testid="notification-dropdown"
         >
@@ -102,7 +104,7 @@ const NotificationBell = () => {
           </div>
 
           {/* Web Push toggle — out-of-tab phone-style alerts */}
-          {push.supported && (
+          {/* push.supported && (
             <div className="px-3 py-2 border-b text-xs flex items-center gap-2" style={{ borderColor: 'var(--cc-border)' }} data-testid="push-toggle-row">
               {push.subscribed ? (
                 <BellRing size={13} style={{ color: '#10B981' }} />
@@ -151,10 +153,10 @@ const NotificationBell = () => {
                 </button>
               )}
             </div>
-          )}
-          {push.error && (
+          ) */}
+          {/* push.error && (
             <div className="px-3 py-1.5 text-[11px]" style={{ background: '#FEE2E2', color: '#991B1B' }} data-testid="push-error">{push.error}</div>
-          )}
+          ) */}
           {toast && (
             <div className="px-3 py-1.5 text-[11px]" style={{ background: '#D1FAE5', color: '#065F46' }} data-testid="push-toast">{toast}</div>
           )}
@@ -168,7 +170,7 @@ const NotificationBell = () => {
               items.map((n) => (
                 <Link
                   key={n.id}
-                  to={n.related_visit_id ? `/site-visits/${n.related_visit_id}` : '/site-visits'}
+                  to={n.type === 'task' ? '/tasks' : (n.related_visit_id ? `/site-visits/${n.related_visit_id}` : '/site-visits')}
                   onClick={() => { markRead(n); setOpen(false); }}
                   className="block px-3 py-2.5 border-b text-sm hover:bg-emerald-50/40"
                   style={{ borderColor: 'var(--cc-border)', background: n.is_read ? 'white' : 'rgba(16,185,129,0.06)' }}
@@ -188,6 +190,7 @@ const NotificationBell = () => {
             )}
           </div>
         </div>
+        </>
       )}
     </div>
   );

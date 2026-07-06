@@ -23,12 +23,25 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+try:
+    pdfmetrics.registerFont(TTFont('DejaVuSans', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
+    pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'))
+except Exception as e:
+    print(f"Font registration failed: {e}")
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, Frame, KeepInFrame, Table, TableStyle
 from auth import get_current_user_safe
 
 ROOT_DIR = Path(__file__).parent
+
+pdfmetrics.registerFont(TTFont('Roboto', str(Path(__file__).parent / 'fonts' / 'Roboto-Regular.ttf')))
+pdfmetrics.registerFont(TTFont('Roboto-Bold', str(Path(__file__).parent / 'fonts' / 'Roboto-Bold.ttf')))
+pdfmetrics.registerFont(TTFont('Roboto-Medium', str(Path(__file__).parent / 'fonts' / 'Roboto-Medium.ttf')))
 load_dotenv(ROOT_DIR / '.env')
 
 mongo_url = os.environ['MONGO_URL']
@@ -47,6 +60,29 @@ auth_public_router.include_router(auth_module.router)
 api_router = APIRouter(prefix="/api", dependencies=[Depends(auth_module.get_current_user)])
 
 
+# ---------------------- HELPERS ----------------------
+GST_STATE_CODES = {
+  "01": "Jammu and Kashmir", "02": "Himachal Pradesh", "03": "Punjab", "04": "Chandigarh",
+  "05": "Uttarakhand", "06": "Haryana", "07": "Delhi", "08": "Rajasthan", "09": "Uttar Pradesh",
+  "10": "Bihar", "11": "Sikkim", "12": "Arunachal Pradesh", "13": "Nagaland", "14": "Manipur",
+  "15": "Mizoram", "16": "Tripura", "17": "Meghalaya", "18": "Assam", "19": "West Bengal",
+  "20": "Jharkhand", "21": "Odisha", "22": "Chhattisgarh", "23": "Madhya Pradesh", "24": "Gujarat",
+  "25": "Daman and Diu", "26": "Dadra and Nagar Haveli", "27": "Maharashtra", "28": "Andhra Pradesh (Old)",
+  "29": "Karnataka", "30": "Goa", "31": "Lakshadweep", "32": "Kerala", "33": "Tamil Nadu",
+  "34": "Puducherry", "35": "Andaman and Nicobar Islands", "36": "Telangana", "37": "Andhra Pradesh",
+  "38": "Ladakh"
+}
+
+def format_place_of_supply(pos: str, gstin: str = "") -> str:
+    code = (pos or "").strip()
+    if not code and gstin and len(gstin) >= 2:
+        code = gstin[:2]
+    if not code:
+        return ""
+    if code.isdigit():
+        code = code.zfill(2)
+    return GST_STATE_CODES.get(code, code)
+
 # ---------------------- MODELS ----------------------
 class ClientIn(BaseModel):
     name: str
@@ -54,6 +90,11 @@ class ClientIn(BaseModel):
     email: Optional[str] = ""
     company: Optional[str] = ""
     address: Optional[str] = ""
+    gstin: Optional[str] = ""
+    pan: Optional[str] = ""
+    place_of_supply: Optional[str] = ""
+    gst_type: Optional[str] = ""
+    principal_address: Optional[str] = ""
 
 
 class Client(ClientIn):
@@ -63,6 +104,11 @@ class Client(ClientIn):
     last_edited_by_username: Optional[str] = ""
     last_edited_at: Optional[str] = ""
     created_at: str
+
+
+class PaginatedClients(BaseModel):
+    data: List[Client]
+    total: int
 
 
 class ArchitectIn(BaseModel):
@@ -123,8 +169,12 @@ class Project(BaseModel):
     # Edit tracking
     last_edited_by_user_id: Optional[str] = None
     last_edited_by_username: Optional[str] = ""
-    last_edited_at: Optional[str] = ""
     created_at: str
+
+
+class PaginatedProjects(BaseModel):
+    data: List[Project]
+    total: int
 
 
 class OfferIn(BaseModel):
@@ -196,6 +246,8 @@ class PaymentIn(BaseModel):
     amount: float
     payment_date: Optional[str] = None  # ISO string
     notes: Optional[str] = ""
+    invoice_no: Optional[str] = ""
+    taxable_amount: Optional[float] = None
 
 
 class Payment(BaseModel):
@@ -204,8 +256,10 @@ class Payment(BaseModel):
     project_id: str
     project_code: str
     amount: float
+    taxable_amount: Optional[float] = None
     payment_date: str
     notes: str = ""
+    invoice_no: Optional[str] = ""
     last_edited_by_user_id: Optional[str] = None
     last_edited_by_username: Optional[str] = ""
     last_edited_at: Optional[str] = ""
@@ -307,6 +361,67 @@ class SiteVisit(BaseModel):
     last_edited_at: Optional[str] = ""
     created_at: str
 
+class CompanyDetailsIn(BaseModel):
+    name: str
+    address: str
+    gstin: str
+    mobile: str
+    pan: str
+    email: str
+    bank_name: str
+    bank_account_name: str
+    bank_ifsc: str
+    bank_account_no: str
+    bank_branch: str
+    upi_id: str
+    qr_code_url: Optional[str] = ""
+    company_logo_url: Optional[str] = ""
+
+
+class InvoiceItem(BaseModel):
+    service_description: str
+    qty: float = 1.0
+    rate: float
+
+class InvoiceIn(BaseModel):
+    type: str # "proforma" or "tax"
+    invoice_date: str # "YYYY-MM-DD"
+    expiry_date: Optional[str] = ""
+    hsn_code: str = "998332"
+    client_id: str
+    client_name: str
+    client_address: Optional[str] = ""
+    client_gstin: Optional[str] = ""
+    client_mobile: Optional[str] = ""
+    client_pan: Optional[str] = ""
+    place_of_supply: Optional[str] = ""
+    project_id: Optional[str] = ""
+    
+    # Legacy fields (kept for backward compatibility)
+    service_description: Optional[str] = ""
+    qty: Optional[float] = 1.0
+    rate: Optional[float] = 0.0
+    
+    # New items array
+    items: Optional[List[InvoiceItem]] = []
+    
+    gst_percent: float = 18.0
+    tds_percent: float = 10.0
+    tds_section: str = "194J"
+    received_amount: float = 0.0
+
+
+class Invoice(InvoiceIn):
+    id: str
+    invoice_no: str
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = ""
+    created_at: str
+
+
+class PaginatedInvoices(BaseModel):
+    data: List[Invoice]
+    total: int
 
 
 class DocumentTypeIn(BaseModel):
@@ -457,6 +572,31 @@ async def _enrich_project(p: dict, client_map: Optional[dict] = None, architect_
     return p
 
 
+async def _recalculate_project_received(project_id: str):
+    payments = await db.payments.find({"project_id": project_id}, {"_id": 0}).to_list(10000)
+    received_amount = 0.0
+    for p in payments:
+        tax_amt = p.get("taxable_amount")
+        if tax_amt is not None:
+            received_amount += float(tax_amt)
+        else:
+            received_amount += float(p.get("amount", 0))
+            
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if project:
+        quoted = float(project.get("quoted_amount", 0) or 0)
+        outstanding = round(quoted - received_amount, 2)
+        status = "Settled" if (outstanding <= 0 and quoted > 0) else "Outstanding"
+        await db.projects.update_one(
+            {"id": project_id},
+            {"$set": {
+                "received_amount": received_amount,
+                "outstanding_amount": outstanding,
+                "status": status
+            }}
+        )
+
+
 async def _enrich_projects_batch(projects: List[dict]) -> List[dict]:
     """Efficiently enrich a list of projects by batch-loading clients and architects.
     Avoids N+1 DB queries.
@@ -479,10 +619,110 @@ async def _enrich_projects_batch(projects: List[dict]) -> List[dict]:
 
 
 # ---------------------- CLIENTS ----------------------
+@api_router.get("/clients/verify-gstin/{gstin}")
+async def verify_gstin(gstin: str):
+    api_key = os.environ.get("GSTZEN_API_KEY")
+    if not api_key:
+        raise HTTPException(500, "GSTZEN_API_KEY is not configured on the server.")
+    if len(gstin) != 15:
+        raise HTTPException(400, "GSTIN must be exactly 15 characters.")
+    
+    import httpx
+    url = "https://my.gstzen.in/api/gstin-validator/"
+    headers = {
+        "Content-Type": "application/json",
+        "Token": api_key
+    }
+    payload = {"gstin": gstin}
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, headers=headers, json=payload, timeout=10.0)
+            if resp.status_code != 200:
+                raise HTTPException(resp.status_code, "Failed to reach GSTZen API")
+            
+            data = resp.json()
+            api_message = data.get("message", "")
+            
+            if "Validator Subscription has exhausted" in api_message:
+                raise HTTPException(400, "Subscription Limit Exhausted")
+            if "Validator Subscription has expired" in api_message:
+                raise HTTPException(400, "Subscription Period Expired")
+
+            if data.get("status") == 0 or not data.get("valid"):
+                raise HTTPException(400, "Invalid GSTIN.")
+            
+            company = data.get("company_details", {})
+            
+            # Format principal address
+            pradr = company.get("pradr", {})
+            adadr = company.get("adadr", [])
+            
+            addr_obj = {}
+            if pradr and isinstance(pradr, dict):
+                addr_obj = pradr.get("addr", pradr)
+            elif adadr and isinstance(adadr, list) and len(adadr) > 0:
+                addr_obj = adadr[0].get("addr", adadr[0]) if isinstance(adadr[0], dict) else {}
+
+            principal_address = ""
+            if isinstance(addr_obj, str):
+                principal_address = addr_obj
+            elif isinstance(addr_obj, dict):
+                principal_address = ", ".join(filter(None, [
+                    addr_obj.get("building_name") or addr_obj.get("bno") or addr_obj.get("bnm"),
+                    addr_obj.get("building_number"),
+                    addr_obj.get("floor_number") or addr_obj.get("flno"),
+                    addr_obj.get("street") or addr_obj.get("st"),
+                    addr_obj.get("loc"),
+                    addr_obj.get("city") or addr_obj.get("dst"),
+                    addr_obj.get("state_in_address") or addr_obj.get("stcd"),
+                    addr_obj.get("pincode") or addr_obj.get("pncd")
+                ]))
+                if not principal_address:
+                    principal_address = addr_obj.get("addr", "")
+            
+            return {
+                "name": company.get("trade_name") or company.get("legal_name", ""),
+                "pan": company.get("pan", ""),
+                "gst_type": company.get("gst_type", ""),
+                "place_of_supply": format_place_of_supply(company.get("state_info", {}).get("code", ""), gstin),
+                "principal_address": principal_address
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"GSTZen verification error: {str(e)}")
+        raise HTTPException(500, f"Error verifying GSTIN: {str(e)}")
+
 @api_router.get("/clients", response_model=List[Client])
 async def list_clients():
     items = await db.clients.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return items
+
+
+@api_router.get("/clients/paginated", response_model=PaginatedClients)
+async def list_clients_paginated(page: int = 1, limit: int = 25, q: Optional[str] = None):
+    skip = (page - 1) * limit
+    query = {}
+    if q:
+        regex = {"$regex": q, "$options": "i"}
+        query = {
+            "$or": [
+                {"name": regex},
+                {"company": regex},
+                {"phone": regex},
+                {"email": regex},
+                {"gstin": regex},
+                {"pan": regex},
+                {"place_of_supply": regex},
+                {"address": regex}
+            ]
+        }
+    
+    total = await db.clients.count_documents(query)
+    items = await db.clients.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    
+    return {"data": items, "total": total}
 
 
 def _norm(s: Optional[str]) -> str:
@@ -523,6 +763,149 @@ async def _find_duplicate_contact(
     return None
 
 
+@api_router.post("/clients/bulk-import")
+async def bulk_import_clients(file: UploadFile = File(...)):
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        raise HTTPException(400, "Only Excel files (.xlsx, .xls) are supported.")
+    
+    content = await file.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+    except Exception as e:
+        raise HTTPException(400, f"Failed to read Excel file: {str(e)}")
+
+    header_row_idx = None
+    gstin_col = None
+    name_col = None
+    pos_col = None
+    phone_col = None
+    email_col = None
+    target_ws = None
+    
+    for sheet in wb.worksheets:
+        # Reset column trackers for each sheet
+        gstin_col = None
+        name_col = None
+        pos_col = None
+        phone_col = None
+        email_col = None
+        
+        for r_idx, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+            temp_gstin_col = None
+            temp_name_col = None
+            temp_pos_col = None
+            temp_phone_col = None
+            temp_email_col = None
+            
+            for c_idx, cell in enumerate(row):
+                val = str(cell).strip().lower() if cell else ""
+                if not val: continue
+                
+                if "gstin" in val:
+                    temp_gstin_col = c_idx
+                elif "customer name" in val or "receiver name" in val:
+                    temp_name_col = c_idx
+                elif "place of supply" in val:
+                    temp_pos_col = c_idx
+                elif "phone" in val or "mobile" in val:
+                    temp_phone_col = c_idx
+                elif "email" in val:
+                    temp_email_col = c_idx
+            
+            if temp_name_col is not None and (temp_gstin_col is not None or temp_pos_col is not None):
+                header_row_idx = r_idx
+                gstin_col = temp_gstin_col
+                name_col = temp_name_col
+                pos_col = temp_pos_col
+                phone_col = temp_phone_col
+                email_col = temp_email_col
+                target_ws = sheet
+                break
+                
+        if target_ws is not None:
+            break
+            
+    if target_ws is None:
+        raise HTTPException(400, "Could not find required columns ('Customer Name', 'GSTIN', 'Place of supply') in any sheet of the Excel file.")
+        
+    ws = target_ws
+        
+    imported = 0
+    skipped = 0
+    duplicates_in_file = []
+    duplicates_in_db = []
+    
+    seen_in_file = set()
+    
+    existing_clients = await db.clients.find({}).to_list(None)
+    db_keys = set()
+    for c in existing_clients:
+        key = (
+            str(c.get("name") or "").strip().lower(),
+            str(c.get("phone") or "").strip().lower(),
+            str(c.get("email") or "").strip().lower(),
+            str(c.get("gstin") or "").strip().lower(),
+            str(c.get("place_of_supply") or "").strip().lower()
+        )
+        db_keys.add(key)
+    
+    for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
+        name = str(row[name_col]).strip() if name_col is not None and len(row) > name_col and row[name_col] else ""
+        if not name or name.lower() == "none":
+            continue
+            
+        gstin = str(row[gstin_col]).strip() if gstin_col is not None and len(row) > gstin_col and row[gstin_col] else ""
+        if gstin.lower() == "none": gstin = ""
+        
+        pos = str(row[pos_col]).strip() if pos_col is not None and len(row) > pos_col and row[pos_col] else ""
+        if pos.lower() == "none": pos = ""
+
+        phone = str(row[phone_col]).strip() if phone_col is not None and len(row) > phone_col and row[phone_col] else ""
+        if phone.lower() == "none": phone = ""
+        
+        email = str(row[email_col]).strip() if email_col is not None and len(row) > email_col and row[email_col] else ""
+        if email.lower() == "none": email = ""
+        
+        row_key = (name.lower(), phone.lower(), email.lower(), gstin.lower(), pos.lower())
+        
+        if row_key in seen_in_file:
+            skipped += 1
+            duplicates_in_file.append({"name": name, "gstin": gstin})
+            continue
+            
+        seen_in_file.add(row_key)
+        
+        if row_key in db_keys:
+            skipped += 1
+            duplicates_in_db.append({"name": name, "gstin": gstin})
+            continue
+            
+        doc = {
+            "name": name,
+            "gstin": gstin,
+            "place_of_supply": format_place_of_supply(pos, gstin),
+            "pan": gstin[2:12] if len(gstin) >= 12 else "",
+            "phone": phone,
+            "email": email,
+            "company": name,
+            "address": "",
+            "id": _new_id(),
+            "created_at": _now()
+        }
+        _stamp_edit(doc)
+        await db.clients.insert_one(doc)
+        imported += 1
+        
+    return {
+        "total_scanned": imported + skipped,
+        "imported": imported,
+        "skipped": skipped,
+        "duplicates_in_file": duplicates_in_file,
+        "duplicates_in_db": duplicates_in_db,
+        "message": f"Scanned {imported + skipped}. Imported {imported}. Skipped {skipped} duplicates."
+    }
+
+
 @api_router.post("/clients", response_model=Client)
 async def create_client(data: ClientIn):
     dup = await _find_duplicate_contact(db.clients, data.name, data.phone, data.email)
@@ -553,6 +936,7 @@ async def update_client(client_id: str, data: ClientIn):
         )
         raise HTTPException(409, f"Another client with this {reason} already exists.")
     update = data.model_dump()
+    update["place_of_supply"] = format_place_of_supply(update.get("place_of_supply"), update.get("gstin"))
     _stamp_edit(update)
     result = await db.clients.find_one_and_update(
         {"id": client_id},
@@ -621,6 +1005,135 @@ async def get_architect_detail(architect_id: str):
         },
     }
 
+@api_router.get("/clients/{client_id}/ledger/export")
+async def export_client_ledger(client_id: str):
+    client = await db.clients.find_one({"id": client_id}, {"_id": 0})
+    if not client:
+        raise HTTPException(404, "Client not found")
+
+    projects = await db.projects.find({"client_id": client_id}, {"_id": 0}).to_list(None)
+    project_map = {p["id"]: p for p in projects}
+    project_ids = list(project_map.keys())
+
+    invoices = await db.invoices.find({"client_id": client_id, "type": "tax"}, {"_id": 0}).to_list(None)
+    payments = await db.payments.find({"project_id": {"$in": project_ids}}, {"_id": 0}).to_list(None)
+
+    transactions = []
+    
+    for inv in invoices:
+        items = inv.get("items", [])
+        base_value = sum(float(it.get("qty", 1.0)) * float(it.get("rate", 0.0)) for it in items)
+        gst_percent = float(inv.get("gst_percent", 18))
+        gst_amount = base_value * (gst_percent / 100)
+        total_amount_with_gst = base_value + gst_amount
+        tds_percent = float(inv.get("tds_percent", 0))
+        tds_amount = base_value * (tds_percent / 100) if tds_percent > 0 else 0
+        payable_amount = round(total_amount_with_gst - tds_amount, 2)
+        
+        proj_name = ""
+        if inv.get("project_id") and inv["project_id"] in project_map:
+            p = project_map[inv["project_id"]]
+            proj_name = p.get("project_code") or p.get("name")
+        
+        transactions.append({
+            "date": inv.get("invoice_date") or inv.get("created_at", "")[:10],
+            "type": "Invoice",
+            "ref_no": inv.get("invoice_no", ""),
+            "project": proj_name,
+            "particulars": f"Tax Invoice Generated {inv.get('invoice_no', '')}",
+            "debit": payable_amount,
+            "credit": 0.0
+        })
+
+    for pay in payments:
+        proj_name = ""
+        if pay.get("project_id") and pay["project_id"] in project_map:
+            p = project_map[pay["project_id"]]
+            proj_name = p.get("project_code") or p.get("name")
+            
+        transactions.append({
+            "date": pay.get("payment_date") or pay.get("created_at", "")[:10],
+            "type": "Payment",
+            "ref_no": pay.get("invoice_no", ""),
+            "project": proj_name,
+            "particulars": pay.get("notes", "Payment Received"),
+            "debit": 0.0,
+            "credit": float(pay.get("amount", 0))
+        })
+
+    transactions.sort(key=lambda x: x["date"])
+
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    import io
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Client Ledger"
+
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="061A11")
+    title_font = Font(bold=True, size=14)
+
+    ws.append([f"Ledger Account: {client.get('name', '')}"])
+    ws.cell(row=1, column=1).font = title_font
+    ws.append([f"Contact: {client.get('phone', '')} | {client.get('email', '')}"])
+    ws.append([f"GSTIN: {client.get('gstin', 'N/A')}"])
+    ws.append([])
+
+    headers = ["Date", "Type", "Reference No", "Project", "Particulars", "Debit (INR)", "Credit (INR)", "Balance (INR)"]
+    ws.append(headers)
+    
+    header_row = 5
+    for col in range(1, len(headers) + 1):
+        cell = ws.cell(row=header_row, column=col)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+
+    running_balance = 0.0
+    total_debit = 0.0
+    total_credit = 0.0
+
+    for t in transactions:
+        running_balance += t["debit"]
+        running_balance -= t["credit"]
+        total_debit += t["debit"]
+        total_credit += t["credit"]
+
+        ws.append([
+            t["date"],
+            t["type"],
+            t["ref_no"],
+            t["project"],
+            t["particulars"],
+            round(t["debit"], 2) if t["debit"] else "",
+            round(t["credit"], 2) if t["credit"] else "",
+            round(running_balance, 2)
+        ])
+
+    ws.append([])
+    ws.append(["", "", "", "", "TOTALS:", round(total_debit, 2), round(total_credit, 2), round(running_balance, 2)])
+    summary_row = ws.max_row
+    for col in range(5, 9):
+        ws.cell(row=summary_row, column=col).font = Font(bold=True)
+
+    for col_idx, col in enumerate(ws.columns, 1):
+        max_len = max((len(str(c.value)) for c in col if c.value is not None), default=10)
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = min(max_len + 2, 40)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    
+    import re
+    safe_name = re.sub(r'[^A-Za-z0-9_]', '_', client.get('name', 'Client'))
+    filename = f"Ledger_{safe_name}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 @api_router.get("/clients/{client_id}")
 async def get_client_detail(client_id: str):
@@ -713,12 +1226,12 @@ async def delete_architect(architect_id: str):
 
 
 def _deny_engineer():
-    """Raise 403 if the calling user is an engineer. Used to lock financial /
-    accounting endpoints (payments, audits, monthly revenue, etc.) so engineers
-    can never read amounts even via direct API access."""
+    """Raise 403 if the calling user is an engineer or draftsman. Used to lock financial /
+    accounting endpoints (payments, audits, monthly revenue, etc.) so these roles
+    can never read amounts."""
     user = get_current_user_safe()
-    if user and user.get("role") == "engineer":
-        raise HTTPException(status_code=403, detail="Engineers are not allowed to view financial data")
+    if user and user.get("role") in ("engineer", "draftsman"):
+        raise HTTPException(status_code=403, detail="Engineers/Draftsmen are not allowed to view financial data")
 
 
 def _require_admin():
@@ -731,11 +1244,11 @@ def _require_admin():
 
 # ---------------------- PROJECTS ----------------------
 def _strip_financials_for_engineer(items):
-    """If the caller is an engineer, blank out money fields on project payload(s).
-    Engineers should never see quoted/received/outstanding amounts or payments.
+    """If the caller is an engineer or draftsman, blank out money fields on project payload(s).
+    These roles should never see quoted/received/outstanding amounts or payments.
     Accepts a single dict or a list and mutates in place."""
     user = get_current_user_safe()
-    if not user or user.get("role") != "engineer":
+    if not user or user.get("role") not in ("engineer", "draftsman"):
         return items
     blanked = ["quoted_amount", "received_amount", "outstanding_amount"]
     targets = items if isinstance(items, list) else [items]
@@ -764,18 +1277,65 @@ async def list_projects(search: Optional[str] = None, include_archived: bool = F
     # write endpoints (admins manage projects; engineers only create visits).
     if search:
         s = search.strip()
-        query["$or"] = [
+        client_ids = [c["id"] for c in await db.clients.find({"name": {"$regex": s, "$options": "i"}}, {"id": 1}).to_list(None)]
+        arch_ids = [a["id"] for a in await db.architects.find({"name": {"$regex": s, "$options": "i"}}, {"id": 1}).to_list(None)]
+        
+        or_conds = [
             {"project_code": {"$regex": s, "$options": "i"}},
             {"job_no": {"$regex": s, "$options": "i"}},
             {"name": {"$regex": s, "$options": "i"}},
-            {"client_name": {"$regex": s, "$options": "i"}},
-            {"architect_name": {"$regex": s, "$options": "i"}},
             {"site_location": {"$regex": s, "$options": "i"}},
         ]
+        if client_ids:
+            or_conds.append({"client_id": {"$in": client_ids}})
+        if arch_ids:
+            or_conds.append({"architect_id": {"$in": arch_ids}})
+            
+        query["$or"] = or_conds
     items = await db.projects.find(query, {"_id": 0}).sort("created_at", -1).to_list(5000)
     await _enrich_projects_batch(items)
     return _strip_financials_for_engineer(items)
 
+
+@api_router.get("/projects/paginated", response_model=PaginatedProjects)
+async def list_projects_paginated(
+    page: int = 1, 
+    limit: int = 25, 
+    q: Optional[str] = None, 
+    include_archived: bool = False, 
+    archived_only: bool = False
+):
+    skip = (page - 1) * limit
+    query = {}
+    if archived_only:
+        query["archived"] = True
+    elif not include_archived:
+        query["archived"] = {"$ne": True}
+        
+    if q:
+        s = q.strip()
+        client_ids = [c["id"] for c in await db.clients.find({"name": {"$regex": s, "$options": "i"}}, {"id": 1}).to_list(None)]
+        arch_ids = [a["id"] for a in await db.architects.find({"name": {"$regex": s, "$options": "i"}}, {"id": 1}).to_list(None)]
+        
+        or_conds = [
+            {"project_code": {"$regex": s, "$options": "i"}},
+            {"job_no": {"$regex": s, "$options": "i"}},
+            {"name": {"$regex": s, "$options": "i"}},
+            {"site_location": {"$regex": s, "$options": "i"}},
+        ]
+        if client_ids:
+            or_conds.append({"client_id": {"$in": client_ids}})
+        if arch_ids:
+            or_conds.append({"architect_id": {"$in": arch_ids}})
+            
+        query["$or"] = or_conds
+        
+    total = await db.projects.count_documents(query)
+    items = await db.projects.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    await _enrich_projects_batch(items)
+    items = _strip_financials_for_engineer(items)
+    
+    return {"data": items, "total": total}
 
 @api_router.get("/projects/{project_id}", response_model=Project)
 async def get_project(project_id: str):
@@ -861,6 +1421,9 @@ async def list_payments(project_id: Optional[str] = None):
     _deny_engineer()
     q = {"project_id": project_id} if project_id else {}
     items = await db.payments.find(q, {"_id": 0}).sort("payment_date", -1).to_list(5000)
+    for p in items:
+        if "taxable_amount" not in p or p["taxable_amount"] is None:
+            p["taxable_amount"] = p["amount"]
     return items
 
 
@@ -871,33 +1434,27 @@ async def create_payment(data: PaymentIn):
         raise HTTPException(404, "Project not found")
     if data.amount <= 0:
         raise HTTPException(400, "Amount must be > 0")
+    tax_amt = float(data.taxable_amount) if data.taxable_amount is not None else float(data.amount)
     doc = {
         "id": _new_id(),
         "project_id": data.project_id,
         "project_code": project.get("project_code", ""),
         "amount": float(data.amount),
+        "taxable_amount": tax_amt,
         "payment_date": data.payment_date or _now(),
         "notes": data.notes or "",
         "created_at": _now(),
     }
     _stamp_edit(doc)
     await db.payments.insert_one(doc.copy())
-    # Update project's received amount
-    new_received = float(project.get("received_amount", 0)) + float(data.amount)
-    project["received_amount"] = new_received
-    await _enrich_project(project)
-    await db.projects.update_one(
-        {"id": data.project_id},
-        {"$set": {
-            "received_amount": new_received,
-            "outstanding_amount": project["outstanding_amount"],
-            "status": project["status"],
-        }},
-    )
+    
+    # Recalculate project totals
+    await _recalculate_project_received(data.project_id)
+    
     await _log_activity(
         data.project_id, project.get("project_code", ""),
         "PAYMENT ADDED",
-        f"Amount: Rs. {float(data.amount):,.2f} | Note: {data.notes or '-'}",
+        f"Amount: ₹ {tax_amt:,.2f} | Note: {data.notes or '-'}",
     )
     doc.pop("_id", None)
     return doc
@@ -912,22 +1469,28 @@ async def delete_payment(payment_id: str):
     # Recompute project totals
     project = await db.projects.find_one({"id": pay["project_id"]}, {"_id": 0})
     if project:
-        new_received = max(0.0, float(project.get("received_amount", 0)) - float(pay["amount"]))
-        project["received_amount"] = new_received
-        await _enrich_project(project)
-        await db.projects.update_one(
-            {"id": pay["project_id"]},
-            {"$set": {
-                "received_amount": new_received,
-                "outstanding_amount": project["outstanding_amount"],
-                "status": project["status"],
-            }},
-        )
+        await _recalculate_project_received(pay["project_id"])
+        tax_amt = pay.get("taxable_amount") if pay.get("taxable_amount") is not None else pay.get("amount", 0)
         await _log_activity(
             pay["project_id"], project.get("project_code", ""),
             "PAYMENT DELETED",
-            f"Amount: Rs. {float(pay['amount']):,.2f} | Note: {pay.get('notes', '-')}",
+            f"Amount: ₹ {float(tax_amt):,.2f} | Note: {pay.get('notes', '-')}",
         )
+        
+    if pay.get("invoice_no"):
+        invoice = await db.invoices.find_one({"invoice_no": pay["invoice_no"]})
+        if invoice:
+            await db.invoices.delete_one({"id": invoice["id"]})
+            import re
+            invoice_type = invoice.get("type", "tax_invoice")
+            match = re.search(r'(\d+)$', pay["invoice_no"])
+            if match:
+                seq = int(match.group(1))
+                counter_id = "proforma" if invoice_type == "proforma" else "tax_invoice"
+                counter = await db.counters.find_one({"_id": counter_id})
+                if counter and counter.get("seq") == seq:
+                    await db.counters.update_one({"_id": counter_id}, {"$inc": {"seq": -1}})
+
     return {"ok": True}
 
 
@@ -977,7 +1540,7 @@ async def revise_quote(project_id: str, data: QuoteRevisionIn):
     await _log_activity(
         project_id, project.get("project_code", ""),
         "QUOTE REVISED",
-        f"Old: Rs. {old_amount:,.2f} -> New: Rs. {new_amount:,.2f} | Reason: {data.reason or '-'}",
+        f"Old: ₹ {old_amount:,.2f} -> New: ₹ {new_amount:,.2f} | Reason: {data.reason or '-'}",
     )
     rev.pop("_id", None)
     return rev
@@ -1074,7 +1637,8 @@ async def export_project_excel(project_id: str):
         c.font = header_font
         c.fill = header_fill
     for i, p in enumerate(payments, 1):
-        ws2.append([i, p.get("payment_date", ""), float(p.get("amount", 0)), p.get("notes", "")])
+        tax_amt = float(p.get("taxable_amount") if p.get("taxable_amount") is not None else p.get("amount", 0))
+        ws2.append([i, p.get("payment_date", ""), tax_amt, p.get("notes", "")])
 
     ws3 = wb.create_sheet("Quote Revisions")
     ws3.append(["#", "Old Amount (INR)", "New Amount (INR)", "Reason", "Date"])
@@ -1111,9 +1675,11 @@ BRAND_ACCENT = colors.HexColor("#10B981")
 BRAND_MUTED = colors.HexColor("#526B60")
 
 
-def _format_inr(n: float) -> str:
+def _format_inr(n: float, show_decimals: bool = True) -> str:
     """Format number in Indian numbering system: 1,23,45,678.00"""
     try:
+        if not show_decimals:
+            n = round(n)
         neg = n < 0
         n = abs(float(n))
         whole = int(n)
@@ -1130,11 +1696,24 @@ def _format_inr(n: float) -> str:
             if rest:
                 parts.insert(0, rest)
             s = ",".join(parts) + "," + last3
+        if not show_decimals:
+            return ("-" if neg else "") + s
         result = f"{s}.{int(round(frac * 100)):02d}"
         return ("-" if neg else "") + result
     except Exception:
-        return f"{n:.2f}"
+        return f"{n:.2f}" if show_decimals else f"{int(round(n))}"
 
+
+
+def _draw_rupee_right(c, x, y, symbol_str, amount_str, font_name, font_size):
+    c.setFont(font_name, font_size)
+    w_amt = c.stringWidth(amount_str, font_name, font_size)
+    c.setFont("Roboto", font_size)
+    w_sym = c.stringWidth(symbol_str, "Roboto", font_size)
+    start_x = x - w_amt - w_sym
+    c.drawString(start_x, y, symbol_str)
+    c.setFont(font_name, font_size)
+    c.drawString(start_x + w_sym, y, amount_str)
 
 def _draw_pdf_header(c: canvas.Canvas, title: str, sub_id: str):
     width, height = A4
@@ -1143,34 +1722,34 @@ def _draw_pdf_header(c: canvas.Canvas, title: str, sub_id: str):
     c.rect(0, height - 28 * mm, width, 28 * mm, fill=1, stroke=0)
     # Brand
     c.setFillColor(colors.white)
-    c.setFont("Helvetica-Bold", 18)
+    c.setFont("Roboto-Bold", 18)
     c.drawString(18 * mm, height - 14 * mm, "CREATOR CONSULTANT")
     c.setFillColor(BRAND_ACCENT)
-    c.setFont("Helvetica", 9)
+    c.setFont("Roboto", 8.5)
     c.drawString(18 * mm, height - 20 * mm, "Architecture • Engineering • Project Consultancy")
     # Title on right
     c.setFillColor(colors.white)
-    c.setFont("Helvetica-Bold", 22)
+    c.setFont("Roboto-Bold", 22)
     c.drawRightString(width - 18 * mm, height - 14 * mm, title)
-    c.setFont("Helvetica", 9)
+    c.setFont("Roboto", 8.5)
     c.drawRightString(width - 18 * mm, height - 20 * mm, sub_id)
     # Reset
     c.setFillColor(colors.black)
 
 
 def _draw_kv(c, x, y, key, value, key_w=40 * mm, bold_value=False):
-    c.setFont("Helvetica", 9)
+    c.setFont("Roboto", 8.5)
     c.setFillColor(BRAND_MUTED)
     c.drawString(x, y, key.upper())
     c.setFillColor(colors.black)
-    c.setFont("Helvetica-Bold" if bold_value else "Helvetica", 11)
+    c.setFont("Roboto-Bold" if bold_value else "Roboto", 11)
     c.drawString(x + key_w, y, value or "—")
 
 
 def _draw_footer(c: canvas.Canvas):
     width, _ = A4
     c.setFillColor(BRAND_MUTED)
-    c.setFont("Helvetica", 8)
+    c.setFont("Roboto", 8)
     c.drawString(18 * mm, 12 * mm, "This is a computer generated document from Creator Consultant.")
     c.drawRightString(width - 18 * mm, 12 * mm, datetime.now().strftime("Generated %d %b %Y, %H:%M"))
 
@@ -1214,31 +1793,31 @@ async def _build_receipt_pdf(payment: dict, project: dict, client_doc: Optional[
     c.setFillColor(BRAND_GREEN)
     c.roundRect(18 * mm, y - box_h, width - 36 * mm, box_h, 6, fill=1, stroke=0)
     c.setFillColor(colors.white)
-    c.setFont("Helvetica", 10)
+    c.setFont("Roboto", 10)
     c.drawString(24 * mm, y - 10 * mm, "AMOUNT RECEIVED")
-    c.setFont("Helvetica-Bold", 26)
-    c.drawString(24 * mm, y - 20 * mm, f"Rs. {_format_inr(payment.get('amount', 0))}")
+    c.setFont("Roboto-Bold", 26)
+    c.drawString(24 * mm, y - 20 * mm, f"₹ {_format_inr(payment.get('amount', 0))}")
     c.setFillColor(BRAND_ACCENT)
-    c.setFont("Helvetica", 9)
+    c.setFont("Roboto", 8.5)
     c.drawRightString(width - 24 * mm, y - 20 * mm, "Indian Rupees")
 
     y = y - box_h - 10 * mm
     c.setFillColor(colors.black)
 
     # Summary
-    _draw_kv(c, 18 * mm, y, "Project Quoted", f"Rs. {_format_inr(project.get('quoted_amount', 0))}")
+    _draw_kv(c, 18 * mm, y, "Project Quoted", f"₹ {_format_inr(project.get('quoted_amount', 0))}")
     y -= 6 * mm
-    _draw_kv(c, 18 * mm, y, "Total Received (incl. this)", f"Rs. {_format_inr(project.get('received_amount', 0))}")
+    _draw_kv(c, 18 * mm, y, "Total Received (incl. this)", f"₹ {_format_inr(project.get('received_amount', 0))}")
     y -= 6 * mm
-    _draw_kv(c, 18 * mm, y, "Outstanding Balance", f"Rs. {_format_inr(project.get('outstanding_amount', 0))}", bold_value=True)
+    _draw_kv(c, 18 * mm, y, "Outstanding Balance", f"₹ {_format_inr(project.get('outstanding_amount', 0))}", bold_value=True)
     y -= 10 * mm
 
     if payment.get("notes"):
         c.setFillColor(BRAND_MUTED)
-        c.setFont("Helvetica", 9)
+        c.setFont("Roboto", 8.5)
         c.drawString(18 * mm, y, "NOTES")
         c.setFillColor(colors.black)
-        c.setFont("Helvetica", 10)
+        c.setFont("Roboto", 10)
         c.drawString(18 * mm, y - 5 * mm, payment["notes"][:110])
         y -= 12 * mm
 
@@ -1247,9 +1826,9 @@ async def _build_receipt_pdf(payment: dict, project: dict, client_doc: Optional[
     c.setStrokeColor(BRAND_MUTED)
     c.line(width - 70 * mm, 32 * mm, width - 20 * mm, 32 * mm)
     c.setFillColor(BRAND_MUTED)
-    c.setFont("Helvetica", 9)
+    c.setFont("Roboto", 8.5)
     c.drawString(width - 70 * mm, 28 * mm, "Authorised Signatory")
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont("Roboto-Bold", 10)
     c.setFillColor(BRAND_GREEN)
     c.drawString(width - 70 * mm, 35 * mm, "For Creator Consultant")
 
@@ -1270,13 +1849,13 @@ async def _build_invoice_pdf(project: dict, client_doc: Optional[dict], architec
     y = height - 42 * mm
     # Bill to
     c.setFillColor(BRAND_MUTED)
-    c.setFont("Helvetica", 9)
+    c.setFont("Roboto", 8.5)
     c.drawString(18 * mm, y, "BILL TO")
     c.setFillColor(colors.black)
-    c.setFont("Helvetica-Bold", 13)
+    c.setFont("Roboto-Bold", 13)
     y -= 6 * mm
     c.drawString(18 * mm, y, (client_doc or {}).get("name", project.get("client_name", "")) or "—")
-    c.setFont("Helvetica", 10)
+    c.setFont("Roboto", 10)
     if client_doc:
         if client_doc.get("company"):
             y -= 5 * mm
@@ -1294,16 +1873,16 @@ async def _build_invoice_pdf(project: dict, client_doc: Optional[dict], architec
     # Meta on right
     ry = height - 42 * mm
     c.setFillColor(BRAND_MUTED)
-    c.setFont("Helvetica", 9)
+    c.setFont("Roboto", 8.5)
     c.drawRightString(width - 18 * mm, ry, "INVOICE DATE")
     c.setFillColor(colors.black)
-    c.setFont("Helvetica-Bold", 11)
+    c.setFont("Roboto-Bold", 12)
     c.drawRightString(width - 18 * mm, ry - 5 * mm, datetime.now().strftime("%d %b %Y"))
     c.setFillColor(BRAND_MUTED)
-    c.setFont("Helvetica", 9)
+    c.setFont("Roboto", 8.5)
     c.drawRightString(width - 18 * mm, ry - 12 * mm, "PROJECT STATUS")
     c.setFillColor(BRAND_ACCENT if project.get("status") == "Settled" else colors.HexColor("#DC2626"))
-    c.setFont("Helvetica-Bold", 11)
+    c.setFont("Roboto-Bold", 12)
     c.drawRightString(width - 18 * mm, ry - 17 * mm, project.get("status", "Outstanding").upper())
 
     # Line items table
@@ -1311,7 +1890,7 @@ async def _build_invoice_pdf(project: dict, client_doc: Optional[dict], architec
     c.setFillColor(BRAND_GREEN)
     c.rect(18 * mm, y - 8 * mm, width - 36 * mm, 8 * mm, fill=1, stroke=0)
     c.setFillColor(colors.white)
-    c.setFont("Helvetica-Bold", 9)
+    c.setFont("Roboto-Bold", 9)
     c.drawString(22 * mm, y - 5.5 * mm, "DESCRIPTION")
     c.drawRightString(width - 22 * mm, y - 5.5 * mm, "AMOUNT (INR)")
 
@@ -1320,9 +1899,9 @@ async def _build_invoice_pdf(project: dict, client_doc: Optional[dict], architec
 
     # Project line
     y -= 8 * mm
-    c.setFont("Helvetica-Bold", 11)
+    c.setFont("Roboto-Bold", 12)
     c.drawString(22 * mm, y, project.get("name", ""))
-    c.setFont("Helvetica", 9)
+    c.setFont("Roboto", 8.5)
     c.setFillColor(BRAND_MUTED)
     y -= 5 * mm
     desc = project.get("site_location") or ""
@@ -1334,8 +1913,8 @@ async def _build_invoice_pdf(project: dict, client_doc: Optional[dict], architec
         y -= 5 * mm
 
     c.setFillColor(colors.black)
-    c.setFont("Helvetica-Bold", 12)
-    c.drawRightString(width - 22 * mm, y + 10 * mm, f"Rs. {_format_inr(project.get('quoted_amount', 0))}")
+    c.setFont("Roboto-Bold", 12)
+    c.drawRightString(width - 22 * mm, y + 10 * mm, f"₹ {_format_inr(project.get('quoted_amount', 0))}")
 
     # Totals box
     y -= 8 * mm
@@ -1343,34 +1922,34 @@ async def _build_invoice_pdf(project: dict, client_doc: Optional[dict], architec
     c.line(18 * mm, y, width - 18 * mm, y)
 
     y -= 8 * mm
-    c.setFont("Helvetica", 10)
+    c.setFont("Roboto", 10)
     c.setFillColor(BRAND_MUTED)
     c.drawRightString(width - 60 * mm, y, "Quoted Amount")
     c.setFillColor(colors.black)
-    c.setFont("Helvetica", 11)
-    c.drawRightString(width - 22 * mm, y, f"Rs. {_format_inr(project.get('quoted_amount', 0))}")
+    c.setFont("Roboto", 11)
+    c.drawRightString(width - 22 * mm, y, f"₹ {_format_inr(project.get('quoted_amount', 0))}")
 
     y -= 7 * mm
     c.setFillColor(BRAND_MUTED)
-    c.setFont("Helvetica", 10)
+    c.setFont("Roboto", 10)
     c.drawRightString(width - 60 * mm, y, "Received")
     c.setFillColor(BRAND_ACCENT)
-    c.setFont("Helvetica", 11)
-    c.drawRightString(width - 22 * mm, y, f"Rs. {_format_inr(project.get('received_amount', 0))}")
+    c.setFont("Roboto", 11)
+    c.drawRightString(width - 22 * mm, y, f"₹ {_format_inr(project.get('received_amount', 0))}")
 
     y -= 10 * mm
     # Outstanding highlight
     c.setFillColor(BRAND_GREEN)
     c.roundRect(width - 90 * mm, y - 4 * mm, 72 * mm, 14 * mm, 4, fill=1, stroke=0)
     c.setFillColor(colors.white)
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont("Roboto-Bold", 10)
     c.drawString(width - 86 * mm, y + 3 * mm, "AMOUNT DUE")
-    c.setFont("Helvetica-Bold", 14)
-    c.drawRightString(width - 22 * mm, y + 3 * mm, f"Rs. {_format_inr(project.get('outstanding_amount', 0))}")
+    c.setFont("Roboto-Bold", 14)
+    c.drawRightString(width - 22 * mm, y + 3 * mm, f"₹ {_format_inr(project.get('outstanding_amount', 0))}")
 
     # Footer notes
     c.setFillColor(BRAND_MUTED)
-    c.setFont("Helvetica", 9)
+    c.setFont("Roboto", 8.5)
     c.drawString(18 * mm, 40 * mm, "Payment Terms: Due on receipt. Kindly pay via bank transfer, cheque or UPI.")
     c.drawString(18 * mm, 35 * mm, "Thank you for your business.")
 
@@ -1849,7 +2428,7 @@ async def create_audit_payment(data: AuditPaymentIn):
     )
     await _log_audit_activity(
         data.audit_id, audit.get("audit_code", ""), "PAYMENT ADDED",
-        f"Amount: Rs. {float(data.amount):,.2f} | Note: {data.notes or '-'}",
+        f"Amount: ₹ {float(data.amount):,.2f} | Note: {data.notes or '-'}",
     )
     doc.pop("_id", None)
     return doc
@@ -1876,7 +2455,7 @@ async def delete_audit_payment(payment_id: str):
         )
         await _log_audit_activity(
             pay["audit_id"], audit.get("audit_code", ""), "PAYMENT DELETED",
-            f"Amount: Rs. {float(pay['amount']):,.2f} | Note: {pay.get('notes', '-')}",
+            f"Amount: ₹ {float(pay['amount']):,.2f} | Note: {pay.get('notes', '-')}",
         )
     return {"ok": True}
 
@@ -1998,7 +2577,7 @@ async def revise_audit_quote(audit_id: str, data: AuditQuoteRevisionIn):
     await _log_audit_activity(
         audit_id, audit.get("audit_code", ""),
         "QUOTE REVISED",
-        f"Old: Rs. {old_amount:,.2f} -> New: Rs. {new_amount:,.2f} | Reason: {data.reason or '-'}",
+        f"Old: ₹ {old_amount:,.2f} -> New: ₹ {new_amount:,.2f} | Reason: {data.reason or '-'}",
     )
     rev.pop("_id", None)
     return rev
@@ -2345,30 +2924,30 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
     styles = getSampleStyleSheet()
-    body_style = ParagraphStyle("body", parent=styles["Normal"], fontSize=10, leading=14, fontName="Helvetica")
+    body_style = ParagraphStyle("body", parent=styles["Normal"], fontSize=10, leading=14, fontName="Roboto")
 
     # Header band
     c.setFillColor(BRAND_GREEN)
     c.rect(0, height - 32 * mm, width, 32 * mm, fill=1, stroke=0)
     c.setFillColor(colors.white)
-    c.setFont("Helvetica-Bold", 18)
+    c.setFont("Roboto-Bold", 18)
     c.drawString(18 * mm, height - 15 * mm, company_header[:60])
     c.setFillColor(BRAND_ACCENT)
-    c.setFont("Helvetica", 9)
+    c.setFont("Roboto", 8.5)
     c.drawString(18 * mm, height - 21 * mm, company_tagline[:110])
     c.setFillColor(colors.white)
-    c.setFont("Helvetica", 8)
+    c.setFont("Roboto", 8)
     c.drawString(18 * mm, height - 27 * mm, company_address[:160])
 
     # Reference / date
     y = height - 40 * mm
     c.setFillColor(BRAND_MUTED)
-    c.setFont("Helvetica", 9)
+    c.setFont("Roboto", 8.5)
     c.drawString(18 * mm, y, "REF. NO.")
     c.drawRightString(width - 18 * mm, y, "DATE")
     y -= 5 * mm
     c.setFillColor(colors.black)
-    c.setFont("Helvetica-Bold", 11)
+    c.setFont("Roboto-Bold", 12)
     c.drawString(18 * mm, y, offer.get("reference_no") or offer.get("offer_code", ""))
     odate = offer.get("offer_date") or ""
     try:
@@ -2380,13 +2959,13 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
     # To
     y -= 12 * mm
     c.setFillColor(BRAND_MUTED)
-    c.setFont("Helvetica", 9)
+    c.setFont("Roboto", 8.5)
     c.drawString(18 * mm, y, "TO,")
     y -= 5 * mm
     c.setFillColor(colors.black)
-    c.setFont("Helvetica-Bold", 12)
+    c.setFont("Roboto-Bold", 12)
     c.drawString(18 * mm, y, (client_doc or {}).get("name") or offer.get("client_name") or "Client Name")
-    c.setFont("Helvetica", 10)
+    c.setFont("Roboto", 10)
     if client_doc and client_doc.get("company"):
         y -= 5 * mm
         c.drawString(18 * mm, y, client_doc["company"])
@@ -2402,7 +2981,7 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
     # Subject
     y -= 10 * mm
     c.setFillColor(BRAND_GREEN)
-    c.setFont("Helvetica-Bold", 11)
+    c.setFont("Roboto-Bold", 12)
     subject_override = (offer.get("subject") or "").strip()
     subject = subject_override or f"SUBJECT: Proposal for {offer.get('effective_type', '')} — {offer.get('description', '')[:80]}".strip().rstrip(" —")
     if not subject.upper().startswith("SUBJECT"):
@@ -2419,7 +2998,7 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
 
     # Scope
     c.setFillColor(BRAND_GREEN)
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont("Roboto-Bold", 10)
     c.drawString(18 * mm, y, "SCOPE OF WORK")
     c.setStrokeColor(BRAND_GREEN)
     c.line(18 * mm, y - 1.5 * mm, width - 18 * mm, y - 1.5 * mm)
@@ -2438,7 +3017,7 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
 
     # Fees
     c.setFillColor(BRAND_GREEN)
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont("Roboto-Bold", 10)
     c.drawString(18 * mm, y, "PROFESSIONAL FEES")
     c.line(18 * mm, y - 1.5 * mm, width - 18 * mm, y - 1.5 * mm)
     y -= 6 * mm
@@ -2446,7 +3025,7 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
     c.setFillColor(BRAND_GREEN)
     c.rect(18 * mm, y - 7 * mm, width - 36 * mm, 7 * mm, fill=1, stroke=0)
     c.setFillColor(colors.white)
-    c.setFont("Helvetica-Bold", 9)
+    c.setFont("Roboto-Bold", 9)
     c.drawString(22 * mm, y - 5 * mm, "DESCRIPTION")
     c.drawRightString(width - 22 * mm, y - 5 * mm, "AMOUNT (INR)")
     y -= 7 * mm
@@ -2460,9 +3039,9 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
             c.setFillColor(colors.white)
         else:
             c.setFillColor(colors.black)
-        c.setFont("Helvetica-Bold" if bold else "Helvetica", 10)
+        c.setFont("Roboto-Bold" if bold else "Roboto", 10)
         c.drawString(22 * mm, y + 1.5 * mm, label[:75])
-        c.drawRightString(width - 22 * mm, y + 1.5 * mm, f"Rs. {_format_inr(amount)}")
+        c.drawRightString(width - 22 * mm, y + 1.5 * mm, f"₹ {_format_inr(amount)}")
         c.setFillColor(colors.black)
 
     _row(f"{offer.get('effective_type', 'Consultancy')} charges as per scope above", base)
@@ -2473,28 +3052,28 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
 
     # Payment Terms (editable list)
     c.setFillColor(BRAND_GREEN)
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont("Roboto-Bold", 10)
     c.drawString(18 * mm, y, "PAYMENT TERMS")
     c.line(18 * mm, y - 1.5 * mm, width - 18 * mm, y - 1.5 * mm)
     y -= 6 * mm
     c.setFillColor(colors.black)
-    c.setFont("Helvetica", 10)
+    c.setFont("Roboto", 10)
     for entry in schedule:
         label = str(entry.get("label", "")).strip() or "—"
         pct = float(entry.get("percent", 0) or 0)
         amt = round(grand * pct / 100.0, 2)
         y -= 5 * mm
-        c.drawString(20 * mm, y, f"• {pct:g}% {label}:  Rs. {_format_inr(amt)}")
+        c.drawString(20 * mm, y, f"• {pct:g}% {label}:  ₹ {_format_inr(amt)}")
 
     # T&C
     y -= 10 * mm
     c.setFillColor(BRAND_GREEN)
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont("Roboto-Bold", 10)
     c.drawString(18 * mm, y, "TERMS & CONDITIONS")
     c.line(18 * mm, y - 1.5 * mm, width - 18 * mm, y - 1.5 * mm)
     y -= 6 * mm
     c.setFillColor(colors.black)
-    c.setFont("Helvetica", 9)
+    c.setFont("Roboto", 8.5)
     for t in tcs:
         y -= 5 * mm
         c.drawString(20 * mm, y, f"• {str(t)[:130]}")
@@ -2502,7 +3081,7 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
     # Bank details
     y -= 10 * mm
     c.setFillColor(BRAND_GREEN)
-    c.setFont("Helvetica-Bold", 9)
+    c.setFont("Roboto-Bold", 9)
     c.drawString(18 * mm, y, bank_details[:180])
     c.setFillColor(colors.black)
 
@@ -2510,10 +3089,10 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
     c.setStrokeColor(BRAND_MUTED)
     c.line(width - 70 * mm, 30 * mm, width - 20 * mm, 30 * mm)
     c.setFillColor(BRAND_GREEN)
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont("Roboto-Bold", 10)
     c.drawString(width - 70 * mm, 35 * mm, "For Creator RCC Consultant LLP")
     c.setFillColor(BRAND_MUTED)
-    c.setFont("Helvetica", 9)
+    c.setFont("Roboto", 8.5)
     c.drawString(width - 70 * mm, 26 * mm, "Authorised Signatory")
     c.setFont("Helvetica-Oblique", 8)
     c.drawString(width - 70 * mm, 22 * mm, signature_name[:60])
@@ -3112,28 +3691,19 @@ async def import_sqlite(file: UploadFile = File(...), replace: bool = False):
                     "project_id": pid,
                     "project_code": code,
                     "amount": amt,
+                    "taxable_amount": amt,
                     "payment_date": _parse_dt(pay["paid_at"]),
                     "notes": (pay["note"] or "").strip(),
                     "created_at": _parse_dt(pay["paid_at"]),
                 })
-                received_by_code[code] = received_by_code.get(code, 0) + amt
+                received_by_code[code] = pid
                 imported["payments"] += 1
         except sqlite3.Error:
             pass
 
         # Update totals on projects
-        for code, tot in received_by_code.items():
-            proj = await db.projects.find_one({"project_code": code}, {"_id": 0})
-            if not proj:
-                continue
-            q = float(proj.get("quoted_amount", 0) or 0)
-            new_received = float(proj.get("received_amount", 0) or 0) + tot
-            out = round(q - new_received, 2)
-            status = "Settled" if (q > 0 and out <= 0) else "Outstanding"
-            await db.projects.update_one(
-                {"project_code": code},
-                {"$set": {"received_amount": new_received, "outstanding_amount": out, "status": status}},
-            )
+        for code, pid in received_by_code.items():
+            await _recalculate_project_received(pid)
 
         # Update counter
         await db.counters.update_one(
@@ -3680,29 +4250,29 @@ async def document_pdf(doc_id: str):
     c.setFillColor(colors.HexColor("#0A2E1F"))
     c.rect(0, height - 28 * mm, width, 28 * mm, fill=1, stroke=0)
     c.setFillColor(colors.white)
-    c.setFont("Helvetica-Bold", 16)
+    c.setFont("Roboto-Bold", 16)
     c.drawString(margin, height - 14 * mm, "CREATOR RCC CONSULTANT LLP")
-    c.setFont("Helvetica", 9)
+    c.setFont("Roboto", 8.5)
     c.drawString(margin, height - 20 * mm, "Structural Audits • RCC / Steel Design • PMC • Retrofitting")
     c.drawString(margin, height - 25 * mm, "Navi Mumbai • info@creatorconsultant.online")
     c.setFillColor(colors.HexColor("#10B981"))
-    c.setFont("Helvetica-Bold", 11)
+    c.setFont("Roboto-Bold", 12)
     c.drawRightString(width - margin, height - 14 * mm, d.get("doc_type_name", "Document").upper())
     c.setFillColor(colors.white)
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont("Roboto-Bold", 10)
     c.drawRightString(width - margin, height - 20 * mm, d.get("doc_number", ""))
 
     y = height - 38 * mm
     c.setFillColor(colors.black)
-    c.setFont("Helvetica", 10)
+    c.setFont("Roboto", 10)
     c.drawRightString(width - margin, y, f"Date: {(d.get('document_date') or _now())[:10]}")
     y -= 10 * mm
 
     # TO block
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont("Roboto-Bold", 10)
     c.drawString(margin, y, "TO,")
     y -= 5 * mm
-    c.setFont("Helvetica", 10)
+    c.setFont("Roboto", 10)
     if d.get("client_name"):
         c.drawString(margin, y, d.get("client_name", "")); y -= 5 * mm
     if d.get("contact_person") and d.get("contact_person") != d.get("client_name"):
@@ -3713,7 +4283,7 @@ async def document_pdf(doc_id: str):
         c.drawString(margin, y, f"Mobile: {d.get('mobile')}"); y -= 5 * mm
 
     y -= 4 * mm
-    c.setFont("Helvetica-Bold", 11)
+    c.setFont("Roboto-Bold", 12)
     c.setFillColor(colors.HexColor("#0A2E1F"))
     c.drawString(margin, y, f"Subject: {d.get('doc_type_name', 'Document')}")
     c.setFillColor(colors.black)
@@ -3725,13 +4295,13 @@ async def document_pdf(doc_id: str):
         ("Other Comments", d.get("other_comments")),
     ]
     styles = getSampleStyleSheet()
-    body_style = ParagraphStyle("body", parent=styles["Normal"], fontName="Helvetica", fontSize=10, leading=14)
+    body_style = ParagraphStyle("body", parent=styles["Normal"], fontName="Roboto", fontSize=10, leading=14)
     label_x = margin
     value_x = margin + 38 * mm
     for label, val in rows:
         if not val:
             continue
-        c.setFont("Helvetica-Bold", 10)
+        c.setFont("Roboto-Bold", 10)
         c.drawString(label_x, y, f"{label}:")
         para = Paragraph(str(val).replace("\n", "<br/>"), body_style)
         avail_w = width - value_x - margin
@@ -3742,15 +4312,15 @@ async def document_pdf(doc_id: str):
             c.showPage(); y = height - margin
 
     y = max(y - 18 * mm, 40 * mm)
-    c.setFont("Helvetica", 10)
+    c.setFont("Roboto", 10)
     c.drawString(margin, y, "For Creator RCC Consultant LLP")
     y -= 14 * mm
     c.drawString(margin, y, "____________________________")
     y -= 5 * mm
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont("Roboto-Bold", 10)
     c.drawString(margin, y, "Mr. Rutvij Patel")
     y -= 5 * mm
-    c.setFont("Helvetica", 9)
+    c.setFont("Roboto", 8.5)
     c.drawString(margin, y, "Consulting Structural Engineer")
 
     c.showPage(); c.save()
@@ -3961,6 +4531,37 @@ async def _log_sv_activity(visit_id: str, visit_code: str, action: str, detail: 
         logger.error(f"sv activity log error: {e}")
 
 
+async def _notify_user(user_id: str, message: str, related_task_id: str = ""):
+    """Create an in-app notification targeted at a specific user
+    AND fire a Web Push to them if subscribed."""
+    try:
+        s = _current_user_stamp()
+        await db.notifications.insert_one({
+            "id": _new_id(),
+            "type": "task",
+            "message": message,
+            "target_role": None,
+            "target_user_id": user_id,
+            "related_task_id": related_task_id,
+            "created_by_user_id": s["user_id"],
+            "created_by_username": s["username"],
+            "read_by": [],
+            "created_at": _now(),
+        })
+    except Exception as e:
+        logger.error(f"notify user error: {e}")
+
+    try:
+        await _push_to_user(user_id, {
+            "title": "Task Assigned",
+            "body": message[:160],
+            "url": f"/tasks",
+            "tag": f"task-{related_task_id}",
+        })
+    except Exception as e:
+        logger.error(f"push to user error: {e}")
+
+
 async def _notify_admins(message: str, related_visit_id: str = "", related_visit_code: str = ""):
     """Create an in-app notification targeted at all users with role=admin
     AND fire a Web Push to any admins who've subscribed on this/another device."""
@@ -4031,7 +4632,7 @@ async def export_site_visits_excel(
         q["created_by_user_id"] = engineer_id
     # Scope engineer to their own visits
     user = get_current_user_safe()
-    if user and user.get("role") == "engineer":
+    if user and user.get("role") in ("engineer", "draftsman"):
         q["created_by_user_id"] = user["id"]
     rows = await db.site_visits.find(q, {"_id": 0, "photos": 0, "engineer_signature": 0, "site_person_signature": 0}).sort("created_at", -1).to_list(5000)
     for r in rows:
@@ -4272,11 +4873,7 @@ UPLOAD_ROOT = Path(os.environ.get("UPLOAD_DIR", str(ROOT_DIR / "uploads")))
 SITE_VISIT_UPLOAD_DIR = UPLOAD_ROOT / "site-visits"
 SITE_VISIT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-# GridFS bucket for persistent photo storage. Container disk is ephemeral on
-# Kubernetes (every redeploy wipes /app/backend/uploads), so we store photo
-# bytes in MongoDB GridFS. The bucket name `site_visit_photos` becomes the
-# `site_visit_photos.files` + `.chunks` collections inside the same DB.
-_photo_bucket = AsyncIOMotorGridFSBucket(db, bucket_name="site_visit_photos")
+_photo_bucket = None
 
 # ---------- Letterhead overlay (Creator Consultant branded PDF background) ----------
 # The PDF at /app/backend/assets/letterhead.pdf is rendered as a background on
@@ -4635,6 +5232,15 @@ async def _push_to_admins(payload: dict):
             sent += 1
     return sent
 
+async def _push_to_user(user_id: str, payload: dict):
+    """Send a Web Push payload to a specific user's active subscription(s)."""
+    subs = await db.push_subscriptions.find({"user_id": user_id}, {"_id": 0}).to_list(100)
+    sent = 0
+    for sub in subs:
+        if await _send_web_push(sub, payload):
+            sent += 1
+    return sent
+
 
 @api_router.get("/push/vapid-public")
 async def get_vapid_public():
@@ -4742,6 +5348,93 @@ async def notifications_cleanup_now():
     return {"ok": True, "deleted": deleted}
 
 
+async def _send_task_due_reminders() -> int:
+    """Daily job: Send reminders for upcoming task due dates."""
+    today = datetime.now(timezone.utc).date()
+    sent_count = 0
+    
+    # Only look at incomplete tasks that have a due_date and an assigned user
+    q = {
+        "status": "pending",
+        "due_date": {"$exists": True, "$ne": None, "$ne": ""},
+        "assigned_to_user_id": {"$exists": True, "$ne": None, "$ne": ""}
+    }
+    
+    async for task in db.tasks.find(q):
+        try:
+            due_date = datetime.fromisoformat(task["due_date"].split("T")[0]).date()
+        except Exception:
+            continue
+            
+        start_date = None
+        if task.get("start_date"):
+            try:
+                start_date = datetime.fromisoformat(task["start_date"].split("T")[0]).date()
+            except Exception:
+                pass
+                
+        # Calculate timeline
+        if start_date:
+            timeline_days = (due_date - start_date).days
+        else:
+            timeline_days = 3 # treat as > 2 days
+            
+        days_until_due = (due_date - today).days
+        
+        should_send = False
+        message = ""
+        
+        if timeline_days <= 2:
+            # Short timeline: only send on due date
+            if days_until_due == 0:
+                should_send = True
+                message = f"Reminder: Task '{task.get('work', 'Untitled')}' is due today!"
+        else:
+            # Long timeline: send on due_date - 1 and due_date
+            if days_until_due == 1:
+                should_send = True
+                message = f"Reminder: Task '{task.get('work', 'Untitled')}' is due tomorrow!"
+            elif days_until_due == 0:
+                should_send = True
+                message = f"Reminder: Task '{task.get('work', 'Untitled')}' is due today!"
+                
+        if should_send:
+            doc = {
+                "id": _new_id(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "title": "Task Due Reminder",
+                "message": message,
+                "target_user_id": task["assigned_to_user_id"],
+                "target_role": None,
+                "related_entity_id": task["id"],
+                "read_by": []
+            }
+            await db.notifications.insert_one(doc)
+            
+            # Send push notification to the assigned user
+            await _push_to_user(task["assigned_to_user_id"], {
+                "title": "Task Due Reminder",
+                "body": message,
+                "url": "/tasks"
+            })
+            
+            sent_count += 1
+            
+    if sent_count > 0:
+        logger.info(f"Housekeeping: sent {sent_count} task due reminders")
+    return sent_count
+
+
+@api_router.post("/notifications/trigger-task-reminders")
+async def trigger_task_reminders_now():
+    """Manual trigger for task reminders."""
+    user = get_current_user_safe() or {}
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    sent = await _send_task_due_reminders()
+    return {"ok": True, "sent": sent}
+
+
 def _start_housekeeping_scheduler():
     """Run the cleanup once a day at 03:15 UTC."""
     global _housekeeping_scheduler
@@ -4751,9 +5444,10 @@ def _start_housekeeping_scheduler():
     from apscheduler.triggers.cron import CronTrigger
     sched = AsyncIOScheduler(timezone="UTC")
     sched.add_job(_cleanup_old_read_notifications, CronTrigger(hour=3, minute=15), id="cleanup_old_notifications", replace_existing=True)
+    sched.add_job(_send_task_due_reminders, CronTrigger(hour=8, minute=0), id="task_due_reminders", replace_existing=True)
     sched.start()
     _housekeeping_scheduler = sched
-    logger.info("Housekeeping scheduler started — daily 03:15 UTC")
+    logger.info("Housekeeping scheduler started — daily cleanup at 03:15 UTC, reminders at 08:00 UTC")
 
 
 def _stop_housekeeping_scheduler():
@@ -4815,10 +5509,10 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
         # carries the brand). We just print the report title in dark green
         # and the visit code in accent green on the right.
         c.setFillColor(colors.HexColor("#0A2E1F"))
-        c.setFont("Helvetica-Bold", 14)
+        c.setFont("Roboto-Bold", 14)
         c.drawString(margin, height - LH_TOP_RESERVE, "SITE VISIT REPORT")
         c.setFillColor(colors.HexColor("#10B981"))
-        c.setFont("Helvetica-Bold", 11)
+        c.setFont("Roboto-Bold", 12)
         c.drawRightString(width - margin, height - LH_TOP_RESERVE, v.get("visit_code", ""))
         # Thin underline
         c.setStrokeColor(colors.HexColor("#10B981"))
@@ -4829,7 +5523,7 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
 
     header()
     y = height - LH_TOP_RESERVE - 10 * mm
-    c.setFont("Helvetica", 9)
+    c.setFont("Roboto", 8.5)
     meta_rows = [
         ("Job No", v.get("job_no") or "—", "Date", (v.get("visit_date") or "")[:10]),
         ("Customer", v.get("customer") or "—", "Site Location", v.get("site_location") or v.get("plot_no") or "—"),
@@ -4844,20 +5538,20 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
             f"±{v.get('geo_accuracy'):.0f} m" if v.get('geo_accuracy') is not None else "—",
         ))
     for r in meta_rows:
-        c.setFont("Helvetica-Bold", 9); c.drawString(margin, y, r[0] + ":")
-        c.setFont("Helvetica", 9); c.drawString(margin + 22 * mm, y, str(r[1]))
-        c.setFont("Helvetica-Bold", 9); c.drawString(width / 2 + 5 * mm, y, r[2] + ":")
-        c.setFont("Helvetica", 9); c.drawString(width / 2 + 25 * mm, y, str(r[3]))
+        c.setFont("Roboto-Bold", 9); c.drawString(margin, y, r[0] + ":")
+        c.setFont("Roboto", 8.5); c.drawString(margin + 22 * mm, y, str(r[1]))
+        c.setFont("Roboto-Bold", 9); c.drawString(width / 2 + 5 * mm, y, r[2] + ":")
+        c.setFont("Roboto", 8.5); c.drawString(width / 2 + 25 * mm, y, str(r[3]))
         y -= 6 * mm
 
     y -= 2 * mm
     c.setFillColor(colors.HexColor("#0A2E1F"))
-    c.setFont("Helvetica-Bold", 12)
+    c.setFont("Roboto-Bold", 12)
     c.drawString(margin, y, f"Inspection of {v.get('inspection_title', '')}")
     c.setFillColor(colors.black); y -= 8 * mm
 
     styles = getSampleStyleSheet()
-    body = ParagraphStyle("body", parent=styles["Normal"], fontName="Helvetica", fontSize=9, leading=12)
+    body = ParagraphStyle("body", parent=styles["Normal"], fontName="Roboto", fontSize=9, leading=12)
     data = [["Description", "Compliance", "Remark"]]
     for ci in (v.get("checklist") or []):
         comp = (ci.get("compliance") or "").upper()
@@ -4867,7 +5561,7 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
         tbl.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0A2E1F")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTNAME", (0, 0), (-1, 0), "Roboto-Bold"),
             ("FONTSIZE", (0, 0), (-1, -1), 9),
             ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -4884,7 +5578,7 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
     if v.get("observations"):
         if y < page_bottom_limit + 30 * mm:
             c.showPage(); header(); y = height - LH_TOP_RESERVE - 10 * mm
-        c.setFont("Helvetica-Bold", 11); c.setFillColor(colors.HexColor("#0A2E1F"))
+        c.setFont("Roboto-Bold", 12); c.setFillColor(colors.HexColor("#0A2E1F"))
         c.drawString(margin, y, "Observations:"); c.setFillColor(colors.black)
         y -= 6 * mm
         for i, obs in enumerate(v.get("observations") or [], 1):
@@ -4903,7 +5597,7 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
         ("Structural Engineer", "engineer_name", "engineer_signature", margin, None),
         ("Site Person", "site_person_name", "site_person_signature", margin + (width - margin * 2) / 2 + 5 * mm, "site_person_phone"),
     ]:
-        c.setFont("Helvetica-Bold", 9); c.setFillColor(colors.black)
+        c.setFont("Roboto-Bold", 9); c.setFillColor(colors.black)
         c.drawString(x_off, y, label + ":")
         sig_io = _base64_image_from_data_url(v.get(sig_key, ""))
         if sig_io:
@@ -4911,7 +5605,7 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
                 c.drawImage(ImageReader(sig_io), x_off, y - sig_h - 2 * mm, width=sig_w, height=sig_h, preserveAspectRatio=True, mask='auto')
             except Exception:
                 pass
-        c.setFont("Helvetica", 9)
+        c.setFont("Roboto", 8.5)
         c.drawString(x_off, y - sig_h - 6 * mm, f"Name: {v.get(name_key) or '—'}")
         if phone_key and v.get(phone_key):
             c.drawString(x_off, y - sig_h - 10 * mm, f"Phone: {v.get(phone_key)}")
@@ -4920,7 +5614,7 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
     photos = v.get("photos") or []
     if photos:
         c.showPage(); header(); y = height - LH_TOP_RESERVE - 10 * mm
-        c.setFont("Helvetica-Bold", 12); c.setFillColor(colors.HexColor("#0A2E1F"))
+        c.setFont("Roboto-Bold", 12); c.setFillColor(colors.HexColor("#0A2E1F"))
         c.drawString(margin, y, "Site Visit Images & Remarks:"); c.setFillColor(colors.black)
         y -= 8 * mm
         img_w = (width - margin * 2 - 6 * mm) / 2; img_h = 55 * mm
@@ -4941,7 +5635,7 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
                 pass
             cap = p.get("caption") or ""
             if cap:
-                c.setFont("Helvetica", 8)
+                c.setFont("Roboto", 8)
                 c.drawString(x, y - img_h - 4 * mm, cap[:80])
             col += 1
             if col >= 2:
@@ -4962,7 +5656,262 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
     )
 
 
+# ---------------------- TASKS ----------------------
 
+class TaskIn(BaseModel):
+    category: str                        # "engineering" or "accounting"
+    project_id: Optional[str] = None     # Reference to project for engineering/accounting
+    audit_id: Optional[str] = None       # Reference to audit for accounting
+    site_location: Optional[str] = ""    # Pre-filled from project, editable
+    work: str                            # Required short work summary
+    description: Optional[str] = ""      # extra notes / description
+    start_date: Optional[str] = None
+    due_date: Optional[str] = None
+    assigned_to_user_id: Optional[str] = None
+
+
+class TaskOut(BaseModel):
+    id: str
+    sr_no: int
+    category: str
+    project_id: Optional[str] = None
+    project_code: str = ""
+    audit_id: Optional[str] = None
+    audit_code: str = ""
+    site_location: Optional[str] = ""
+    work: str
+    description: str = ""
+    start_date: Optional[str] = None
+    due_date: Optional[str] = None
+    status: str = "pending"
+    assigned_to_user_id: Optional[str] = None
+    assigned_to_name: str = ""
+    assigned_to_username: str = ""
+    assigned_to_color: str = ""
+    created_by_user_id: Optional[str] = None
+    created_by_username: str = ""
+    created_at: str
+
+
+class PaginatedTasks(BaseModel):
+    data: List[TaskOut]
+    total: int
+    total_pending: int = 0
+    total_in_progress: int = 0
+    total_done: int = 0
+    total_cancelled: int = 0
+
+async def _enrich_task(t: dict):
+    if t.get("assigned_to_user_id"):
+        u = await db.users.find_one({"id": t["assigned_to_user_id"]}, {"_id": 0, "name": 1, "username": 1, "color": 1})
+        if u:
+            t["assigned_to_name"] = u.get("name") or ""
+            t["assigned_to_username"] = u.get("username") or ""
+            t["assigned_to_color"] = u.get("color") or ""
+            
+    # Enrich audit_code if missing
+    if t.get("audit_id") and not t.get("audit_code"):
+        a = await db.audits.find_one({"id": t["audit_id"]})
+        if a:
+            t["audit_code"] = a.get("audit_code") or ""
+
+    # Enrich project_code if missing
+    if t.get("project_id") and not t.get("project_code"):
+        p = await db.projects.find_one({"id": t["project_id"]}, {"_id": 0, "project_code": 1, "job_no": 1})
+        if p:
+            t["project_code"] = p.get("job_no") or p.get("project_code") or ""
+
+
+@api_router.get("/tasks")
+async def list_tasks(category: Optional[str] = None, project_id: Optional[str] = None):
+    user = get_current_user_safe()
+    query: dict = {}
+    if user and user.get("role") != "admin":
+        query["assigned_to_user_id"] = user["id"]
+    elif category == "engineering":
+        eng_users = await db.users.find({"role": {"$in": ["admin", "engineer", "draftsman"]}}, {"id": 1}).to_list(None)
+        query["assigned_to_user_id"] = {"$in": [u["id"] for u in eng_users]}
+    elif category == "accounting":
+        acc_users = await db.users.find({"role": {"$in": ["admin", "accountant"]}}, {"id": 1}).to_list(None)
+        query["assigned_to_user_id"] = {"$in": [u["id"] for u in acc_users]}
+        
+    if category:
+        query["category"] = category
+    if project_id:
+        query["project_id"] = project_id
+    items = await db.tasks.find(query, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    for idx, t in enumerate(items):
+        t["sr_no"] = idx + 1
+        await _enrich_task(t)
+    return items
+
+
+@api_router.get("/tasks/paginated", response_model=PaginatedTasks)
+async def list_tasks_paginated(
+    page: int = 1, 
+    limit: int = 25, 
+    q: Optional[str] = None,
+    category: Optional[str] = None
+):
+    skip = (page - 1) * limit
+    user = get_current_user_safe()
+    query: dict = {}
+    if user and user.get("role") != "admin":
+        query["assigned_to_user_id"] = user["id"]
+    elif category == "engineering":
+        eng_users = await db.users.find({"role": {"$in": ["admin", "engineer", "draftsman"]}}, {"id": 1}).to_list(None)
+        query["assigned_to_user_id"] = {"$in": [u["id"] for u in eng_users]}
+    elif category == "accounting":
+        acc_users = await db.users.find({"role": {"$in": ["admin", "accountant"]}}, {"id": 1}).to_list(None)
+        query["assigned_to_user_id"] = {"$in": [u["id"] for u in acc_users]}
+        
+    if category:
+        query["category"] = category
+        
+    if q:
+        s = q.strip()
+        query["$or"] = [
+            {"work": {"$regex": s, "$options": "i"}},
+            {"description": {"$regex": s, "$options": "i"}},
+            {"project_code": {"$regex": s, "$options": "i"}},
+            {"audit_code": {"$regex": s, "$options": "i"}},
+            {"site_location": {"$regex": s, "$options": "i"}},
+            {"project_name": {"$regex": s, "$options": "i"}},
+            {"assigned_to_username": {"$regex": s, "$options": "i"}},
+            {"client_name": {"$regex": s, "$options": "i"}}
+        ]
+        
+    total = await db.tasks.count_documents(query)
+    
+    pending_query = query.copy()
+    pending_query["status"] = {"$in": ["pending", None, ""]}
+    total_pending = await db.tasks.count_documents(pending_query)
+
+    in_progress_query = query.copy()
+    in_progress_query["status"] = "in progress"
+    total_in_progress = await db.tasks.count_documents(in_progress_query)
+    
+    done_query = query.copy()
+    done_query["status"] = "done"
+    total_done = await db.tasks.count_documents(done_query)
+
+    cancelled_query = query.copy()
+    cancelled_query["status"] = "cancelled"
+    total_cancelled = await db.tasks.count_documents(cancelled_query)
+
+    items = await db.tasks.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    
+    # Needs to match sr_no for current page
+    for idx, t in enumerate(items):
+        t["sr_no"] = skip + idx + 1
+        await _enrich_task(t)
+        
+    return {"data": items, "total": total, "total_pending": total_pending, "total_in_progress": total_in_progress, "total_done": total_done, "total_cancelled": total_cancelled}
+
+@api_router.post("/tasks")
+async def create_task(data: TaskIn):
+    user = get_current_user_safe()
+    if data.category not in ("engineering", "accounting"):
+        raise HTTPException(400, "category must be 'engineering' or 'accounting'")
+    if data.assigned_to_user_id:
+        if not await db.users.find_one({"id": data.assigned_to_user_id}):
+            raise HTTPException(404, "Assigned user not found")
+
+    doc = data.model_dump()
+    doc["id"] = _new_id()
+    doc["status"] = "pending"
+    doc["project_code"] = ""
+    doc["audit_code"] = ""
+    doc["created_by_user_id"] = user["id"] if user else None
+    doc["created_by_username"] = user.get("username", "") if user else ""
+    doc["created_at"] = _now()
+
+    if data.project_id:
+        p = await db.projects.find_one({"id": data.project_id}, {"_id": 0, "site_location": 1, "project_code": 1, "job_no": 1})
+        if p:
+            doc["project_code"] = p.get("job_no") or p.get("project_code") or ""
+            if not (data.site_location or "").strip():
+                doc["site_location"] = p.get("site_location") or ""
+
+    await db.tasks.insert_one(doc.copy())
+    doc["sr_no"] = 1
+    await _enrich_task(doc)
+    doc.pop("_id", None)
+    
+    if doc.get("assigned_to_user_id"):
+        await _notify_user(
+            user_id=doc["assigned_to_user_id"],
+            message=f"You have been assigned a task: {doc.get('work')}",
+            related_task_id=doc["id"]
+        )
+        
+    return doc
+
+
+@api_router.put("/tasks/{task_id}")
+async def update_task(task_id: str, data: TaskIn):
+    old_task = await db.tasks.find_one({"id": task_id})
+    if not old_task:
+        raise HTTPException(404, "Task not found")
+    if data.assigned_to_user_id:
+        if not await db.users.find_one({"id": data.assigned_to_user_id}):
+            raise HTTPException(404, "Assigned user not found")
+
+    update = data.model_dump()
+    if data.project_id:
+        p = await db.projects.find_one({"id": data.project_id}, {"_id": 0, "site_location": 1, "project_code": 1, "job_no": 1})
+        if p:
+            update["project_code"] = p.get("job_no") or p.get("project_code") or ""
+            if not (data.site_location or "").strip():
+                update["site_location"] = p.get("site_location") or ""
+
+    result = await db.tasks.find_one_and_update(
+        {"id": task_id}, {"$set": update}, return_document=True, projection={"_id": 0}
+    )
+    
+    if result.get("assigned_to_user_id") and result.get("assigned_to_user_id") != old_task.get("assigned_to_user_id"):
+        await _notify_user(
+            user_id=result["assigned_to_user_id"],
+            message=f"You have been assigned a task: {result.get('work')}",
+            related_task_id=result["id"]
+        )
+
+    result["sr_no"] = 0
+    await _enrich_task(result)
+    return result
+
+
+@api_router.delete("/tasks/{task_id}")
+async def delete_task(task_id: str, user: dict = Depends(get_current_user_safe)):
+    if user and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Only admins are permitted to delete tasks")
+    result = await db.tasks.delete_one({"id": task_id})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Task not found")
+    return {"ok": True}
+
+
+class TaskStatusUpdate(BaseModel):
+    status: str
+
+@api_router.put("/tasks/{task_id}/status")
+async def update_task_status(task_id: str, data: TaskStatusUpdate):
+    if data.status not in ["pending", "in progress", "done", "cancelled"]:
+        raise HTTPException(400, "Invalid status")
+    
+    t = await db.tasks.find_one({"id": task_id})
+    if not t:
+        raise HTTPException(404, "Task not found")
+    
+    result = await db.tasks.find_one_and_update(
+        {"id": task_id},
+        {"$set": {"status": data.status}},
+        return_document=True,
+        projection={"_id": 0}
+    )
+    result["sr_no"] = 0
+    await _enrich_task(result)
+    return result
 
 
 @api_router.get("/")
@@ -4980,10 +5929,1468 @@ backup_module.init(
         "offers", "activity_log", "quote_revisions", "counters",
         "documents", "document_types",
         "site_visits", "site_visit_templates", "users", "notifications",
-        "push_subscriptions", "app_settings",
+        "push_subscriptions", "app_settings", "company_details",
     ],
 )
 api_router.include_router(backup_module.router)
+
+
+# ---------------------- COMPANY DETAILS ----------------------
+
+async def seed_company_details():
+    existing = await db.company_details.find_one({"id": "singleton"})
+    if not existing:
+        doc = {
+            "id": "singleton",
+            "name": "CREATOR RCC CONSULTANT LLP",
+            "address": "A-001, sidhhivinayak park, Sector No 8A , Plot No-21, Airoli Nr. D Mart,Navi Mumbai 400708, Thane, Maharashtra, 400708",
+            "gstin": "27AASFC7539E1Z2",
+            "mobile": "9892683460",
+            "pan": "AASFC7539E",
+            "email": "project@creatorconsultant.net",
+            "bank_name": "Kotak Mahindra Bank",
+            "bank_account_name": "CREATOR RCC CONSULTANT LLP",
+            "bank_ifsc": "KKBK0001360",
+            "bank_account_no": "9987076241",
+            "bank_branch": "Kotak Mahindra Bank ,SHIVSHANKAR PLAZA I SECTOR EIGHT AIROLI BRANCH",
+            "upi_id": "creatorconsultantLLP@kotak",
+            "qr_code_url": "",
+            "company_logo_url": "",
+        }
+        await db.company_details.insert_one(doc.copy())
+        logger.info("Seeded default company details.")
+
+@api_router.get("/company-details")
+async def get_company_details():
+    doc = await db.company_details.find_one({"id": "singleton"}, {"_id": 0})
+    if not doc:
+        doc = {
+            "id": "singleton",
+            "name": "CREATOR RCC CONSULTANT LLP",
+            "address": "A-001, sidhhivinayak park, Sector No 8A , Plot No-21, Airoli Nr. D Mart,Navi Mumbai 400708, Thane, Maharashtra, 400708",
+            "gstin": "27AASFC7539E1Z2",
+            "mobile": "9892683460",
+            "pan": "AASFC7539E",
+            "email": "project@creatorconsultant.net",
+            "bank_name": "Kotak Mahindra Bank",
+            "bank_account_name": "CREATOR RCC CONSULTANT LLP",
+            "bank_ifsc": "KKBK0001360",
+            "bank_account_no": "9987076241",
+            "bank_branch": "Kotak Mahindra Bank ,SHIVSHANKAR PLAZA I SECTOR EIGHT AIROLI BRANCH",
+            "upi_id": "creatorconsultantLLP@kotak",
+            "qr_code_url": "",
+            "company_logo_url": "",
+        }
+        await db.company_details.insert_one(doc.copy())
+        doc.pop("_id", None)
+    return doc
+
+@api_router.put("/company-details")
+async def update_company_details(data: CompanyDetailsIn):
+    update_data = data.model_dump()
+    result = await db.company_details.find_one_and_update(
+        {"id": "singleton"},
+        {"$set": update_data},
+        return_document=True,
+        projection={"_id": 0},
+    )
+    if not result:
+        raise HTTPException(404, "Company details not found")
+    return result
+
+@api_router.post("/company-details/uploads")
+async def upload_company_asset(file: UploadFile = File(...)):
+    if not file.filename:
+        raise HTTPException(400, "Missing filename")
+    ext = (file.filename.rsplit(".", 1)[-1] or "jpg").lower()
+    if ext not in {"jpg", "jpeg", "png", "webp", "pdf"}:
+        raise HTTPException(400, "Only images or PDF files are allowed")
+    fname = f"company_asset_{secrets.token_urlsafe(8)}.{ext}"
+    content_type = file.content_type or ("application/pdf" if ext == "pdf" else f"image/{ 'jpeg' if ext == 'jpg' else ext }")
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty upload")
+    
+    await _photo_bucket.upload_from_stream(
+        fname, io.BytesIO(data), metadata={"content_type": content_type},
+    )
+    return {"url": f"/api/uploads/company/{fname}", "filename": fname}
+
+@auth_public_router.get("/uploads/company/{filename}")
+async def serve_company_asset(filename: str):
+    try:
+        stream = await _photo_bucket.open_download_stream_by_name(filename)
+        ct = (getattr(stream, "metadata", None) or {}).get("content_type") or "image/jpeg"
+
+        async def gen():
+            try:
+                while True:
+                    chunk = await stream.readchunk()
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+
+        return StreamingResponse(
+            gen(),
+            media_type=ct,
+        )
+    except Exception:
+        raise HTTPException(404, "File not found")
+
+
+# ---------------------- INVOICES ----------------------
+
+def num_to_words_indian(number: float) -> str:
+    whole = int(number)
+    frac = int(round((number - whole) * 100))
+    
+    if whole == 0 and frac == 0:
+        return "Zero Rupees Only"
+    
+    units = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+             "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"]
+    tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+    
+    def _convert_below_thousand(n):
+        if n == 0:
+            return ""
+        elif n < 20:
+            return units[n]
+        elif n < 100:
+            return tens[n // 10] + (" " + units[n % 10] if n % 10 != 0 else "")
+        else:
+            return units[n // 100] + " Hundred" + (" and " + _convert_below_thousand(n % 100) if n % 100 != 0 else "")
+
+    def _helper(n):
+        words = []
+        if n >= 10000000: # Crore
+            crore = n // 10000000
+            words.append(_convert_below_thousand(crore) + " Crore")
+            n %= 10000000
+        if n >= 100000: # Lakh
+            lakh = n // 100000
+            words.append(_convert_below_thousand(lakh) + " Lakh")
+            n %= 100000
+        if n >= 1000: # Thousand
+            thousand = n // 1000
+            words.append(_convert_below_thousand(thousand) + " Thousand")
+            n %= 1000
+        if n > 0:
+            words.append(_convert_below_thousand(n))
+        return " ".join(words)
+
+    whole_words = _helper(whole).strip() if whole > 0 else "Zero"
+    result = whole_words + " Rupees"
+    
+    if frac > 0:
+        frac_words = ""
+        if frac < 20:
+            frac_words = units[frac]
+        else:
+            frac_words = tens[frac // 10] + (" " + units[frac % 10] if frac % 10 != 0 else "")
+        result += f" and {frac_words.strip()} Paise"
+        
+    return result + " Only"
+
+
+async def _next_proforma_no() -> str:
+    counter = await db.counters.find_one_and_update(
+        {"_id": "proforma_invoice"},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=True,
+    )
+    seq = (counter or {}).get("seq", 1)
+    return f"CC > PIC > {seq:03d}"
+
+
+async def _next_tax_invoice_no() -> str:
+    counter = await db.counters.find_one_and_update(
+        {"_id": "tax_invoice"},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=True,
+    )
+    seq = (counter or {}).get("seq", 1)
+    return f"CC > ARL > {seq:03d}"
+
+
+@api_router.get("/invoices/paginated", response_model=PaginatedInvoices)
+async def list_invoices_paginated(
+    page: int = 1, 
+    limit: int = 25, 
+    q: Optional[str] = None,
+    type: Optional[str] = None,
+    client_id: Optional[str] = None
+):
+    skip = (page - 1) * limit
+    query = {}
+    if type:
+        query["type"] = type
+    if client_id:
+        query["client_id"] = client_id
+        
+    if q:
+        s = q.strip()
+        query["$or"] = [
+            {"invoice_no": {"$regex": s, "$options": "i"}},
+            {"client_name": {"$regex": s, "$options": "i"}},
+            {"client_gstin": {"$regex": s, "$options": "i"}},
+            {"client_pan": {"$regex": s, "$options": "i"}},
+            {"place_of_supply": {"$regex": s, "$options": "i"}}
+        ]
+        
+    total = await db.invoices.count_documents(query)
+    items = await db.invoices.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    return {"data": items, "total": total}
+
+
+@api_router.get("/invoices", response_model=List[Invoice])
+async def get_invoices():
+    docs = await db.invoices.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return docs
+@api_router.post("/invoices/bulk-import-b2b")
+async def bulk_import_invoices_b2b(type: str = "tax", file: UploadFile = File(...), current_user: dict = Depends(auth_module.get_current_user)):
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        raise HTTPException(400, "Only Excel files (.xlsx, .xls) are supported.")
+    
+    content = await file.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+        sheets_to_process = [name for name in wb.sheetnames if "b2b" in name.lower() or "b2cl" in name.lower()]
+        if not sheets_to_process:
+            sheets_to_process = [wb.active.title]
+    except Exception as e:
+        raise HTTPException(400, f"Failed to read Excel file: {str(e)}")
+
+    imported = 0
+    skipped = 0
+    
+    for sheet_name in sheets_to_process:
+        ws = wb[sheet_name]
+        is_b2cl = "b2cl" in sheet_name.lower()
+        
+        header_row_idx = None
+        gstin_col = name_col = pos_col = inv_no_col = inv_date_col = taxable_val_col = rate_col = None
+        
+        for r_idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
+            for c_idx, cell in enumerate(row):
+                val = str(cell).strip().lower() if cell else ""
+                if "gstin" in val and "e-commerce" not in val:
+                    gstin_col = c_idx
+                elif "customer name" in val or "receiver name" in val:
+                    name_col = c_idx
+                elif "place of supply" in val:
+                    pos_col = c_idx
+                elif "invoice number" in val:
+                    inv_no_col = c_idx
+                elif "invoice date" in val:
+                    inv_date_col = c_idx
+                elif "taxable value" in val:
+                    taxable_val_col = c_idx
+                elif val == "rate":
+                    rate_col = c_idx
+            
+            if inv_date_col is not None and taxable_val_col is not None:
+                if is_b2cl or name_col is not None:
+                    header_row_idx = r_idx
+                    break
+                
+        if header_row_idx is None:
+            continue
+            
+        for row in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
+            try:
+                if is_b2cl:
+                    pos = str(row[pos_col]).strip() if pos_col is not None and len(row) > pos_col and row[pos_col] else ""
+                    if not pos or pos.lower() == "none" or "total" in pos.lower():
+                        continue
+                    name = f"Unregistered Customer - {pos}"
+                    gstin = ""
+                else:
+                    name = str(row[name_col]).strip() if name_col is not None and len(row) > name_col and row[name_col] else ""
+                    if not name or name.lower() == "none" or "total" in name.lower():
+                        continue
+                    gstin = str(row[gstin_col]).strip() if gstin_col is not None and len(row) > gstin_col and row[gstin_col] else ""
+                    if gstin.lower() == "none": gstin = ""
+                    
+                inv_date = str(row[inv_date_col]).strip() if inv_date_col is not None and len(row) > inv_date_col and row[inv_date_col] else ""
+                if not inv_date or inv_date.lower() == "none" or "total" in inv_date.lower():
+                    continue
+                    
+                try:
+                    if isinstance(row[inv_date_col], datetime):
+                        parsed_date = row[inv_date_col].strftime("%Y-%m-%d")
+                    else:
+                        parsed_date = datetime.strptime(inv_date.split()[0], "%d-%b-%Y").strftime("%Y-%m-%d")
+                except Exception:
+                    parsed_date = _now().split("T")[0]
+                    
+                rate_val = 18.0
+                if rate_col is not None and len(row) > rate_col and row[rate_col]:
+                    try:
+                        rate_val = float(str(row[rate_col]).strip())
+                    except ValueError:
+                        pass
+                        
+                taxable_val = 0.0
+                if taxable_val_col is not None and len(row) > taxable_val_col and row[taxable_val_col]:
+                    try:
+                        taxable_val = float(str(row[taxable_val_col]).strip())
+                    except ValueError:
+                        pass
+                        
+                if taxable_val <= 0:
+                    continue
+                    
+                inv_no = str(row[inv_no_col]).strip() if inv_no_col is not None and len(row) > inv_no_col and row[inv_no_col] else ""
+                if not inv_no or inv_no.lower() == "none":
+                    prefix = "B2CL" if is_b2cl else "B2B"
+                    if type == "proforma":
+                        prefix = "PRO"
+                    inv_no = f"{prefix}-{_new_id()[:6].upper()}"
+                    
+                dup_inv = await db.invoices.find_one({"invoice_no": inv_no})
+                if dup_inv:
+                    skipped += 1
+                    continue
+                
+                import re
+                safe_name = re.escape(name)
+                client = await db.clients.find_one({"name": {"$regex": f"^{safe_name}$", "$options": "i"}})
+                if not client:
+                    client_id = _new_id() if type == "tax" else ""
+                    client = {
+                        "name": name,
+                        "gstin": gstin,
+                        "place_of_supply": pos if is_b2cl else "",
+                        "pan": gstin[2:12] if len(gstin) >= 12 else "",
+                        "phone": "",
+                        "email": "",
+                        "company": name,
+                        "address": "",
+                        "id": client_id,
+                        "created_at": _now()
+                    }
+                    if type == "tax":
+                        _stamp_edit(client)
+                        await db.clients.insert_one(client)
+                else:
+                    client_id = client["id"]
+                    
+                invoice_id = _new_id()
+                
+                effective_type = type
+                if "CC / ARL" in inv_no.upper() or "CC/ARL" in inv_no.upper():
+                    effective_type = "tax"
+                elif "CC / PIC" in inv_no.upper() or "CC/PIC" in inv_no.upper():
+                    effective_type = "proforma"
+    
+                doc = {
+                    "type": effective_type,
+                    "invoice_date": parsed_date,
+                    "expiry_date": "",
+                    "hsn_code": "998332",
+                    "client_id": client_id,
+                    "client_name": client["name"],
+                    "client_address": client.get("address", ""),
+                    "client_gstin": client.get("gstin", ""),
+                    "client_mobile": client.get("phone", ""),
+                    "client_pan": client.get("pan", ""),
+                    "place_of_supply": client.get("place_of_supply", ""),
+                    "service_description": "Professional Services",
+                    "qty": 1.0,
+                    "rate": taxable_val,
+                    "gst_percent": rate_val,
+                    "tds_percent": 10.0,
+                    "tds_section": "194J",
+                    "received_amount": 0.0,
+                    "id": invoice_id,
+                    "invoice_no": inv_no,
+                    "created_by_user_id": current_user.get("id"),
+                    "created_by_username": current_user.get("username"),
+                    "created_at": _now()
+                }
+                await db.invoices.insert_one(doc)
+                imported += 1
+            except Exception as e:
+                print(f"Row skipped due to error: {e}")
+                skipped += 1
+            
+    if imported == 0 and skipped == 0:
+        raise HTTPException(400, "Could not find valid B2B or B2CL invoice data to import.")
+        
+    return {"imported": imported, "skipped": skipped, "message": f"Successfully imported {imported} invoices. Skipped {skipped} duplicates."}
+
+
+@api_router.post("/invoices", response_model=Invoice)
+async def create_invoice(data: InvoiceIn, current_user: dict = Depends(auth_module.get_current_user)):
+    invoice_data = data.model_dump()
+    invoice_data["place_of_supply"] = format_place_of_supply(invoice_data.get("place_of_supply"), invoice_data.get("client_gstin"))
+    
+    if invoice_data["type"] == "proforma":
+        invoice_no = await _next_proforma_no()
+    else:
+        invoice_no = await _next_tax_invoice_no()
+        
+    invoice_id = _new_id()
+    doc = {
+        **invoice_data,
+        "id": invoice_id,
+        "invoice_no": invoice_no,
+        "created_by_user_id": current_user.get("id"),
+        "created_by_username": current_user.get("username"),
+        "created_at": _now()
+    }
+    
+    await db.invoices.insert_one(doc.copy())
+    
+    # Auto-update client in db
+    if invoice_data["client_id"]:
+        update_fields = {}
+        if invoice_data.get("client_gstin"):
+            update_fields["gstin"] = invoice_data["client_gstin"]
+        if invoice_data.get("client_pan"):
+            update_fields["pan"] = invoice_data["client_pan"]
+        if invoice_data.get("place_of_supply"):
+            update_fields["place_of_supply"] = invoice_data["place_of_supply"]
+            
+        if update_fields:
+            await db.clients.update_one(
+                {"id": invoice_data["client_id"]},
+                {"$set": update_fields}
+            )
+            
+    # Auto-record payment if this is a tax invoice linked to a project
+    if invoice_data["type"] == "tax" and invoice_data.get("project_id"):
+        project_id = invoice_data["project_id"]
+        project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+        if project:
+            items = invoice_data.get("items", [])
+            if not items:
+                items = [{
+                    "qty": float(invoice_data.get("qty", 1.0)),
+                    "rate": float(invoice_data.get("rate", 0.0))
+                }]
+            base_value = sum(float(it.get("qty", 1.0)) * float(it.get("rate", 0.0)) for it in items)
+            gst_percent = float(invoice_data.get("gst_percent", 18))
+            gst_amount = base_value * (gst_percent / 100)
+            total_amount_with_gst = base_value + gst_amount
+            
+            tds_percent = float(invoice_data.get("tds_percent", 0))
+            tds_amount = base_value * (tds_percent / 100) if tds_percent > 0 else 0
+            
+            payable_amount = round(total_amount_with_gst - tds_amount, 2)
+            
+            # Create payment
+            payment_doc = {
+                "id": _new_id(),
+                "project_id": project_id,
+                "project_code": project.get("project_code", ""),
+                "amount": float(payable_amount),
+                "taxable_amount": float(base_value),
+                "payment_date": invoice_data.get("invoice_date", _now()[:10]),
+                "notes": f"Auto-recorded from Tax Invoice",
+                "invoice_no": invoice_no,
+                "created_at": _now(),
+            }
+            _stamp_edit(payment_doc)
+            await db.payments.insert_one(payment_doc.copy())
+            
+            # Recalculate project totals
+            await _recalculate_project_received(project_id)
+            
+            await _log_activity(
+                project_id, project.get("project_code", ""),
+                "PAYMENT ADDED",
+                f"Amount: ₹ {float(base_value):,.2f} | Note: Auto-recorded from Tax Invoice {invoice_no}",
+            )
+
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/invoices/export/excel")
+async def export_invoices_excel(start_date: Optional[str] = None, end_date: Optional[str] = None):
+    query = {"type": "tax"}
+    if start_date or end_date:
+        date_query = {}
+        if start_date:
+            date_query["$gte"] = start_date
+        if end_date:
+            date_query["$lte"] = end_date
+        query["invoice_date"] = date_query
+
+    invoices = await db.invoices.find(query, {"_id": 0}).sort("invoice_date", -1).to_list(10000)
+
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    import io
+    from datetime import datetime
+    
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Tax Invoices"
+    
+    headers = [
+        "Invoice No", "Date", "Client Name", "Client GSTIN", "Place of Supply",
+        "Project Linked", "Total Base Value (INR)", "GST %", "GST Amount (INR)", 
+        "TDS %", "TDS Amount (INR)", "Payable Amount (INR)", "Received Amount (INR)"
+    ]
+    ws.append(headers)
+    
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="061A11")
+    for col in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=col)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+
+    for inv in invoices:
+        items = inv.get("items", [])
+        base_value = sum(float(it.get("qty", 1.0)) * float(it.get("rate", 0.0)) for it in items)
+        gst_percent = float(inv.get("gst_percent", 18))
+        gst_amount = base_value * (gst_percent / 100)
+        total_amount_with_gst = base_value + gst_amount
+        
+        tds_percent = float(inv.get("tds_percent", 0))
+        tds_amount = base_value * (tds_percent / 100) if tds_percent > 0 else 0
+        
+        payable_amount = round(total_amount_with_gst - tds_amount, 2)
+        
+        ws.append([
+            inv.get("invoice_no", ""),
+            inv.get("invoice_date", ""),
+            inv.get("client_name", ""),
+            inv.get("client_gstin", ""),
+            inv.get("place_of_supply", ""),
+            "Yes" if inv.get("project_id") else "No",
+            round(base_value, 2),
+            gst_percent,
+            round(gst_amount, 2),
+            tds_percent,
+            round(tds_amount, 2),
+            payable_amount,
+            float(inv.get("received_amount", 0) or 0)
+        ])
+
+    for col_idx, col in enumerate(ws.columns, 1):
+        max_len = max((len(str(c.value)) for c in col if c.value is not None), default=10)
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = min(max_len + 4, 40)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    
+    filename = f"Tax_Invoices_Export_{start_date or 'ALL'}_to_{end_date or 'ALL'}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+@api_router.put("/invoices/{invoice_id}", response_model=Invoice)
+async def update_invoice(invoice_id: str, data: InvoiceIn, current_user: dict = Depends(auth_module.get_current_user)):
+    invoice_data = data.model_dump()
+    
+    existing = await db.invoices.find_one({"id": invoice_id})
+    if not existing:
+        raise HTTPException(404, "Invoice not found")
+        
+    doc = {
+        **existing,
+        **invoice_data,
+        "place_of_supply": format_place_of_supply(invoice_data.get("place_of_supply"), invoice_data.get("client_gstin")),
+        "last_edited_by_user_id": current_user.get("id"),
+        "last_edited_by_username": current_user.get("username"),
+        "last_edited_at": _now()
+    }
+    
+    inv_no = existing.get("invoice_no", "")
+    t = existing.get("type", invoice_data.get("type", "tax"))
+    if "CC / ARL" in inv_no.upper() or "CC/ARL" in inv_no.upper():
+        t = "tax"
+    elif "CC / PIC" in inv_no.upper() or "CC/PIC" in inv_no.upper():
+        t = "proforma"
+        
+    doc["type"] = t
+    doc["invoice_no"] = inv_no
+    
+    await db.invoices.replace_one({"id": invoice_id}, doc)
+    
+    if invoice_data["client_id"]:
+        update_fields = {}
+        if invoice_data.get("client_gstin"):
+            update_fields["gstin"] = invoice_data["client_gstin"]
+        if invoice_data.get("client_pan"):
+            update_fields["pan"] = invoice_data["client_pan"]
+        if invoice_data.get("place_of_supply"):
+            update_fields["place_of_supply"] = format_place_of_supply(invoice_data["place_of_supply"], invoice_data.get("client_gstin"))
+            
+        if update_fields:
+            await db.clients.update_one(
+                {"id": invoice_data["client_id"]},
+                {"$set": update_fields}
+            )
+            
+    # Sync payment record if needed
+    old_project_id = existing.get("project_id")
+    new_project_id = invoice_data.get("project_id")
+    
+    # Calculate payable amount
+    items = invoice_data.get("items", [])
+    if not items:
+        items = [{
+            "qty": float(invoice_data.get("qty", 1.0)),
+            "rate": float(invoice_data.get("rate", 0.0))
+        }]
+    base_value = sum(float(it.get("qty", 1.0)) * float(it.get("rate", 0.0)) for it in items)
+    gst_percent = float(invoice_data.get("gst_percent", 18))
+    gst_amount = base_value * (gst_percent / 100)
+    total_amount_with_gst = base_value + gst_amount
+    tds_percent = float(invoice_data.get("tds_percent", 0))
+    tds_amount = base_value * (tds_percent / 100) if tds_percent > 0 else 0
+    payable_amount = round(total_amount_with_gst - tds_amount, 2)
+
+    existing_payment = await db.payments.find_one({"invoice_no": inv_no}) if inv_no else None
+    
+    if t == "tax" and new_project_id:
+        project = await db.projects.find_one({"id": new_project_id}, {"_id": 0})
+        if project:
+            if existing_payment:
+                # Update existing payment
+                await db.payments.update_one(
+                    {"id": existing_payment["id"]},
+                    {"$set": {
+                        "project_id": new_project_id,
+                        "project_code": project.get("project_code", ""),
+                        "amount": float(payable_amount),
+                        "taxable_amount": float(base_value),
+                        "payment_date": invoice_data.get("invoice_date", _now()[:10]),
+                        "last_edited_by_user_id": current_user.get("id"),
+                        "last_edited_by_username": current_user.get("username"),
+                        "last_edited_at": _now()
+                    }}
+                )
+            else:
+                # Create new payment
+                payment_doc = {
+                    "id": _new_id(),
+                    "project_id": new_project_id,
+                    "project_code": project.get("project_code", ""),
+                    "amount": float(payable_amount),
+                    "taxable_amount": float(base_value),
+                    "payment_date": invoice_data.get("invoice_date", _now()[:10]),
+                    "notes": "Auto-recorded from Tax Invoice",
+                    "invoice_no": inv_no,
+                    "created_at": _now(),
+                }
+                _stamp_edit(payment_doc)
+                await db.payments.insert_one(payment_doc)
+            
+            # Recalculate new project totals
+            await _recalculate_project_received(new_project_id)
+            
+            # If project changed, recalculate old project too
+            if old_project_id and old_project_id != new_project_id:
+                await _recalculate_project_received(old_project_id)
+    else:
+        # If not tax, or no project, remove payment if it exists
+        if existing_payment:
+            await db.payments.delete_one({"id": existing_payment["id"]})
+            if existing_payment.get("project_id"):
+                await _recalculate_project_received(existing_payment["project_id"])            
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.delete("/invoices/{invoice_id}")
+async def delete_invoice(invoice_id: str):
+    invoice = await db.invoices.find_one({"id": invoice_id})
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+        
+    invoice_no = invoice.get("invoice_no", "")
+    invoice_type = invoice.get("type", "tax_invoice")
+    
+    res = await db.invoices.delete_one({"id": invoice_id})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Invoice not found")
+        
+    # Rollback the counter if this was the very last invoice generated
+    import re
+    match = re.search(r'(\d+)$', invoice_no)
+    if match:
+        seq = int(match.group(1))
+        counter_id = "proforma" if invoice_type == "proforma" else "tax_invoice"
+        counter = await db.counters.find_one({"_id": counter_id})
+        if counter and counter.get("seq") == seq:
+            await db.counters.update_one({"_id": counter_id}, {"$inc": {"seq": -1}})
+    # Also delete the corresponding payment record if it exists
+    if invoice_no:
+        payment = await db.payments.find_one({"invoice_no": invoice_no})
+        if payment:
+            await db.payments.delete_one({"id": payment["id"]})
+            if payment.get("project_id"):
+                await _recalculate_project_received(payment["project_id"])
+                project = await db.projects.find_one({"id": payment["project_id"]}, {"_id": 0})
+                if project:
+                    await _log_activity(
+                        payment["project_id"], project.get("project_code", ""),
+                        "PAYMENT DELETED",
+                        f"Auto-deleted due to invoice deletion: {invoice_no}"
+                    )
+            
+    return {"ok": True}
+
+
+async def _build_invoice_document_pdf(invoice: dict) -> bytes:
+    cd = await db.company_details.find_one({"id": "singleton"})
+    if not cd:
+        cd = {
+            "name": "CREATOR RCC CONSULTANT LLP",
+            "address": "A-001, sidhhivinayak park, Airoli, Navi Mumbai",
+            "gstin": "27AASFC7539E1Z2",
+            "mobile": "9892683460",
+            "pan": "AASFC7539E",
+            "email": "project@creatorconsultant.net",
+            "bank_name": "Kotak Mahindra Bank",
+            "bank_account_name": "CREATOR RCC CONSULTANT LLP",
+            "bank_ifsc": "KKBK0001360",
+            "bank_account_no": "9987076241",
+            "bank_branch": "Airoli Branch",
+            "upi_id": "creatorconsultantLLP@kotak",
+            "qr_code_url": "",
+            "company_logo_url": ""
+        }
+
+    is_proforma = invoice.get("type") == "proforma"
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+
+    margin = 10 * mm
+    printable_width = width - 2 * margin
+
+    # ── Title line ────────────────────────────────────────────────────────
+    title_str = "PROFORMA INVOICE" if is_proforma else "TAX INVOICE"
+    c.setFont("Roboto-Medium", 10)
+    c.drawString(margin, height - 6.5 * mm, title_str)
+
+    if not is_proforma:
+        title_w = pdfmetrics.stringWidth(title_str, "Roboto-Medium", 10)
+        badge_text = "ORIGINAL FOR RECIPIENT"
+        badge_text_w = pdfmetrics.stringWidth(badge_text, "Roboto-Medium", 8.5)
+        
+        badge_x = margin + title_w + 3 * mm
+        badge_y = height - 8 * mm
+        badge_w = badge_text_w + 4 * mm
+        badge_h = 5 * mm
+        
+        c.setStrokeColor(colors.HexColor("#84849A"))
+        c.setLineWidth(1.0)
+        c.roundRect(badge_x, badge_y, badge_w, badge_h, 2, fill=0, stroke=1)
+        c.setFillColor(colors.HexColor("#84849A"))
+        c.setFont("Roboto-Medium", 8.5)
+        c.drawCentredString(badge_x + badge_w / 2, badge_y + 1.5 * mm, badge_text)
+        c.setFillColor(colors.black)
+
+    # ── Header box ────────────────────────────────────────────────────────
+    y_top = height - 10 * mm
+    
+    # Pre-calculate to find dynamic header height
+    v_split = margin + 98 * mm
+    info_x = margin + 24 * mm
+    info_max_w = v_split - info_x - 3 * mm
+    styles = getSampleStyleSheet()
+    addr_style = ParagraphStyle(
+        'AddrStyleInv', parent=styles['Normal'], fontName='Roboto',
+        fontSize=8.5, leading=10, textColor=colors.black,
+    )
+    addr_para_tmp = Paragraph(cd.get("address", ""), addr_style)
+    _, addr_para_h = addr_para_tmp.wrap(info_max_w, 25 * mm)
+    
+    _gstin_y = y_top - 8 * mm - addr_para_h - 3 * mm
+    _gstin_val_y = _gstin_y - 3.5 * mm
+    _pan_y = _gstin_val_y - 3.8 * mm
+    _email_y = _pan_y - 4 * mm
+    
+    header_h = y_top - (_email_y - 5 * mm)
+    y_header_bottom = y_top - header_h
+
+    c.setStrokeColor(colors.black)
+    c.setLineWidth(1.0)
+    c.rect(margin, y_header_bottom, printable_width, header_h, fill=0, stroke=1)
+
+    # Left panel width = 90mm, right panel = 90mm
+    v_split = margin + 98 * mm
+    c.line(v_split, y_header_bottom, v_split, y_top)
+
+    # ── Logo ──────────────────────────────────────────────────────────────
+    logo_path = Path(__file__).parent.parent / "frontend" / "public" / "logo.jpg"
+    logo_bytes = None
+    logo_is_pdf = False
+    logo_url = cd.get("company_logo_url")
+    if logo_url:
+        logo_bytes = await _load_photo_bytes(logo_url)
+        if logo_bytes and logo_bytes.startswith(b'%PDF'):
+            logo_is_pdf = True
+
+    logo_size = 18 * mm
+    logo_x = margin + 4 * mm
+    # Center logo vertically in the 44mm header box
+    logo_y = y_header_bottom + (header_h - logo_size) / 2
+
+    if logo_bytes and not logo_is_pdf:
+        try:
+            logo_img = ImageReader(io.BytesIO(logo_bytes))
+            c.drawImage(logo_img, logo_x, logo_y, width=logo_size, height=logo_size,
+                        preserveAspectRatio=True, mask='auto')
+        except Exception:
+            if logo_path.exists():
+                try:
+                    c.drawImage(str(logo_path), logo_x, logo_y, width=logo_size, height=logo_size,
+                                preserveAspectRatio=True)
+                except Exception:
+                    pass
+    elif not logo_is_pdf:
+        if logo_path.exists():
+            try:
+                c.drawImage(str(logo_path), logo_x, logo_y, width=logo_size, height=logo_size,
+                            preserveAspectRatio=True)
+            except Exception:
+                pass
+
+    # ── Company info (left panel, right of logo) ──────────────────────────
+    info_x = margin + 24 * mm
+    info_max_w = v_split - info_x - 3 * mm   # available width for text
+
+    c.setFillColor(colors.HexColor("#0A6B9F"))
+    c.setFont("Roboto-Medium", 10.5)
+    c.drawString(info_x, y_top - 5 * mm, cd.get("name", ""))
+    c.setFillColor(colors.black)
+
+    # Wrapped address
+    styles = getSampleStyleSheet()
+    addr_style = ParagraphStyle(
+        'AddrStyleInv',
+        parent=styles['Normal'],
+        fontName='Roboto',
+        fontSize=8.5,
+        leading=10,
+        textColor=colors.black,
+    )
+    addr_para = Paragraph(cd.get("address", ""), addr_style)
+    _, addr_para_h = addr_para.wrap(info_max_w, 25 * mm)
+    addr_para.drawOn(c, info_x, y_top - 8 * mm - addr_para_h)
+
+    # GSTIN + Mobile labels and values
+    gstin_y = y_top - 8 * mm - addr_para_h - 3 * mm
+    c.setFont("Roboto", 8.5)
+    c.drawString(info_x, gstin_y, "GSTIN:")
+    c.drawString(info_x + 35 * mm, gstin_y, "Mobile:")
+    
+    gstin_val_y = gstin_y - 3.5 * mm
+    c.setFont("Roboto", 8.5)
+    c.drawString(info_x, gstin_val_y, cd.get("gstin", ""))
+    c.drawString(info_x + 35 * mm, gstin_val_y, cd.get("mobile", ""))
+
+    pan_y = gstin_val_y - 3.8 * mm
+    c.setFont("Roboto", 8.5)
+    c.drawString(info_x, pan_y, "PAN Number:")
+    pan_w = pdfmetrics.stringWidth("PAN Number: ", "Roboto", 8.5)
+    c.setFont("Roboto", 8.5)
+    c.drawString(info_x + pan_w, pan_y, cd.get("pan", ""))
+
+    email_y = pan_y - 4 * mm
+    c.setFont("Roboto", 8.5)
+    c.drawString(info_x, email_y, "Email:")
+    email_w = pdfmetrics.stringWidth("Email: ", "Roboto", 8.5)
+    c.setFont("Roboto", 8.5)
+    c.drawString(info_x + email_w, email_y, cd.get("email", ""))
+
+    # ── Right panel: invoice meta ─────────────────────────────────────────
+    inv_date_str = ""
+    if invoice.get("invoice_date"):
+        try:
+            inv_date_str = datetime.strptime(invoice["invoice_date"], "%Y-%m-%d").strftime("%d/%m/%Y")
+        except Exception:
+            inv_date_str = invoice["invoice_date"]
+
+    exp_date_str = ""
+    if invoice.get("expiry_date"):
+        try:
+            exp_date_str = datetime.strptime(invoice["expiry_date"], "%Y-%m-%d").strftime("%d/%m/%Y")
+        except Exception:
+            exp_date_str = invoice["expiry_date"]
+
+    rp_w = (width - margin) - v_split
+    # Push the text down to vertically center it in the 22mm box
+    y_meta_top = y_top - 10 * mm
+
+    if is_proforma:
+        # Three columns, centered in thirds
+        c1 = v_split + (rp_w * 0.23)
+        c2 = v_split + (rp_w * 0.60)
+        c3 = v_split + (rp_w * 0.86)
+        
+        c.setFont("Roboto-Bold", 8.5)
+        c.drawCentredString(c1, y_meta_top, "Proforma Invoice No.")
+        c.drawCentredString(c2, y_meta_top, "Proforma Date")
+        c.drawCentredString(c3, y_meta_top, "Expiry Date")
+        
+        c.setFont("Roboto", 8.5)
+        c.drawCentredString(c1, y_meta_top - 4 * mm, invoice.get("invoice_no", ""))
+        c.drawCentredString(c2, y_meta_top - 4 * mm, inv_date_str)
+        c.drawCentredString(c3, y_meta_top - 4 * mm, exp_date_str)
+    else:
+        # Two columns, centered in halves
+        c1 = v_split + (rp_w / 4)
+        c2 = v_split + (rp_w * 3 / 4)
+        
+        c.setFont("Roboto-Bold", 8.5)
+        c.drawCentredString(c1, y_meta_top, "Invoice No.")
+        c.drawCentredString(c2, y_meta_top, "Invoice Date")
+        
+        c.setFont("Roboto", 8.5)
+        c.drawCentredString(c1, y_meta_top - 4 * mm, invoice.get("invoice_no", ""))
+        c.drawCentredString(c2, y_meta_top - 4 * mm, inv_date_str)
+
+    # Horizontal divider in right panel below invoice no / date
+    y_split_line = y_top - 22 * mm
+    c.setLineWidth(1.0)
+    c.line(v_split, y_split_line, width - margin, y_split_line)
+
+    # HSN CODE | PAN NO — two sub-columns in lower part of right panel
+    v_pan_split = v_split + (rp_w / 2)
+    # Line removed based on user feedback
+
+    c1_hsn = v_split + 12.5 * mm
+    c2_pan = (width - margin) - 12.5 * mm
+
+    h2 = header_h - 22 * mm
+    y_meta_bottom_top = y_split_line - (h2 / 2 - 2 * mm)
+
+    c.setFont("Roboto", 8.5)
+    c.drawCentredString(c1_hsn, y_meta_bottom_top, "HSN CODE")
+    c.drawCentredString(c2_pan, y_meta_bottom_top, "PAN NO")
+
+    c.setFont("Roboto", 8.5)
+    c.drawCentredString(c1_hsn, y_meta_bottom_top - 4 * mm, invoice.get("hsn_code", "998332"))
+    c.drawCentredString(c2_pan, y_meta_bottom_top - 4 * mm, cd.get("pan", ""))
+
+    # ── Bill To block ─────────────────────────────────────────────────────
+    y_billto = y_header_bottom
+    billto_h = 28 * mm
+    y_billto_bottom = y_billto - billto_h
+
+    c.setLineWidth(1.0)
+    c.rect(margin, y_billto_bottom, printable_width, billto_h, fill=0, stroke=1)
+
+    bx = margin + 2 * mm   # left text offset inside bill-to box
+
+    c.setFillColor(colors.black)
+    c.setFont("Roboto", 9)
+    c.drawString(bx, y_billto - 3.5 * mm, "BILL TO")
+
+    c.setFont("Roboto-Bold", 9) # client name full bold
+    c.drawString(bx, y_billto - 8.5 * mm, invoice.get("client_name", "").upper())
+
+    # Full address — wrapped
+    addr_client_style = ParagraphStyle(
+        'ClientAddrStyleInv',
+        parent=styles['Normal'],
+        fontName='Roboto',
+        fontSize=8.5,
+        leading=10,
+        textColor=colors.black,
+    )
+    client_addr = invoice.get("client_address", "")
+    addr_client_para = Paragraph(f"Address:  {client_addr}", addr_client_style)
+    _, addr_client_h = addr_client_para.wrap(printable_width - 4 * mm, 14 * mm)
+    addr_client_para.drawOn(c, bx, y_billto - 10 * mm - addr_client_h)
+
+    # GSTIN row
+    gstin_row_y = y_billto - 10 * mm - addr_client_h - 4.5 * mm # space adjusted to match GSTIN/Mobile row
+    c.setFont("Roboto", 8.5)
+    c.drawString(bx, gstin_row_y, "GSTIN:")
+    gstin_w = pdfmetrics.stringWidth("GSTIN: ", "Roboto", 8.5)
+    c.setFont("Roboto", 8.5)
+    c.drawString(bx + gstin_w, gstin_row_y, invoice.get("client_gstin") or "\u2014")
+    
+    c.setFont("Roboto", 8.5)
+    c.drawString(bx + 40 * mm, gstin_row_y, "Place of Supply:")
+    pos_w = pdfmetrics.stringWidth("Place of Supply: ", "Roboto", 8.5)
+    c.setFont("Roboto", 8.5)
+    pos = invoice.get("place_of_supply") or "\u2014"
+    c.drawString(bx + 40 * mm + pos_w, gstin_row_y, format_place_of_supply(pos, invoice.get("client_gstin")))
+
+    # Mobile / PAN row
+    mob_row_y = gstin_row_y - 4.5 * mm
+    c.setFont("Roboto", 8.5)
+    c.drawString(bx, mob_row_y, "Mobile:")
+    mob_w = pdfmetrics.stringWidth("Mobile: ", "Roboto", 8.5)
+    c.setFont("Roboto", 8.5)
+    c.drawString(bx + mob_w, mob_row_y, invoice.get("client_mobile") or "\u2014")
+    
+    c.setFont("Roboto", 8.5)
+    c.drawString(bx + 32 * mm, mob_row_y, "PAN Number:")
+    bill_pan_w = pdfmetrics.stringWidth("PAN Number: ", "Roboto", 8.5)
+    c.setFont("Roboto", 8.5)
+    c.drawString(bx + 32 * mm + bill_pan_w, mob_row_y, invoice.get("client_pan") or "\u2014")
+
+    # ── Services table ────────────────────────────────────────────────────
+    # Column widths (all in pts): matching user requested layout
+    sno_w    = 14.0 * mm
+    svc_w    = 102.1 * mm
+    qty_w    = 14.0 * mm
+    rate_w   = 17.6 * mm
+    tax_w    = 18.7 * mm
+    # col_x[i] = left edge of column i+1 (= right edge of column i)
+    col_x = [
+        margin + sno_w,
+        margin + sno_w + svc_w,
+        margin + sno_w + svc_w + qty_w,
+        margin + sno_w + svc_w + qty_w + rate_w,
+        margin + sno_w + svc_w + qty_w + rate_w + tax_w,
+    ]
+    # amount col right edge = width - margin
+
+    y_table = y_billto_bottom
+    
+    # Dynamically calculate table bottom so footer hits the bottom margin
+    required_bottom_space = 85 + 30 + 42 + (2 * mm) # HSN Summary table height changed to 42
+    if not is_proforma:
+        required_bottom_space += 21 * 4
+        
+    y_table_bottom = margin + required_bottom_space
+    table_h = y_table - y_table_bottom
+
+    c.setLineWidth(1.0)
+    c.rect(margin, y_table_bottom, printable_width, table_h, fill=0, stroke=1)
+
+    # Header row
+    hdr_h = 22
+    y_hdr_bottom = y_table - hdr_h
+    c.setFillColor(colors.HexColor("#CFE9FA"))
+    c.rect(margin, y_hdr_bottom, printable_width, hdr_h, fill=1, stroke=0)
+    c.setStrokeColor(colors.black)
+    c.setLineWidth(1.0)
+    c.line(margin, y_hdr_bottom, width - margin, y_hdr_bottom)
+
+    for x in col_x:
+        c.line(x, y_table_bottom, x, y_table)
+
+    c.setFillColor(colors.black)
+    c.setFont("Roboto", 9)
+    mid_sno   = margin + sno_w / 2
+    mid_svc   = margin + sno_w + svc_w / 2
+    mid_qty   = col_x[1] + qty_w / 2
+    mid_rate  = col_x[2] + rate_w / 2
+    mid_tax   = col_x[3] + tax_w / 2
+    mid_amt   = col_x[4] + (width - margin - col_x[4]) / 2
+    y_hdr_text = y_table - 14
+    c.drawCentredString(mid_sno,  y_hdr_text, "S.NO.")
+    c.drawCentredString(mid_svc,  y_hdr_text, "SERVICES")
+    c.drawCentredString(mid_qty,  y_hdr_text, "QTY.")
+    c.drawCentredString(mid_rate, y_hdr_text, "RATE")
+    c.drawCentredString(mid_tax,  y_hdr_text, "TAX")
+    c.drawCentredString(mid_amt,  y_hdr_text, "AMOUNT")
+
+    # ── Compute amounts ───────────────────────────────────────────────────
+    items = invoice.get("items", [])
+    if not items:
+        # Fallback for old invoices
+        items = [{
+            "service_description": invoice.get("service_description", ""),
+            "qty": float(invoice.get("qty", 1.0)),
+            "rate": float(invoice.get("rate", 0.0))
+        }]
+
+    base_taxable     = sum(float(it.get("qty", 1.0)) * float(it.get("rate", 0.0)) for it in items)
+    gst_percent      = float(invoice.get("gst_percent", 18.0))
+    tax_amount       = base_taxable * (gst_percent / 100.0)
+    cgst_amount      = tax_amount / 2.0
+    sgst_amount      = tax_amount / 2.0
+    total_amount_with_gst = base_taxable + tax_amount
+
+    tds_percent      = float(invoice.get("tds_percent", 10.0))
+    tds_amount       = base_taxable * (tds_percent / 100.0)
+    payable_amount   = total_amount_with_gst - tds_amount
+    received_amount  = float(invoice.get("received_amount", 0.0))
+    balance_amount   = payable_amount - received_amount
+
+    # ── Data rows ─────────────────────────────────────────────────────────
+    c.setFont("Roboto", 9)
+    desc_style = ParagraphStyle(
+        'InvDescStyle',
+        parent=styles['Normal'],
+        fontName='Roboto',
+        fontSize=9,
+        leading=12,
+        textColor=colors.black,
+    )
+    current_y = y_table - 45
+    
+    amt_w_avail = (width - margin) - col_x[4]
+
+    def _draw_scaled_right(cv, x, y, text, max_w, font="Roboto", base_size=9):
+        sz = base_size
+        while pdfmetrics.stringWidth(text, font, sz) > max_w and sz > 4.0:
+            sz -= 0.5
+        cv.setFont(font, sz)
+        cv.drawRightString(x, y, text)
+        cv.setFont(font, base_size)
+
+    def _draw_scaled_center(cv, x, y, text, max_w, font="Roboto", base_size=9):
+        sz = base_size
+        while pdfmetrics.stringWidth(text, font, sz) > max_w and sz > 4.0:
+            sz -= 0.5
+        cv.setFont(font, sz)
+        cv.drawCentredString(x, y, text)
+        cv.setFont(font, base_size)
+    for idx, item in enumerate(items):
+        item_qty = float(item.get("qty", 1.0))
+        item_rate = float(item.get("rate", 0.0))
+        item_tax = (item_qty * item_rate) * (gst_percent / 100.0)
+        item_total = (item_qty * item_rate) + item_tax
+
+        c.setFillColor(colors.black)
+        c.setFont("Roboto", 9)
+        text_y = current_y + 6
+        
+        # S.NO.
+        _draw_scaled_center(c, mid_sno, text_y, str(idx + 1), max_w=sno_w - 2 * mm)
+
+        # Services
+        p = Paragraph(item.get("service_description", ""), desc_style)
+        p.wrap(svc_w - 4 * mm, 260)
+        p.drawOn(c, margin + sno_w + 2 * mm, current_y + 13 - p.height)
+
+        # Quantity
+        _draw_scaled_center(c, mid_qty, text_y, f"{int(item_qty)} PCS", max_w=qty_w - 2 * mm)
+        
+        # Rate
+        _draw_scaled_right(c, col_x[3] - 2 * mm, text_y, _format_inr(item_rate), max_w=rate_w - 2 * mm)
+        
+        # Tax
+        _draw_scaled_right(c, col_x[4] - 2 * mm, text_y, _format_inr(item_tax), max_w=tax_w - 2 * mm)
+        c.setFillColor(BRAND_MUTED)
+        _draw_scaled_right(c, col_x[4] - 2 * mm, text_y - 12, f"({int(gst_percent)}%)", max_w=tax_w - 2 * mm, base_size=9)
+        c.setFillColor(colors.black)
+        
+        # Amount
+        _draw_scaled_right(c, width - margin - 2 * mm, text_y, _format_inr(item_total), max_w=amt_w_avail - 2 * mm)
+
+        row_h = max(p.height, 12)
+        current_y -= max(row_h + 15, 30)
+
+    # ── TOTAL row (blue background, at bottom of table) ───────────────────
+    y_total_row = y_table_bottom + hdr_h
+    c.setFillColor(colors.HexColor("#CFE9FA"))
+    c.rect(margin, y_table_bottom, printable_width, hdr_h, fill=1, stroke=0)
+    c.setStrokeColor(colors.black)
+    c.setLineWidth(1.0)
+    c.line(margin, y_total_row, width - margin, y_total_row)
+    for x in col_x:
+        c.line(x, y_table_bottom, x, y_total_row)
+
+    c.setFillColor(colors.black)
+    c.setFont("Roboto-Bold", 9)
+    # The Y position for text is relative to y_table_bottom (the bottom of this row)
+    c.drawRightString(col_x[1] - 3 * mm, y_table_bottom + 6, "TOTAL")
+    
+    _draw_scaled_center(c, mid_qty, y_table_bottom + 6, f"{int(sum(float(it.get('qty', 1.0)) for it in items))}", max_w=qty_w - 2 * mm, font="Roboto-Bold", base_size=8.5)
+    _draw_scaled_right(c, col_x[4] - 2 * mm, y_table_bottom + 6, f"₹ {_format_inr(tax_amount)}", max_w=tax_w - 2 * mm, font="Roboto-Bold", base_size=8.5)
+    _draw_scaled_right(c, width - margin - 2 * mm, y_table_bottom + 6, f"₹ {_format_inr(total_amount_with_gst)}", max_w=amt_w_avail - 2 * mm, font="Roboto-Bold", base_size=8.5)
+
+    # ── Math summary (Tax only — full-width rows below table) ─────────────
+    # Attach directly to the bottom of the main table
+    y_cursor = y_table_bottom
+
+    if not is_proforma:
+        tds_section = invoice.get("tds_section", "194J")
+        math_row_h  = 21
+
+        math_rows = []
+        if tds_amount > 0:
+            math_rows.append((f"TDS @{tds_percent:g}% {tds_section}", f"- ₹ {_format_inr(tds_amount)}",  False, False))
+            
+        math_rows.extend([
+            ("AMOUNT PAYABLE",                         f"₹ {_format_inr(payable_amount, show_decimals=False)}", False, False),
+            ("RECEIVED AMOUNT",                        f"₹ {_format_inr(received_amount)}", False, False),
+            ("BALANCE AMOUNT",                         f"₹ {_format_inr(balance_amount)}",  False, False),
+        ])
+
+        n_rows        = len(math_rows)
+        math_block_h  = math_row_h * n_rows
+        y_math_top    = y_cursor
+        y_math_bottom = y_math_top - math_block_h
+
+        c.setLineWidth(1.0)
+        c.rect(margin, y_math_bottom, printable_width, math_block_h, fill=0, stroke=1)
+
+        y_r = y_math_top
+        for label, value, highlighted, bold in math_rows:
+            row_bottom = y_r - math_row_h
+            if highlighted:
+                c.setFillColor(colors.HexColor("#CFE9FA"))
+                c.rect(margin, row_bottom, printable_width, math_row_h, fill=1, stroke=0)
+                c.setStrokeColor(colors.black)
+            
+            c.setLineWidth(1.0)
+            c.line(margin, row_bottom, width - margin, row_bottom)
+            # Continue vertical lines from main table
+            for x in col_x:
+                c.line(x, row_bottom, x, y_r)
+
+            c.setFillColor(colors.black)
+            fn = "Roboto-Medium" if bold else "Roboto"
+            c.setFont(fn, 9)
+            # Label: right-aligned in SERVICES column (col_x[1])
+            lbl_x = col_x[1] - 3 * mm
+            # Value: right-aligned in AMOUNT column
+            text_y = row_bottom + 6.5
+            c.drawRightString(lbl_x, text_y, label)
+            
+            _draw_scaled_right(c, width - margin - 2 * mm, text_y, value, max_w=amt_w_avail - 2 * mm, font=fn, base_size=9)
+            
+            y_r -= math_row_h
+
+        y_cursor = y_math_bottom
+
+    # ── HSN Summary Table ─────────────────────────────────────────────────
+    # Layout: HSN/SAC(30mm) | Taxable Value(40mm) | CGST(47mm) | SGST(47mm) | Total Tax(rest)
+    hsn_h       = 42 # increased height for y-padding
+    y_hsn_top   = y_cursor
+    y_hsn_bot   = y_hsn_top - hsn_h
+    hsn_mid     = y_hsn_bot + hsn_h / 2   # divides header row from data row
+
+    # Blue background for header half
+    c.setFillColor(colors.HexColor("#CFE9FA"))
+    c.rect(margin, hsn_mid, printable_width, hsn_h / 2, fill=1, stroke=0)
+
+    c.setStrokeColor(colors.black)
+    c.setFillColor(colors.black)
+    c.setLineWidth(1.0)
+    c.rect(margin, y_hsn_bot, printable_width, hsn_h, fill=0, stroke=1)
+    c.line(margin, hsn_mid, width - margin, hsn_mid)   # header/data divider
+
+    # Column dividers
+    hx = [
+        margin + 26.5 * mm,
+        margin + 26.5 * mm + 38 * mm,
+        margin + 26.5 * mm + 38 * mm + 34.5 * mm,
+        margin + 26.5 * mm + 38 * mm + 34.5 * mm + 34.5 * mm,
+    ]
+    for x in hx:
+        c.line(x, y_hsn_bot, x, y_hsn_top)
+
+    # CGST/SGST sub-dividers and horizontal split
+    cgst_mid = hx[1] + 10.5 * mm
+    sgst_mid = hx[2] + 10.5 * mm
+    
+    hdr_mid = hsn_mid + (hsn_h / 4)
+    # Horizontal line under CGST and SGST
+    c.line(hx[1], hdr_mid, hx[3], hdr_mid)
+    
+    # Vertical lines for Rate|Amount from bottom up to hdr_mid
+    c.line(cgst_mid, y_hsn_bot, cgst_mid, hdr_mid)
+    c.line(sgst_mid, y_hsn_bot, sgst_mid, hdr_mid)
+
+    # Header labels (top half)
+    y_hdr1 = y_hsn_top - (hsn_h / 4)   # centre of entire header
+    y_hdr_cgst = y_hsn_top - (hsn_h / 8) # centre of top quarter
+    
+    c.setFont("Roboto", 9)
+    # Full-height headers
+    c.drawCentredString(margin + (hx[0] - margin) / 2,     y_hdr1 - 3.0, "HSN/SAC")
+    c.drawCentredString(hx[0] + (hx[1] - hx[0]) / 2,       y_hdr1 - 3.0, "Taxable Value")
+    c.drawCentredString(hx[3] + (width - margin - hx[3]) / 2, y_hdr1 - 3.0, "Total Tax Amount")
+    
+    # Half-height headers
+    c.drawCentredString(hx[1] + (hx[2] - hx[1]) / 2,       y_hdr_cgst - 3.0, "CGST")
+    c.drawCentredString(hx[2] + (hx[3] - hx[2]) / 2,       y_hdr_cgst - 3.0, "SGST")
+
+    # CGST / SGST Rate / Amount sub-headers — in the second quarter
+    c.setFont("Roboto", 9)
+    rate_label_y  = hdr_mid - (hsn_h / 8) - 2.5
+    # Rate is centered in the left half of the CGST/SGST column
+    c.drawCentredString(hx[1] + (cgst_mid - hx[1]) / 2, rate_label_y, "Rate")
+    c.drawCentredString(hx[2] + (sgst_mid - hx[2]) / 2, rate_label_y, "Rate")
+    # Amount is centered in the right half of the CGST/SGST column
+    c.drawCentredString(cgst_mid + (hx[2] - cgst_mid) / 2, rate_label_y, "Amount")
+    c.drawCentredString(sgst_mid + (hx[3] - sgst_mid) / 2, rate_label_y, "Amount")
+
+    # Data row (bottom half)
+    y_data = y_hsn_bot + (hsn_h / 2) / 2 - 3.8   # centre of bottom half
+    cgst_rate_str = f"{gst_percent / 2:.1f}%".rstrip("0").rstrip(".")  + "%"
+    if not cgst_rate_str[0].isdigit():
+        cgst_rate_str = f"{gst_percent / 2:g}%"
+    hsn_display = invoice.get("hsn_code") or "-"
+    c.setFont("Roboto", 9)
+    # HSN data centered
+    c.drawCentredString(margin + (hx[0] - margin) / 2,       y_data, hsn_display)
+    
+    # Taxable value right-aligned
+    _draw_scaled_right(c, hx[1] - 2 * mm, y_data, _format_inr(base_taxable), max_w=(hx[1]-hx[0]) - 2 * mm)
+    
+    # Rate centered
+    c.drawCentredString(hx[1] + (cgst_mid - hx[1]) / 2,     y_data, f"{gst_percent/2:g}%")
+    c.drawCentredString(hx[2] + (sgst_mid - hx[2]) / 2,     y_data, f"{gst_percent/2:g}%")
+    
+    # Amount right-aligned
+    _draw_scaled_right(c, hx[2] - 2 * mm, y_data, _format_inr(cgst_amount), max_w=(hx[2]-hx[1]) - 4 * mm)
+    _draw_scaled_right(c, hx[3] - 2 * mm, y_data, _format_inr(sgst_amount), max_w=(hx[3]-hx[2]) - 4 * mm)
+    
+    # Total tax right-aligned
+    _draw_scaled_right(c, width - margin - 2 * mm, y_data, f"₹ {_format_inr(tax_amount)}", max_w=(width - margin - hx[3]) - 2 * mm)
+
+    # ── Total Amount in Words ─────────────────────────────────────────────
+    # Attach directly to the bottom of the HSN table
+    y_words = y_hsn_bot
+    words_h = 30
+    y_words_bot = y_words - words_h
+
+    c.setLineWidth(1.0)
+    c.rect(margin, y_words_bot, printable_width, words_h, fill=0, stroke=1)
+    c.setFont("Roboto-Bold", 9)
+    c.drawString(margin + 1 * mm, y_words_bot + words_h - 13, "Total Amount (in words)")
+    c.setFont("Roboto", 8)
+    c.drawString(margin + 1 * mm, y_words_bot + words_h - 25, num_to_words_indian(total_amount_with_gst))
+
+    # ── Footer ────────────────────────────────────────────────────────────
+    # Attach directly to the bottom of the Total Amount block
+    y_footer     = y_words_bot
+    footer_h     = 85
+    y_footer_bot = y_footer - footer_h
+
+    c.setLineWidth(1.0)
+    c.rect(margin, y_footer_bot, printable_width, footer_h, fill=0, stroke=1)
+
+    fc1 = margin + 74 * mm    # divides Bank | QR | Signatory
+    fc2 = margin + 132 * mm
+    c.line(fc1, y_footer_bot, fc1, y_footer)
+    c.line(fc2, y_footer_bot, fc2, y_footer)
+
+    fhdr_h = 13   # height of "section title" row at top of footer
+    # Remove the horizontal line that separated the headers
+    # c.line(margin, y_footer - fhdr_h, width - margin, y_footer - fhdr_h)
+
+    c.setFont("Roboto-Bold", 9)
+    c.drawString(margin + 1 * mm, y_footer - 9, "Bank Details")
+    # "Payment QR Code" will be drawn separately with a larger font
+    # c.drawString(fc2 + 1 * mm,    y_footer - 9, "Signatory Block")
+
+    # Bank detail lines
+    bl = 9.5  # bank line height (gives more y-padding)
+    c.setFont("Roboto", 8.5)
+    lbl_x = margin + 1 * mm
+    val_x = margin + 22 * mm # offset to accommodate larger text size of labels
+    c.drawString(lbl_x, y_footer - fhdr_h - 1*bl, "Name:")
+    c.drawString(val_x, y_footer - fhdr_h - 1*bl, cd.get('bank_account_name',''))
+    c.drawString(lbl_x, y_footer - fhdr_h - 2*bl, "IFSC Code:")
+    c.drawString(val_x, y_footer - fhdr_h - 2*bl, cd.get('bank_ifsc',''))
+    c.drawString(lbl_x, y_footer - fhdr_h - 3*bl, "Account No:")
+    c.drawString(val_x, y_footer - fhdr_h - 3*bl, cd.get('bank_account_no',''))
+    c.drawString(lbl_x, y_footer - fhdr_h - 4*bl, "Bank:")
+    c.drawString(val_x, y_footer - fhdr_h - 4*bl, cd.get('bank_name',''))
+    bank_branch = cd.get("bank_branch", "")
+    if bank_branch:
+        parts = [bank_branch[i:i+24] for i in range(0, len(bank_branch), 24)]
+        for bi, bp in enumerate(parts[:4]):
+            c.drawString(val_x, y_footer - fhdr_h - (5 + bi) * bl, bp)
+
+    # ── QR section ────────────────────────────────────────────────────────
+    qr_sec_x = fc1 + 1.5 * mm
+    c.setFont("Roboto-Bold", 9)
+    c.drawString(qr_sec_x, y_footer - 9, "Payment QR Code")
+
+    qr_bytes = await _load_photo_bytes(cd.get("qr_code_url"))
+    if qr_bytes:
+        try:
+            qr_image = ImageReader(io.BytesIO(qr_bytes))
+            
+            qr_size = 18 * mm
+            # draw at right edge of the QR section
+            qr_x = fc2 - qr_size - 0.5 * mm
+            qr_y = y_footer_bot + (footer_h - qr_size) / 2
+            c.drawImage(qr_image, qr_x, qr_y, width=qr_size, height=qr_size)
+        except Exception:
+            pass
+
+    upi_id = cd.get("upi_id", "")
+    c.setFont("Roboto", 8)
+    c.drawString(qr_sec_x, y_footer - 30, "UPI ID:")
+    c.setFont("Roboto", 7.5)
+    c.drawString(qr_sec_x, y_footer - 42, upi_id)
+
+    try:
+        payment_icons_path = Path(__file__).parent / "assets" / "payment_icons_white.jpg"
+        if payment_icons_path.exists():
+            c.drawImage(str(payment_icons_path), qr_sec_x, y_footer - 60, width=80, height=5.2, preserveAspectRatio=True)
+    except Exception:
+        pass
+
+    # Signatory (Only computer generated message)
+    c.setFont("Roboto", 8)
+    c.setFillColor(colors.gray)
+    c.drawRightString(width - margin, y_footer_bot - 4 * mm, "This is computer generated bill,")
+    c.drawRightString(width - margin, y_footer_bot - 7 * mm, "signature is not required.")
+    c.setFillColor(colors.black)
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    pdf_bytes = buf.read()
+
+    # ── Merge PDF logo if logo is a PDF ───────────────────────────────────
+    if logo_is_pdf and logo_bytes:
+        try:
+            from pypdf import PdfReader, PdfWriter, Transformation
+            src      = PdfReader(io.BytesIO(pdf_bytes))
+            logo_pdf = PdfReader(io.BytesIO(logo_bytes))
+            if logo_pdf.pages:
+                lp    = logo_pdf.pages[0]
+                lw    = float(lp.mediabox.width)
+                lh    = float(lp.mediabox.height)
+                t     = Transformation().scale(sx=logo_size/lw, sy=logo_size/lh).translate(tx=logo_x, ty=logo_y)
+                src.pages[0].merge_transformed_page(lp, t)
+                writer = PdfWriter()
+                for pg in src.pages:
+                    writer.add_page(pg)
+                out = io.BytesIO()
+                writer.write(out)
+                pdf_bytes = out.getvalue()
+        except Exception as e:
+            logger.error(f"Failed to merge PDF logo: {e}")
+
+    return pdf_bytes
+
+
+
+@api_router.get("/invoices/{invoice_id}/pdf")
+async def serve_invoice_pdf(invoice_id: str):
+    doc = await db.invoices.find_one({"id": invoice_id})
+    if not doc:
+        raise HTTPException(404, "Invoice not found")
+        
+    pdf_bytes = await _build_invoice_document_pdf(doc)
+    
+    fn = f"invoice_{doc.get('invoice_no', 'doc')}.pdf".replace(" ", "_").replace(">", "")
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={fn}"}
+    )
+
 
 # Include the routers
 app.include_router(auth_public_router)
@@ -5010,6 +7417,8 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def on_startup():
+    global _photo_bucket
+    _photo_bucket = AsyncIOMotorGridFSBucket(db, bucket_name="site_visit_photos")
     # Auto-seed demo data on first run
     try:
         if await db.projects.count_documents({}) == 0:
@@ -5088,6 +7497,27 @@ async def on_startup():
         await auth_module.backfill_user_colors()
     except Exception as e:
         logger.error(f"Admin seed failed: {e}")
+
+    # Seed company details if missing
+    try:
+        await seed_company_details()
+    except Exception as e:
+        logger.error(f"Company details seed failed: {e}")
+
+    # Seed invoice counters if missing
+    try:
+        await db.counters.update_one(
+            {"_id": "proforma_invoice"},
+            {"$setOnInsert": {"seq": 46}},
+            upsert=True
+        )
+        await db.counters.update_one(
+            {"_id": "tax_invoice"},
+            {"$setOnInsert": {"seq": 57}},
+            upsert=True
+        )
+    except Exception as e:
+        logger.error(f"Invoice counters seed failed: {e}")
 
 
 @app.on_event("shutdown")

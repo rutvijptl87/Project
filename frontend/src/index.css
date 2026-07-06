@@ -107,31 +107,40 @@ body {
 }
 
 /* Inputs */
-.input, .select, .textarea {
-    width: 100%;
-    padding: 0.55rem 0.75rem;
-    border: 1px solid var(--cc-border);
-    border-radius: 8px;
-    background: #fff;
-    font-size: 0.9rem;
-    font-family: inherit;
-    color: var(--cc-text);
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
+@layer components {
+    .input, .select, .textarea {
+        width: 100%;
+        padding: 0.55rem 0.75rem;
+        border: 1px solid var(--cc-border);
+        border-radius: 8px;
+        background: #fff;
+        font-size: 0.9rem;
+        font-family: inherit;
+        color: var(--cc-text);
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    
+    @media (max-width: 640px) {
+        .input, .select, .textarea {
+            padding: 0.45rem 0.6rem;
+            font-size: 0.85rem;
+        }
+    }
 
-.input:focus, .select:focus, .textarea:focus {
-    outline: none;
-    border-color: var(--cc-accent);
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
-}
+    .input:focus, .select:focus, .textarea:focus {
+        outline: none;
+        border-color: var(--cc-accent);
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+    }
 
-.label {
-    display: block;
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: var(--cc-text);
-    margin-bottom: 0.4rem;
-    letter-spacing: 0.01em;
+    .label {
+        display: block;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--cc-text);
+        margin-bottom: 0.4rem;
+        letter-spacing: 0.01em;
+    }
 }
 
 /* Card */
@@ -312,3 +321,38 @@ body {
 ::-webkit-scrollbar-track { background: var(--cc-surface); }
 ::-webkit-scrollbar-thumb { background: #CBD8D0; border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--cc-accent); }
+
+/* Mobile Optimizations */
+@media (max-width: 640px) {
+    .cc-table tbody td {
+        padding: 0.6rem 0.5rem;
+        font-size: 0.8rem;
+    }
+    .cc-table thead th {
+        padding: 0.6rem 0.5rem;
+        font-size: 0.65rem;
+    }
+    .btn {
+        padding: 0.45rem 0.75rem;
+        font-size: 0.8rem;
+    }
+    .btn svg {
+        width: 14px !important;
+        height: 14px !important;
+    }
+    .btn-sm {
+        padding: 0.3rem 0.6rem;
+        font-size: 0.75rem;
+    }
+    .btn-sm svg {
+        width: 12px !important;
+        height: 12px !important;
+    }
+    .card {
+        border-radius: 8px;
+    }
+    h1.font-head {
+        font-size: 1.5rem !important;
+        line-height: 2rem !important;
+    }
+}

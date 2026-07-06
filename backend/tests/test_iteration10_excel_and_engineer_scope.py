@@ -245,6 +245,8 @@ class TestBackupIncludesNewCollections:
         fname = body.get("filename")
         assert fname, "no filename in backup response"
         backup_dir = Path("/app/backend/backups")
+        if not backup_dir.exists():
+            backup_dir = Path(__file__).parent.parent / "backups"
         fp = backup_dir / fname
         if not fp.exists():
             pytest.skip(f"backup file not accessible from test runner: {fp}")

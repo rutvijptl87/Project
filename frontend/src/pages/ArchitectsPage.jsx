@@ -89,10 +89,10 @@ const ArchitectsPage = () => {
         <button onClick={openNew} className="btn btn-primary" data-testid="btn-new-architect"><Plus size={15}/> New Architect</button>
       </div>
 
-      <div className="mb-4 relative max-w-md">
+      <div className="mb-4 relative w-full sm:max-w-md">
         <Search size={14} className="absolute left-3 top-3 text-gray-400"/>
         <input
-          className="input pl-9"
+          className="input pl-9 w-full"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search architects by name, firm, phone, or email…"
@@ -107,9 +107,9 @@ const ArchitectsPage = () => {
               <tr>
                 <th>Name</th>
                 <th>Phone</th>
-                <th>Email</th>
-                <th>Firm</th>
-                <th className="text-right">Actions</th>
+                <th className="hidden sm:table-cell">Email</th>
+                <th className="hidden md:table-cell">Firm</th>
+                <th className="text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -128,10 +128,10 @@ const ArchitectsPage = () => {
                     </Link>
                   </td>
                   <td className="font-mono-data text-xs">{a.phone ? <a href={`tel:${a.phone}`} className="inline-flex items-center gap-1"><Phone size={11}/>{a.phone}</a> : '—'}</td>
-                  <td className="text-xs">{a.email ? <a href={`mailto:${a.email}`} className="inline-flex items-center gap-1 link-underline"><Mail size={11}/>{a.email}</a> : '—'}</td>
-                  <td>{a.firm || '—'}</td>
+                  <td className="text-xs hidden sm:table-cell">{a.email ? <a href={`mailto:${a.email}`} className="inline-flex items-center gap-1 link-underline"><Mail size={11}/>{a.email}</a> : '—'}</td>
+                  <td className="hidden md:table-cell">{a.firm || '—'}</td>
                   <td>
-                    <div className="flex gap-1 justify-end">
+                    <div className="flex gap-1 justify-center">
                       <button onClick={() => openEdit(a)} className="btn btn-outline btn-sm" data-testid={`btn-edit-architect-${a.id}`}><Pencil size={13}/></button>
                       <button onClick={() => handleDelete(a)} className="btn btn-danger btn-sm" data-testid={`btn-delete-architect-${a.id}`}><Trash2 size={13}/></button>
                     </div>

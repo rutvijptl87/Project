@@ -6,6 +6,7 @@ Iteration 6 Tests: Project Detail Page Features
 - Per-project Excel export (GET /api/projects/{id}/export)
 - Activity logging on create, update, payment add/delete, revise, archive, unarchive
 """
+# pyrefly: ignore [missing-import]
 import pytest
 import requests
 import os

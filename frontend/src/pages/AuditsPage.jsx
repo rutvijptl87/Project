@@ -23,6 +23,14 @@ const SORTABLE_COLUMNS = {
   status: 'Status',
 };
 
+const COL_CLASSES = {
+  report_id: 'hidden md:table-cell',
+  client_name: 'hidden sm:table-cell',
+  total_amount: 'hidden sm:table-cell',
+  received_amount: 'hidden md:table-cell',
+  status: 'hidden md:table-cell',
+};
+
 const emptyAudit = {
   audit_code: '',
   audit_offer: '',
@@ -232,7 +240,7 @@ const AuditsPage = () => {
           <h1 className="font-head text-3xl md:text-4xl font-extrabold" style={{ color: 'var(--cc-dark-green)' }}>Audits</h1>
           <p className="text-sm mt-1" style={{ color: 'var(--cc-text-muted)' }}>Track structural audits, reports and payments ({audits.length} total).</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto [&_.btn]:w-full sm:[&_.btn]:w-auto">
           <button
             onClick={() => setShowArchived(v => !v)}
             className={`btn btn-outline ${showArchived ? 'opacity-90' : ''}`}
@@ -245,18 +253,18 @@ const AuditsPage = () => {
       </div>
 
       {/* Search */}
-      <form onSubmit={(e) => { e.preventDefault(); load(); }} className="mb-4 flex gap-2 flex-wrap" data-testid="audits-search-form">
-        <div className="relative flex-1 min-w-[240px]">
+      <form onSubmit={(e) => { e.preventDefault(); load(); }} className="mb-4 flex flex-col sm:flex-row gap-2" data-testid="audits-search-form">
+        <div className="relative flex-1 w-full sm:w-auto">
           <Search size={14} className="absolute left-3 top-3 text-gray-400"/>
           <input
-            className="input pl-9"
+            className="input pl-9 w-full"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by audit code, offer, report ID, client..."
             data-testid="audits-search-input"
           />
         </div>
-        <button className="btn btn-outline" type="submit" data-testid="audits-search-btn">Search</button>
+        <button className="btn btn-outline w-full sm:w-auto" type="submit" data-testid="audits-search-btn">Search</button>
       </form>
 
       <div className="card overflow-hidden">
@@ -265,12 +273,12 @@ const AuditsPage = () => {
             <thead>
               <tr>
                 {Object.entries(SORTABLE_COLUMNS).map(([k, label]) => (
-                  <th key={k} className="cursor-pointer select-none" onClick={() => toggleSort(k)} data-testid={`audit-sort-${k}`}>
+                  <th key={k} className={`cursor-pointer select-none ${COL_CLASSES[k] || ''}`} onClick={() => toggleSort(k)} data-testid={`audit-sort-${k}`}>
                     {label}<SortIcon col={k}/>
                   </th>
                 ))}
-                <th>Contact</th>
-                <th>Notes</th>
+                <th className="hidden md:table-cell">Contact</th>
+                <th className="hidden lg:table-cell">Notes</th>
                 <th className="text-right">Actions</th>
               </tr>
             </thead>
@@ -286,16 +294,16 @@ const AuditsPage = () => {
               ) : sortedAudits.map((a) => (
                 <tr key={a.id} data-testid={`audit-row-${a.audit_code}`}>
                   <td className="font-medium"><Link to={`/audits/${a.id}`} className="link-underline" data-testid={`audit-offer-link-${a.audit_code}`}>{a.audit_offer || '—'}</Link></td>
-                  <td className="font-mono-data text-xs">{a.report_id || '—'}</td>
-                  <td>{a.client_name ? <Link to={`/clients/${a.client_id}`} className="link-underline">{a.client_name}</Link> : <span className="text-gray-400">—</span>}</td>
-                  <td className="font-mono-data text-sm">{formatINR(a.total_amount)}</td>
-                  <td className="font-mono-data text-sm" style={{ color: '#92400E' }}>{formatINR(a.received_amount)}</td>
+                  <td className="font-mono-data text-xs hidden md:table-cell">{a.report_id || '—'}</td>
+                  <td className="hidden sm:table-cell">{a.client_name ? <Link to={`/clients/${a.client_id}`} className="link-underline">{a.client_name}</Link> : <span className="text-gray-400">—</span>}</td>
+                  <td className="font-mono-data text-sm hidden sm:table-cell">{formatINR(a.total_amount)}</td>
+                  <td className="font-mono-data text-sm hidden md:table-cell" style={{ color: '#92400E' }}>{formatINR(a.received_amount)}</td>
                   <td className="font-mono-data text-sm font-semibold" style={{ color: a.outstanding_amount > 0 ? '#DC2626' : '#065F46' }}>{formatINR(a.outstanding_amount)}</td>
-                  <td>
+                  <td className="hidden md:table-cell">
                     <span className={`badge ${a.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`}>{a.status}</span>
                   </td>
-                  <td>{contactCell(a)}</td>
-                  <td className="text-xs max-w-[160px]"><div className="line-clamp-2">{a.notes || '—'}</div></td>
+                  <td className="hidden md:table-cell">{contactCell(a)}</td>
+                  <td className="text-xs max-w-[160px] hidden lg:table-cell"><div className="line-clamp-2">{a.notes || '—'}</div></td>
                   <td>
                     <div className="flex gap-1 justify-end flex-wrap">
                       <Link to={`/audits/${a.id}`} className="btn btn-outline btn-sm" title="View details" data-testid={`btn-view-audit-${a.audit_code}`}><Eye size={13}/></Link>
