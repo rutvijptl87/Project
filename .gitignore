@@ -39,3 +39,5 @@ Creator Consultant Backups/
 *.bak
 *.sqlite3
 *.db
+frontend/node_modules/.cache/default-development/5.pack
+frontend/node_modules/.cache/default-development/45.pack
