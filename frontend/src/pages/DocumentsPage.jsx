@@ -471,6 +471,11 @@ const DocumentsPage = () => {
                 const st = statusOf(d);
                 const style = STATUS_STYLE[st] || STATUS_STYLE.pending;
                 const StatusIcon = style.icon;
+                // Only real quotations (QT / PMC-QT) get the confirm/hold/cancel
+                // /download-PDF workflow. Every other doc type is a simple
+                // record — just Edit + Delete (+ Restore when archived).
+                const docPrefix = (typeById[d.doc_type_id]?.prefix || '').toUpperCase();
+                const isQuotation = ['QT', 'PMC-QT'].includes(docPrefix);
                 return (
                 <tr
                   key={d.id}
@@ -511,36 +516,35 @@ const DocumentsPage = () => {
                   </td>
                   <td>
                     <div className="flex gap-1 justify-end flex-wrap">
-                      {st !== 'confirmed' && (
+                      {isQuotation && st !== 'confirmed' && (
                         <button onClick={() => openConfirm(d)} className="btn btn-sm" style={{ background: '#10B981', color: '#fff', border: '1px solid #10B981' }} title="Confirm order" data-testid={`btn-confirm-${d.id}`}>
                           <CheckCircle2 size={13}/>
                         </button>
                       )}
-                      {st === 'confirmed' && (d.linked_project_id || d.linked_audit_id) && (
+                      {isQuotation && st === 'confirmed' && (d.linked_project_id || d.linked_audit_id) && (
                         <button onClick={() => openConfirm(d)} className="btn btn-outline btn-sm" title="Move to another project / audit" data-testid={`btn-move-${d.id}`}>
                           <ArrowRightLeft size={13}/>
                         </button>
                       )}
-                      {st !== 'on_hold' && (
+                      {isQuotation && st !== 'on_hold' && (
                         <button onClick={() => setHold(d)} className="btn btn-sm" style={{ background: '#F59E0B', color: '#fff', border: '1px solid #F59E0B' }} title="Put on hold" data-testid={`btn-hold-${d.id}`}>
                           <PauseCircle size={13}/>
                         </button>
                       )}
-                      {st !== 'cancelled' && (
+                      {isQuotation && st !== 'cancelled' && (
                         <button onClick={() => setCancelled(d)} className="btn btn-sm" style={{ background: '#DC2626', color: '#fff', border: '1px solid #DC2626' }} title="Cancel" data-testid={`btn-cancel-${d.id}`}>
                           <XCircle size={13}/>
                         </button>
                       )}
-                      {st !== 'pending' && (
+                      {isQuotation && st !== 'pending' && (
                         <button onClick={() => unconfirm(d)} className="btn btn-outline btn-sm" title="Reset to Pending" data-testid={`btn-reset-${d.id}`}>
                           <RotateCcw size={13}/>
                         </button>
                       )}
-                      <button onClick={() => downloadPdf(d)} className="btn btn-outline btn-sm" title="Download PDF" data-testid={`btn-doc-pdf-${d.id}`}><FileText size={13}/></button>
-                      <button onClick={() => openEdit(d)} className="btn btn-outline btn-sm" title="Edit" data-testid={`btn-doc-edit-${d.id}`}><Pencil size={13}/></button>
-                      {d.archived && (
-                        <button onClick={() => handleUnarchive(d)} className="btn btn-outline btn-sm" title="Restore" data-testid={`btn-doc-restore-${d.id}`}><ArchiveRestore size={13}/></button>
+                      {isQuotation && (
+                        <button onClick={() => downloadPdf(d)} className="btn btn-outline btn-sm" title="Download PDF" data-testid={`btn-doc-pdf-${d.id}`}><FileText size={13}/></button>
                       )}
+                      <button onClick={() => openEdit(d)} className="btn btn-outline btn-sm" title="Edit" data-testid={`btn-doc-edit-${d.id}`}><Pencil size={13}/></button>
                       <button onClick={() => handleDelete(d)} className="btn btn-danger btn-sm" title="Delete" data-testid={`btn-doc-delete-${d.id}`}><Trash2 size={13}/></button>
                     </div>
                   </td>

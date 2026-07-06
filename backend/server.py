@@ -979,23 +979,41 @@ async def get_architect_detail(architect_id: str):
         raise HTTPException(404, "Architect not found")
     projects = await db.projects.find({"architect_id": architect_id}, {"_id": 0}).sort("created_at", -1).to_list(5000)
     await _enrich_projects_batch(projects)
+    # Audits linked to any client that this architect worked with. Audits don't
+    # store an architect_id directly, so we bridge via projects.client_id.
+    client_ids = [p.get("client_id") for p in projects if p.get("client_id")]
+    audits = []
+    if client_ids:
+        audits = await db.audits.find(
+            {"client_id": {"$in": list(set(client_ids))}, "archived": {"$ne": True}}, {"_id": 0}
+        ).sort("created_at", -1).to_list(2000)
+        for a in audits:
+            a["outstanding_amount"] = round((a.get("total_amount") or 0) - (a.get("received_amount") or 0), 2)
     documents = await db.documents.find(
         {"architect_id": architect_id, "archived": {"$ne": True}}, {"_id": 0}
     ).sort("created_at", -1).to_list(2000)
     for d in documents:
         # client_name already enriched on write; architect_name fill so card is self-contained
         d.setdefault("architect_name", architect.get("name", ""))
-    total_quoted = sum(p.get("quoted_amount", 0) for p in projects)
-    total_received = sum(p.get("received_amount", 0) for p in projects)
+    total_quoted = sum(p.get("quoted_amount", 0) for p in projects) + sum(a.get("total_amount", 0) for a in audits)
+    total_received = sum(p.get("received_amount", 0) for p in projects) + sum(a.get("received_amount", 0) for a in audits)
     total_outstanding = round(total_quoted - total_received, 2)
-    outstanding_count = sum(1 for p in projects if p.get("status") != "Settled")
-    settled_count = sum(1 for p in projects if p.get("status") == "Settled")
+    outstanding_count = (
+        sum(1 for p in projects if p.get("status") != "Settled")
+        + sum(1 for a in audits if a.get("status") != "Settled")
+    )
+    settled_count = (
+        sum(1 for p in projects if p.get("status") == "Settled")
+        + sum(1 for a in audits if a.get("status") == "Settled")
+    )
     return {
         "architect": architect,
         "projects": projects,
+        "audits": audits,
         "documents": documents,
         "stats": {
             "total_projects": len(projects),
+            "total_audits": len(audits),
             "total_documents": len(documents),
             "total_quoted": round(total_quoted, 2),
             "total_received": round(total_received, 2),
@@ -1142,22 +1160,36 @@ async def get_client_detail(client_id: str):
         raise HTTPException(404, "Client not found")
     projects = await db.projects.find({"client_id": client_id}, {"_id": 0}).sort("created_at", -1).to_list(5000)
     await _enrich_projects_batch(projects)
+    # Audits linked to this client (native client_id link on the audit)
+    audits = await db.audits.find(
+        {"client_id": client_id, "archived": {"$ne": True}}, {"_id": 0}
+    ).sort("created_at", -1).to_list(2000)
+    for a in audits:
+        a["outstanding_amount"] = round((a.get("total_amount") or 0) - (a.get("received_amount") or 0), 2)
     documents = await db.documents.find(
         {"client_id": client_id, "archived": {"$ne": True}}, {"_id": 0}
     ).sort("created_at", -1).to_list(2000)
     for d in documents:
         d.setdefault("client_name", client_doc.get("name", ""))
-    total_quoted = sum(p.get("quoted_amount", 0) for p in projects)
-    total_received = sum(p.get("received_amount", 0) for p in projects)
+    total_quoted = sum(p.get("quoted_amount", 0) for p in projects) + sum(a.get("total_amount", 0) for a in audits)
+    total_received = sum(p.get("received_amount", 0) for p in projects) + sum(a.get("received_amount", 0) for a in audits)
     total_outstanding = round(total_quoted - total_received, 2)
-    outstanding_count = sum(1 for p in projects if p.get("status") != "Settled")
-    settled_count = sum(1 for p in projects if p.get("status") == "Settled")
+    outstanding_count = (
+        sum(1 for p in projects if p.get("status") != "Settled")
+        + sum(1 for a in audits if a.get("status") != "Settled")
+    )
+    settled_count = (
+        sum(1 for p in projects if p.get("status") == "Settled")
+        + sum(1 for a in audits if a.get("status") == "Settled")
+    )
     return {
         "client": client_doc,
         "projects": projects,
+        "audits": audits,
         "documents": documents,
         "stats": {
             "total_projects": len(projects),
+            "total_audits": len(audits),
             "total_documents": len(documents),
             "total_quoted": round(total_quoted, 2),
             "total_received": round(total_received, 2),

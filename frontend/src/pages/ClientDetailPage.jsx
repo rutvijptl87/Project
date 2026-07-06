@@ -101,7 +101,13 @@ const ClientDetailPage = () => {
   if (!data) return null;
 
   const { client: c, projects, stats } = data;
+  const audits = data.audits || [];
   const documents = data.documents || [];
+  // Combined list of projects + audits so they show in one "work items" table.
+  const combined = [
+    ...projects.map((p) => ({ ...p, __kind: 'project' })),
+    ...audits.map((a) => ({ ...a, __kind: 'audit' })),
+  ].sort((x, y) => (y.created_at || '').localeCompare(x.created_at || ''));
   const waPhone = c.phone ? String(c.phone).replace(/[^0-9]/g, '') : '';
 
   const docMoveTargets = (allClients || []).filter((x) => x.id !== c.id);
@@ -200,7 +206,7 @@ const ClientDetailPage = () => {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <Kpi label="Total Projects" value={stats.total_projects} />
+        <Kpi label="Total Work Items" value={`${stats.total_projects} projects · ${stats.total_audits || 0} audits`} />
         <Kpi label="Total Quoted" value={formatINR(stats.total_quoted)} />
         <Kpi label="Received" value={formatINR(stats.total_received)} color="var(--cc-accent)" />
         <Kpi label="Outstanding" value={formatINR(stats.total_outstanding)} color="#DC2626" />
@@ -209,18 +215,19 @@ const ClientDetailPage = () => {
       <div className="card overflow-hidden">
         <div className="p-5 border-b flex items-center justify-between flex-wrap gap-2" style={{ borderColor: 'var(--cc-border)' }}>
           <h2 className="font-head text-xl font-bold" style={{ color: 'var(--cc-dark-green)' }}>
-            Projects for {c.name} ({projects.length})
+            Projects &amp; Audits for {c.name} ({combined.length})
           </h2>
           <div className="text-xs" style={{ color: 'var(--cc-text-muted)' }}>
-            {stats.outstanding_count} outstanding • {stats.settled_count} settled
+            {projects.length} project{projects.length !== 1 ? 's' : ''} • {audits.length} audit{audits.length !== 1 ? 's' : ''} • {stats.outstanding_count} outstanding • {stats.settled_count} settled
           </div>
         </div>
         <div className="overflow-x-auto">
           <table className="cc-table" data-testid="client-projects-table">
             <thead>
               <tr>
-                <th>Project ID</th>
-                <th>Project Name</th>
+                <th>Code</th>
+                <th>Type</th>
+                <th>Name</th>
                 <th className="hidden md:table-cell">Architect</th>
                 <th className="hidden md:table-cell">Site Location</th>
                 <th className="text-right hidden sm:table-cell">Quoted (₹)</th>
@@ -231,12 +238,34 @@ const ClientDetailPage = () => {
               </tr>
             </thead>
             <tbody>
-              {projects.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-10" style={{ color: 'var(--cc-text-muted)' }}>No projects linked to this client yet.</td></tr>
-              ) : projects.map((p) => (
+              {combined.length === 0 ? (
+                <tr><td colSpan={10} className="text-center py-10" style={{ color: 'var(--cc-text-muted)' }}>No projects or audits linked to this client yet.</td></tr>
+              ) : combined.map((p) => p.__kind === 'audit' ? (
+                <tr key={`audit-${p.id}`} data-testid={`client-audit-row-${p.audit_code}`}>
+                  <td className="font-mono-data font-semibold" style={{ color: '#7C3AED' }}>{p.audit_code}</td>
+                  <td><span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6' }}>Audit</span></td>
+                  <td className="font-medium">{p.audit_offer || p.notes || '—'}</td>
+                  <td className="hidden md:table-cell text-gray-400">—</td>
+                  <td className="max-w-[200px] hidden md:table-cell text-gray-400">—</td>
+                  <td className="num hidden sm:table-cell">{formatINR(p.total_amount, { withSymbol: false })}</td>
+                  <td className="num hidden sm:table-cell">{formatINR(p.received_amount, { withSymbol: false })}</td>
+                  <td className="num font-semibold text-xs" style={{ color: (p.outstanding_amount || 0) > 0 ? 'var(--cc-accent)' : 'var(--cc-dark-green)' }}>{formatINR(p.outstanding_amount || 0)}</td>
+                  <td className="hidden sm:table-cell text-center">
+                    <span className={`badge ${p.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`}>{p.status}</span>
+                  </td>
+                  <td>
+                    <div className="flex gap-1.5 justify-center">
+                      <Link to={`/audits/${p.id}`} className="btn btn-outline btn-sm flex items-center gap-1">
+                        <Eye size={13}/> View
+                      </Link>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
                 <React.Fragment key={p.id}>
                   <tr data-testid={`client-project-row-${p.project_code}`}>
                     <td className="font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{p.project_code}</td>
+                    <td><span className="badge" style={{ background: '#D1FAE5', color: '#065F46' }}>Project</span></td>
                     <td className="font-medium">{p.name}</td>
                     <td className="hidden md:table-cell">{p.architect_name || <span className="text-gray-400">None</span>}</td>
                     <td className="max-w-[200px] hidden md:table-cell"><div className="line-clamp-2 text-xs">{p.site_location || '—'}</div></td>
@@ -264,7 +293,7 @@ const ClientDetailPage = () => {
                   </tr>
                   {expandedProjects[p.id] && (
                     <tr>
-                      <td colSpan={9} className="bg-gray-50/50 p-4">
+                      <td colSpan={10} className="bg-gray-50/50 p-4">
                         <div className="p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
                           <div className="font-head font-bold text-sm mb-3 flex items-center gap-1.5" style={{ color: 'var(--cc-dark-green)' }}>
                             <CheckSquare size={16} /> Linked Tasks for {p.project_code || p.name}

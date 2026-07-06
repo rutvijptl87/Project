@@ -44,8 +44,14 @@ const ArchitectDetailPage = () => {
   if (!data) return null;
 
   const { architect: a, projects, stats } = data;
+  const audits = data.audits || [];
   const documents = data.documents || [];
   const visibleProjects = projects.filter((p) => !hiddenIds.has(p.id));
+  // Combined project + audit list, sorted newest first.
+  const combined = [
+    ...visibleProjects.map((p) => ({ ...p, __kind: 'project' })),
+    ...audits.map((a) => ({ ...a, __kind: 'audit' })),
+  ].sort((x, y) => (y.created_at || '').localeCompare(x.created_at || ''));
 
   const handleDelete = (p) => {
     if (!window.confirm(`Permanently delete project ${p.project_code} — ${p.name}?\n\nYou can undo within 60 seconds.`)) return;
@@ -224,7 +230,7 @@ const ArchitectDetailPage = () => {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <Kpi label="Total Projects" value={stats.total_projects} />
+        <Kpi label="Total Work Items" value={`${stats.total_projects} projects · ${stats.total_audits || 0} audits`} />
         <Kpi label="Total Quoted" value={formatINR(stats.total_quoted)} />
         <Kpi label="Received" value={formatINR(stats.total_received)} color="var(--cc-accent)" />
         <Kpi label="Outstanding" value={formatINR(stats.total_outstanding)} color="#DC2626" />
@@ -233,18 +239,19 @@ const ArchitectDetailPage = () => {
       <div className="card overflow-hidden">
         <div className="p-5 border-b flex items-center justify-between flex-wrap gap-2" style={{ borderColor: 'var(--cc-border)' }}>
           <h2 className="font-head text-xl font-bold" style={{ color: 'var(--cc-dark-green)' }}>
-            Projects by {a.name} ({projects.length})
+            Projects &amp; Audits for {a.name} ({combined.length})
           </h2>
           <div className="text-xs" style={{ color: 'var(--cc-text-muted)' }}>
-            {stats.outstanding_count} outstanding • {stats.settled_count} settled
+            {visibleProjects.length} project{visibleProjects.length !== 1 ? 's' : ''} • {audits.length} audit{audits.length !== 1 ? 's' : ''} • {stats.outstanding_count} outstanding • {stats.settled_count} settled
           </div>
         </div>
         <div className="overflow-x-auto">
           <table className="cc-table" data-testid="architect-projects-table">
             <thead>
               <tr>
-                <th>Project ID</th>
-                <th>Project Name</th>
+                <th>Code</th>
+                <th>Type</th>
+                <th>Name</th>
                 <th className="hidden md:table-cell">Client</th>
                 <th className="hidden md:table-cell">Site Location</th>
                 <th className="text-right hidden sm:table-cell">Quoted (₹)</th>
@@ -255,13 +262,33 @@ const ArchitectDetailPage = () => {
               </tr>
             </thead>
             <tbody>
-              {projects.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-10" style={{ color: 'var(--cc-text-muted)' }}>No projects linked to this architect yet.</td></tr>
-              ) : visibleProjects.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-10" style={{ color: 'var(--cc-text-muted)' }}>All projects hidden — undo a recent delete or refresh.</td></tr>
-              ) : visibleProjects.map((p) => (
+              {combined.length === 0 ? (
+                <tr><td colSpan={10} className="text-center py-10" style={{ color: 'var(--cc-text-muted)' }}>No projects or audits linked to this architect yet.</td></tr>
+              ) : combined.map((p) => p.__kind === 'audit' ? (
+                <tr key={`audit-${p.id}`} data-testid={`arch-audit-row-${p.audit_code}`}>
+                  <td className="font-mono-data font-semibold" style={{ color: '#7C3AED' }}>{p.audit_code}</td>
+                  <td><span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6' }}>Audit</span></td>
+                  <td className="font-medium">{p.audit_offer || p.notes || '—'}</td>
+                  <td className="hidden md:table-cell">{p.client_name || p.client_name_override || <span className="text-gray-400">—</span>}</td>
+                  <td className="max-w-[200px] hidden md:table-cell text-gray-400">—</td>
+                  <td className="num hidden sm:table-cell">{formatINR(p.total_amount, { withSymbol: false })}</td>
+                  <td className="num hidden sm:table-cell">{formatINR(p.received_amount, { withSymbol: false })}</td>
+                  <td className="num font-semibold text-xs" style={{ color: (p.outstanding_amount || 0) > 0 ? 'var(--cc-accent)' : 'var(--cc-dark-green)' }}>{formatINR(p.outstanding_amount || 0)}</td>
+                  <td className="hidden sm:table-cell text-center">
+                    <span className={`badge ${p.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`}>{p.status}</span>
+                  </td>
+                  <td>
+                    <div className="grid grid-cols-1 gap-1 w-max mx-auto">
+                      <Link to={`/audits/${p.id}`} className="btn btn-outline btn-sm" title="View audit">
+                        <Eye size={13}/>
+                      </Link>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
                 <tr key={p.id} data-testid={`arch-project-row-${p.project_code}`}>
                   <td className="font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{p.project_code}</td>
+                  <td><span className="badge" style={{ background: '#D1FAE5', color: '#065F46' }}>Project</span></td>
                   <td className="font-medium">{p.name}</td>
                   <td className="hidden md:table-cell">{p.client_name || <span className="text-gray-400">None</span>}</td>
                   <td className="max-w-[200px] hidden md:table-cell"><div className="line-clamp-2 text-xs">{p.site_location || '—'}</div></td>
