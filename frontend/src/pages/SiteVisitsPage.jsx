@@ -18,7 +18,7 @@ const StatusBadge = ({ status }) => {
 const SiteVisitsPage = () => {
   const { user } = useAuth();
   const undo = useUndo();
-  const isEngineer = user?.role === 'engineer';
+  const isEngineer = user?.role === 'engineer' || user?.role === 'draftsman';
   const isAccount = user?.role === 'account';
 
   const [items, setItems] = useState([]);

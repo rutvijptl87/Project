@@ -369,7 +369,7 @@ const DocumentsPage = () => {
             Generate certificates, letters, quotations and reports with auto-numbered series ({docs.length} total).
           </p>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto [&_.btn]:w-full sm:[&_.btn]:w-auto">
           <button
             onClick={() => setShowArchived((v) => !v)}
             className="btn btn-outline"
@@ -384,44 +384,46 @@ const DocumentsPage = () => {
       </div>
 
       <form onSubmit={(e) => { e.preventDefault(); load(); }} className="mb-4 space-y-2" data-testid="documents-search-form">
-        <div className="flex gap-2 flex-wrap">
-          <div className="relative flex-1 min-w-[240px]">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-2 w-full">
+          <div className="relative col-span-2 md:col-span-2">
             <Search size={14} className="absolute left-3 top-3 text-gray-400"/>
-            <input className="input pl-9" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by number, client, plot, contact…" data-testid="documents-search-input" />
+            <input className="input pl-9 w-full" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by number, client, plot, contact…" data-testid="documents-search-input" />
           </div>
-          <select className="select max-w-[220px]" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} data-testid="documents-type-filter">
+          <select className="select w-full col-span-1 truncate" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} data-testid="documents-type-filter">
             <option value="">All types</option>
             {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
-          <select className="select max-w-[220px]" value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} data-testid="documents-client-filter">
+          <select className="select w-full col-span-1 truncate" value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} data-testid="documents-client-filter">
             <option value="">All clients</option>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <select className="select max-w-[220px]" value={architectFilter} onChange={(e) => setArchitectFilter(e.target.value)} data-testid="documents-architect-filter">
+          <select className="select w-full col-span-1 truncate" value={architectFilter} onChange={(e) => setArchitectFilter(e.target.value)} data-testid="documents-architect-filter">
             <option value="">All architects</option>
             {architects.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
-          <button className="btn btn-outline" type="submit" data-testid="documents-search-btn">Search</button>
+          <button className="btn btn-outline w-full col-span-1" type="submit" data-testid="documents-search-btn">Search</button>
         </div>
-        <div className="flex gap-2 items-center flex-wrap text-sm">
+        <div className="flex flex-col sm:flex-row gap-2 sm:items-center text-sm w-full">
           <span className="text-xs uppercase tracking-widest" style={{ color: 'var(--cc-text-muted)' }}>Date range</span>
-          <input
-            type="date"
-            className="input"
-            style={{ width: 170, padding: '6px 10px' }}
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            data-testid="documents-date-from"
-          />
-          <span style={{ color: 'var(--cc-text-muted)' }}>to</span>
-          <input
-            type="date"
-            className="input"
-            style={{ width: 170, padding: '6px 10px' }}
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            data-testid="documents-date-to"
-          />
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
+            <input
+              type="date"
+              className="input w-full sm:w-[150px]"
+              style={{ padding: '6px 8px' }}
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              data-testid="documents-date-from"
+            />
+            <span className="hidden sm:inline" style={{ color: 'var(--cc-text-muted)' }}>to</span>
+            <input
+              type="date"
+              className="input w-full sm:w-[150px]"
+              style={{ padding: '6px 8px' }}
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              data-testid="documents-date-to"
+            />
+          </div>
           {activeFiltersCount > 0 && (
             <>
               <span className="ml-2 text-xs" style={{ color: 'var(--cc-accent)' }}>
@@ -446,12 +448,12 @@ const DocumentsPage = () => {
             <thead>
               <tr>
                 <SortHeader label="Document No." sk="doc_number"/>
-                <SortHeader label="Type" sk="doc_type_name"/>
-                <SortHeader label="Client" sk="client_name"/>
-                <SortHeader label="Architect" sk="architect_name"/>
-                <SortHeader label="Plot / Place" sk="plot_place"/>
-                <SortHeader label="Contact" sk="contact_person"/>
-                <SortHeader label="Date" sk="document_date"/>
+                <SortHeader label="Type" sk="doc_type_name" className="hidden sm:table-cell"/>
+                <SortHeader label="Client" sk="client_name" className="hidden lg:table-cell"/>
+                <SortHeader label="Architect" sk="architect_name" className="hidden md:table-cell"/>
+                <SortHeader label="Plot / Place" sk="plot_place" className="hidden md:table-cell"/>
+                <SortHeader label="Contact" sk="contact_person" className="hidden md:table-cell"/>
+                <SortHeader label="Date" sk="document_date" className="hidden sm:table-cell"/>
                 <SortHeader label="Status" sk="status"/>
                 <th className="text-right">Actions</th>
               </tr>
@@ -476,16 +478,16 @@ const DocumentsPage = () => {
                   style={style.rowBg ? { background: style.rowBg } : undefined}
                 >
                   <td className="font-mono-data text-xs font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{d.doc_number}</td>
-                  <td className="text-sm">{d.doc_type_name}</td>
-                  <td className="text-sm">{d.client_name || <span className="text-gray-400">—</span>}</td>
-                  <td className="text-sm">{d.architect_name || <span className="text-gray-400">—</span>}</td>
-                  <td className="text-sm max-w-[220px]"><div className="line-clamp-2">{d.plot_place || '—'}</div></td>
-                  <td className="text-xs">
+                  <td className="text-sm hidden sm:table-cell">{d.doc_type_name}</td>
+                  <td className="text-sm hidden lg:table-cell">{d.client_name || <span className="text-gray-400">—</span>}</td>
+                  <td className="text-sm hidden md:table-cell">{d.architect_name || <span className="text-gray-400">—</span>}</td>
+                  <td className="text-sm max-w-[220px] hidden md:table-cell"><div className="line-clamp-2">{d.plot_place || '—'}</div></td>
+                  <td className="text-xs hidden md:table-cell">
                     {d.contact_person && <div>{d.contact_person}</div>}
                     {d.mobile && <div className="font-mono-data text-gray-500">{d.mobile}</div>}
                     {!d.contact_person && !d.mobile && <span className="text-gray-400">—</span>}
                   </td>
-                  <td className="text-xs font-mono-data">{(d.document_date || '').slice(0, 10) || '—'}</td>
+                  <td className="text-xs font-mono-data hidden sm:table-cell">{(d.document_date || '').slice(0, 10) || '—'}</td>
                   <td className="text-xs">
                     <div className="flex flex-col gap-0.5">
                       <span

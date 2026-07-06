@@ -215,8 +215,8 @@ class TestEngineerRBAC:
         new_id = r.json()["id"]
         assert r.json()["role"] == "engineer"
 
-        # PUT role update — flip to staff then back to engineer
-        u1 = requests.put(f"{BASE_URL}/api/auth/users/{new_id}", headers=admin_headers, json={"role": "staff"}, timeout=20)
+        # PUT role update — flip to draftsman then back to engineer
+        u1 = requests.put(f"{BASE_URL}/api/auth/users/{new_id}", headers=admin_headers, json={"role": "draftsman"}, timeout=20)
         assert u1.status_code == 200
         u2 = requests.put(f"{BASE_URL}/api/auth/users/{new_id}", headers=admin_headers, json={"role": "engineer"}, timeout=20)
         assert u2.status_code == 200, u2.text

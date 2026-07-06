@@ -5,7 +5,7 @@ import { X } from 'lucide-react';
 // Module-level stack of open modals so nested ones don't all close on Escape.
 const modalStack = [];
 
-const Modal = ({ open, onClose, title, children, maxWidth = '560px', testId = 'modal' }) => {
+const Modal = ({ open, onClose, title, children, maxWidth = '560px', overflow = 'auto', testId = 'modal' }) => {
   // Each opened modal gets a stable id and a depth tracked via state, so nested
   // modals render above their parents (z-index scales with depth).
   const [stackId] = useState(() => Symbol('modal'));
@@ -46,9 +46,8 @@ const Modal = ({ open, onClose, title, children, maxWidth = '560px', testId = 'm
       className="modal-overlay"
       onClick={handleOverlayClick}
       style={{ zIndex: z }}
-      data-testid={`${testId}-overlay`}
     >
-      <div className="modal-content" style={{ maxWidth }} onClick={(e) => e.stopPropagation()} data-testid={testId}>
+      <div className="modal-content" style={{ maxWidth, overflowY: overflow }} onClick={(e) => e.stopPropagation()} data-testid={testId}>
         <div className="flex items-start justify-between p-5 border-b" style={{ borderColor: 'var(--cc-border)' }}>
           <h2 className="font-head text-xl font-bold" style={{ color: 'var(--cc-dark-green)' }}>{title}</h2>
           <button onClick={onClose} className="p-1.5 rounded-md hover:bg-gray-100 transition-colors" data-testid={`${testId}-close`}>

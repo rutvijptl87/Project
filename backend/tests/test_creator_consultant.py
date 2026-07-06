@@ -8,12 +8,21 @@ import os
 import io
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
+ADMIN = {"username": "admin", "password": "Admin@123"}
+
 
 @pytest.fixture(scope="module")
 def api_client():
     """Shared requests session"""
     session = requests.Session()
     session.headers.update({"Content-Type": "application/json"})
+    try:
+        r = session.post(f"{BASE_URL}/api/auth/login", json=ADMIN, timeout=10)
+        if r.status_code == 200:
+            token = r.json()["token"]
+            session.headers.update({"Authorization": f"Bearer {token}"})
+    except Exception:
+        pass
     return session
 
 

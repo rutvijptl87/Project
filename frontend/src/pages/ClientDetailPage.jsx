@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { formatINR } from '../lib/format';
-import { ArrowLeft, Phone, Mail, Eye, FileText, Users, Building2, FileSignature, Pencil, Trash2, Save, X, ArrowRightLeft } from 'lucide-react';
+import { ArrowLeft, Phone, Mail, Eye, FileText, Users, Building2, FileSignature, Pencil, Trash2, Save, X, ArrowRightLeft, CheckSquare, Download } from 'lucide-react';
 import { downloadFile } from '../lib/download';
 import Modal from '../components/Modal';
 
@@ -20,6 +20,29 @@ const ClientDetailPage = () => {
   const [docMoveQuery, setDocMoveQuery] = useState('');
   const [docMoveBusy, setDocMoveBusy] = useState(false);
   const [allClients, setAllClients] = useState([]);
+
+  // States for collapsed/expanded tasks list per project
+  const [projectTasks, setProjectTasks] = useState({});
+  const [expandedProjects, setExpandedProjects] = useState({});
+  const [tasksLoading, setTasksLoading] = useState({});
+
+  const toggleTasks = async (projectId) => {
+    const isExpanded = !!expandedProjects[projectId];
+    setExpandedProjects(prev => ({ ...prev, [projectId]: !isExpanded }));
+
+    // Fetch tasks if expanding and not already loaded
+    if (!isExpanded && !projectTasks[projectId]) {
+      setTasksLoading(prev => ({ ...prev, [projectId]: true }));
+      try {
+        const r = await api.get('/tasks', { params: { project_id: projectId } });
+        setProjectTasks(prev => ({ ...prev, [projectId]: r.data || [] }));
+      } catch (err) {
+        console.error('Failed to load tasks for project', projectId, err);
+      } finally {
+        setTasksLoading(prev => ({ ...prev, [projectId]: false }));
+      }
+    }
+  };
 
   const openDocMove = async (d) => {
     setDocMove(d);
@@ -165,7 +188,8 @@ const ClientDetailPage = () => {
             {c.address && <div className="text-xs mt-2" style={{ color: 'var(--cc-text-muted)' }}>{c.address}</div>}
           </div>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto [&_.btn]:w-full sm:[&_.btn]:w-auto">
+
           <button onClick={openEdit} className="btn btn-outline" data-testid="btn-edit-client">
             <Pencil size={14}/> Edit
           </button>
@@ -197,38 +221,121 @@ const ClientDetailPage = () => {
               <tr>
                 <th>Project ID</th>
                 <th>Project Name</th>
-                <th>Architect</th>
-                <th>Site Location</th>
-                <th className="text-right">Quoted (₹)</th>
-                <th className="text-right">Received (₹)</th>
+                <th className="hidden md:table-cell">Architect</th>
+                <th className="hidden md:table-cell">Site Location</th>
+                <th className="text-right hidden sm:table-cell">Quoted (₹)</th>
+                <th className="text-right hidden sm:table-cell">Received (₹)</th>
                 <th className="text-right">Outstanding (₹)</th>
-                <th>Status</th>
-                <th className="text-right">Actions</th>
+                <th className="hidden sm:table-cell text-center">Status</th>
+                <th className="text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
               {projects.length === 0 ? (
                 <tr><td colSpan={9} className="text-center py-10" style={{ color: 'var(--cc-text-muted)' }}>No projects linked to this client yet.</td></tr>
               ) : projects.map((p) => (
-                <tr key={p.id} data-testid={`client-project-row-${p.project_code}`}>
-                  <td className="font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{p.project_code}</td>
-                  <td className="font-medium">{p.name}</td>
-                  <td>{p.architect_name || <span className="text-gray-400">None</span>}</td>
-                  <td className="max-w-[200px]"><div className="line-clamp-2 text-xs">{p.site_location || '—'}</div></td>
-                  <td className="num">{formatINR(p.quoted_amount, { withSymbol: false })}</td>
-                  <td className="num">{formatINR(p.received_amount, { withSymbol: false })}</td>
-                  <td className="num font-semibold">{formatINR(p.outstanding_amount, { withSymbol: false })}</td>
-                  <td>
-                    <span className={`badge ${p.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`}>{p.status}</span>
-                  </td>
-                  <td>
-                    <div className="flex gap-1 justify-end">
-                      <Link to={`/projects/${p.id}`} className="btn btn-outline btn-sm">
-                        <Eye size={13}/> View
-                      </Link>
-                    </div>
-                  </td>
-                </tr>
+                <React.Fragment key={p.id}>
+                  <tr data-testid={`client-project-row-${p.project_code}`}>
+                    <td className="font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{p.project_code}</td>
+                    <td className="font-medium">{p.name}</td>
+                    <td className="hidden md:table-cell">{p.architect_name || <span className="text-gray-400">None</span>}</td>
+                    <td className="max-w-[200px] hidden md:table-cell"><div className="line-clamp-2 text-xs">{p.site_location || '—'}</div></td>
+                    <td className="num hidden sm:table-cell">{formatINR(p.quoted_amount, { withSymbol: false })}</td>
+                    <td className="num hidden sm:table-cell">{formatINR(p.received_amount, { withSymbol: false })}</td>
+                    <td className="num font-semibold text-xs" style={{ color: p.outstanding_amount > 0 ? 'var(--cc-accent)' : 'var(--cc-dark-green)' }}>{formatINR(p.outstanding_amount)}</td>
+                    <td className="hidden sm:table-cell text-center">
+                      <span className={`badge ${p.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`}>{p.status}</span>
+                    </td>
+                    <td>
+                      <div className="flex gap-1.5 justify-center">
+                        <Link to={`/projects/${p.id}`} className="btn btn-outline btn-sm flex items-center gap-1">
+                          <Eye size={13}/> View
+                        </Link>
+                        <button
+                          onClick={() => toggleTasks(p.id)}
+                          className="btn btn-outline btn-sm flex items-center gap-1 whitespace-nowrap"
+                          data-testid={`btn-tasks-${p.project_code}`}
+                        >
+                          <CheckSquare size={13}/>
+                          {expandedProjects[p.id] ? 'Hide Tasks' : 'Show Tasks'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {expandedProjects[p.id] && (
+                    <tr>
+                      <td colSpan={9} className="bg-gray-50/50 p-4">
+                        <div className="p-4 bg-white rounded-lg border border-gray-200 shadow-sm">
+                          <div className="font-head font-bold text-sm mb-3 flex items-center gap-1.5" style={{ color: 'var(--cc-dark-green)' }}>
+                            <CheckSquare size={16} /> Linked Tasks for {p.project_code || p.name}
+                          </div>
+                          {tasksLoading[p.id] ? (
+                            <div className="text-xs text-gray-500 py-2">Loading tasks...</div>
+                          ) : !projectTasks[p.id] || projectTasks[p.id].length === 0 ? (
+                            <div className="text-xs text-gray-400 py-2">No tasks linked to this project.</div>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <table className="cc-table w-full text-xs" style={{ minWidth: '600px' }}>
+                                <thead>
+                                  <tr className="bg-gray-50">
+                                    <th style={{ width: 60 }}>Sr No</th>
+                                    <th style={{ width: 100 }}>Category</th>
+                                    <th>Work</th>
+                                    <th style={{ width: 120 }}>Start Date</th>
+                                    <th style={{ width: 120 }}>Due Date</th>
+                                    <th>Assign To</th>
+                                    <th className="text-center" style={{ width: 110 }}>Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {projectTasks[p.id].map((t, idx) => (
+                                    <tr key={t.id} className="hover:bg-gray-50/40">
+                                      <td className="font-mono-data text-gray-500">{idx + 1}</td>
+                                      <td className="capitalize font-semibold text-gray-700">{t.category || '—'}</td>
+                                      <td className="font-medium text-gray-900">{t.work}</td>
+                                      <td className="font-mono-data">{t.start_date || '—'}</td>
+                                      <td className="font-mono-data">{t.due_date || '—'}</td>
+                                      <td>
+                                        {t.assigned_to_name || t.assigned_to_username ? (
+                                          <span className="inline-flex items-center gap-1.5">
+                                            <span
+                                              className="rounded-full text-white font-bold flex items-center justify-center text-[9px] flex-shrink-0"
+                                              style={{ background: t.assigned_to_color || '#10B981', width: 18, height: 18 }}
+                                            >
+                                              {(t.assigned_to_name || t.assigned_to_username || '?')[0].toUpperCase()}
+                                            </span>
+                                            <span>{t.assigned_to_name || t.assigned_to_username}</span>
+                                          </span>
+                                        ) : (
+                                          <span className="text-gray-400">—</span>
+                                        )}
+                                      </td>
+                                      <td className="text-center">
+                                        <span
+                                          className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
+                                          style={
+                                            t.status === 'done' ? { background: '#D1FAE5', color: '#065F46', borderColor: '#34D399' } : 
+                                            (t.status === 'in progress' || t.status === 'in_progress') ? { background: '#DBEAFE', color: '#1D4ED8', borderColor: '#93C5FD' } :
+                                            t.status === 'cancelled' ? { background: '#F3F4F6', color: '#374151', borderColor: '#D1D5DB' } :
+                                            { background: '#FEF2F2', color: '#991B1B', borderColor: '#F87171' }
+                                          }
+                                        >
+                                          {t.status === 'in progress' || t.status === 'in_progress' ? 'In Progress' :
+                                           t.status === 'done' ? 'Done' :
+                                           t.status === 'cancelled' ? 'Cancelled' : 'Pending'}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>
@@ -249,10 +356,10 @@ const ClientDetailPage = () => {
               <tr>
                 <th>Document No.</th>
                 <th>Type</th>
-                <th>Architect</th>
-                <th>Plot / Place</th>
+                <th className="hidden sm:table-cell">Architect</th>
+                <th className="hidden md:table-cell">Plot / Place</th>
                 <th>Date</th>
-                <th className="text-right">Actions</th>
+                <th className="text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -262,11 +369,11 @@ const ClientDetailPage = () => {
                 <tr key={d.id} data-testid={`client-doc-row-${d.id}`}>
                   <td className="font-mono-data text-xs font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{d.doc_number}</td>
                   <td className="text-sm">{d.doc_type_name}</td>
-                  <td className="text-sm">{d.architect_name || <span className="text-gray-400">—</span>}</td>
-                  <td className="text-sm max-w-[220px]"><div className="line-clamp-2">{d.plot_place || '—'}</div></td>
+                  <td className="text-sm hidden sm:table-cell">{d.architect_name || <span className="text-gray-400">—</span>}</td>
+                  <td className="text-sm max-w-[220px] hidden md:table-cell"><div className="line-clamp-2">{d.plot_place || '—'}</div></td>
                   <td className="text-xs font-mono-data">{(d.document_date || '').slice(0, 10) || '—'}</td>
                   <td>
-                    <div className="flex gap-1 justify-end">
+                    <div className="grid grid-cols-2 gap-1 w-max mx-auto">
                       <button
                         onClick={() => openDocMove(d)}
                         className="btn btn-outline btn-sm"

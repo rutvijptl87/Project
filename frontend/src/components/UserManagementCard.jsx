@@ -20,7 +20,7 @@ const UserManagementCard = () => {
   const [newU, setNewU] = useState('');
   const [newP, setNewP] = useState('');
   const [newName, setNewName] = useState('');
-  const [newRole, setNewRole] = useState('staff');
+  const [newRole, setNewRole] = useState('draftsman');
   const [adding, setAdding] = useState(false);
   const [addMsg, setAddMsg] = useState(null);
 
@@ -71,7 +71,7 @@ const UserManagementCard = () => {
         role: newRole,
       });
       setAddMsg({ type: 'success', text: `User ${newU.trim().toLowerCase()} added.` });
-      setNewU(''); setNewP(''); setNewName(''); setNewRole('staff');
+      setNewU(''); setNewP(''); setNewName(''); setNewRole('draftsman');
       loadUsers();
     } catch (err) {
       setAddMsg({ type: 'error', text: fmtErr(err?.response?.data?.detail, 'Failed to add user') });
@@ -201,7 +201,7 @@ const UserManagementCard = () => {
             <Users size={18}/> User Management
           </h2>
           <p className="text-sm mb-4" style={{ color: 'var(--cc-text-muted)' }}>
-            Add, remove, or manage users who can sign into Creator Consultant. Admins can manage users; staff can use the app but can't add/remove others.
+            Add, remove, or manage users who can sign into Creator Consultant. Admins can manage users; draftsman can use the app but can't add/remove others.
           </p>
 
           {/* Add user */}
@@ -210,7 +210,7 @@ const UserManagementCard = () => {
             <input className="input md:col-span-1" placeholder="Display name (optional)" value={newName} onChange={(e) => setNewName(e.target.value)} data-testid="add-user-name"/>
             <input type="password" className="input md:col-span-1" placeholder="Password" value={newP} onChange={(e) => setNewP(e.target.value)} data-testid="add-user-password"/>
             <select className="select md:col-span-1" value={newRole} onChange={(e) => setNewRole(e.target.value)} data-testid="add-user-role">
-              <option value="staff">Staff</option>
+              <option value="draftsman">draftsman</option>
               <option value="engineer">Site Engineer</option>
               <option value="account">Account (Read-only)</option>
               <option value="admin">Admin</option>
@@ -246,7 +246,7 @@ const UserManagementCard = () => {
                           data-testid={`role-select-${u.username}`}
                           style={{ minWidth: '110px' }}
                         >
-                          <option value="staff">Staff</option>
+                          <option value="draftsman">draftsman</option>
                           <option value="engineer">Engineer</option>
                           <option value="account">Account</option>
                           <option value="admin">Admin</option>

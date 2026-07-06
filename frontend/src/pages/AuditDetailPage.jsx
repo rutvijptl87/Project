@@ -180,7 +180,7 @@ const AuditDetailPage = () => {
             <span className={`badge ml-2 ${audit.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`}>{audit.status}</span>
           </div>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto [&_.btn]:w-full sm:[&_.btn]:w-auto">
           <button onClick={downloadExcel} className="btn btn-outline" data-testid="audit-detail-btn-excel"><Download size={15}/> Export Excel</button>
           <button onClick={handleDelete} className="btn btn-danger" data-testid="audit-detail-btn-delete"><Trash2 size={15}/> Delete</button>
         </div>
@@ -289,9 +289,9 @@ const AuditDetailPage = () => {
               <tr>
                 <th style={{ width: 50 }}>#</th>
                 <th className="text-right">Amount (₹)</th>
-                <th>Note</th>
-                <th>Date &amp; Time</th>
-                <th className="text-right">Actions</th>
+                <th className="hidden sm:table-cell">Note</th>
+                <th className="hidden md:table-cell">Date &amp; Time</th>
+                <th className="text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -301,10 +301,10 @@ const AuditDetailPage = () => {
                 <tr key={p.id} data-testid={`audit-payment-row-${p.id}`}>
                   <td className="font-mono-data text-xs" style={{ color: 'var(--cc-text-muted)' }}>{i + 1}</td>
                   <td className="num font-semibold">{formatINR(p.amount, { withSymbol: false })}</td>
-                  <td className="text-sm">{p.notes || '—'}</td>
-                  <td className="text-xs font-mono-data">{formatDate(p.payment_date)}</td>
+                  <td className="text-sm hidden sm:table-cell">{p.notes || '—'}</td>
+                  <td className="text-xs font-mono-data hidden md:table-cell">{formatDate(p.payment_date)}</td>
                   <td>
-                    <div className="flex gap-1 justify-end">
+                    <div className="flex gap-1 justify-center">
                       <button onClick={() => downloadReceipt(p.id)} className="btn btn-outline btn-sm" data-testid={`audit-btn-receipt-${p.id}`}><Download size={12}/> Receipt</button>
                       <button onClick={() => handleDeletePayment(p.id)} className="btn btn-danger btn-sm" data-testid={`audit-btn-delete-payment-${p.id}`}><Trash2 size={12}/></button>
                     </div>
@@ -343,9 +343,9 @@ const AuditDetailPage = () => {
             <thead>
               <tr>
                 <th style={{ width: 50 }}>#</th>
-                <th className="text-right">Old Amount (₹)</th>
+                <th className="text-right hidden sm:table-cell">Old Amount (₹)</th>
                 <th className="text-right">New Amount (₹)</th>
-                <th>Reason</th>
+                <th className="hidden md:table-cell">Reason</th>
                 <th>Date &amp; Time</th>
               </tr>
             </thead>
@@ -355,9 +355,9 @@ const AuditDetailPage = () => {
               ) : revisions.map((r, i) => (
                 <tr key={r.id} data-testid={`audit-revision-row-${r.id}`}>
                   <td className="font-mono-data text-xs" style={{ color: 'var(--cc-text-muted)' }}>{i + 1}</td>
-                  <td className="num">{formatINR(r.old_amount, { withSymbol: false })}</td>
+                  <td className="num hidden sm:table-cell">{formatINR(r.old_amount, { withSymbol: false })}</td>
                   <td className="num font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{formatINR(r.new_amount, { withSymbol: false })}</td>
-                  <td className="text-sm">{r.reason || '—'}</td>
+                  <td className="text-sm hidden md:table-cell">{r.reason || '—'}</td>
                   <td className="text-xs font-mono-data">{formatDate(r.created_at)}</td>
                 </tr>
               ))}

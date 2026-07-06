@@ -1,0 +1,17 @@
+{
+  "name": "project-root",
+  "version": "1.0.0",
+  "description": "Root orchestrator for React frontend and FastAPI backend",
+  "scripts": {
+    "install:frontend": "cd frontend && npm install --legacy-peer-deps",
+    "install:backend": "cd backend && python3 -m venv venv && ./venv/bin/python3 -m pip install -r requirements.txt",
+    "install:all": "concurrently \"npm run install:backend\" \"npm run install:frontend\"",
+    "start:backend": "cd backend && ./venv/bin/uvicorn server:app --host 127.0.0.1 --port 8000 --reload",
+    "start:frontend": "cd frontend && npm start",
+    "start": "concurrently --kill-others \"npm run start:backend\" \"npm run start:frontend\"",
+    "dev": "npm start"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

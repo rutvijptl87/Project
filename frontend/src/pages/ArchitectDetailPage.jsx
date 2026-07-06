@@ -213,7 +213,7 @@ const ArchitectDetailPage = () => {
             </div>
           </div>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto [&_.btn]:w-full sm:[&_.btn]:w-auto">
           <button onClick={openEdit} className="btn btn-outline" data-testid="btn-edit-architect">
             <Pencil size={14}/> Edit
           </button>
@@ -245,13 +245,13 @@ const ArchitectDetailPage = () => {
               <tr>
                 <th>Project ID</th>
                 <th>Project Name</th>
-                <th>Client</th>
-                <th>Site Location</th>
-                <th className="text-right">Quoted (₹)</th>
-                <th className="text-right">Received (₹)</th>
+                <th className="hidden md:table-cell">Client</th>
+                <th className="hidden md:table-cell">Site Location</th>
+                <th className="text-right hidden sm:table-cell">Quoted (₹)</th>
+                <th className="text-right hidden sm:table-cell">Received (₹)</th>
                 <th className="text-right">Outstanding (₹)</th>
-                <th>Status</th>
-                <th className="text-right">Actions</th>
+                <th className="hidden sm:table-cell text-center">Status</th>
+                <th className="text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -263,16 +263,16 @@ const ArchitectDetailPage = () => {
                 <tr key={p.id} data-testid={`arch-project-row-${p.project_code}`}>
                   <td className="font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{p.project_code}</td>
                   <td className="font-medium">{p.name}</td>
-                  <td>{p.client_name || <span className="text-gray-400">None</span>}</td>
-                  <td className="max-w-[200px]"><div className="line-clamp-2 text-xs">{p.site_location || '—'}</div></td>
-                  <td className="num">{formatINR(p.quoted_amount, { withSymbol: false })}</td>
-                  <td className="num">{formatINR(p.received_amount, { withSymbol: false })}</td>
-                  <td className="num font-semibold">{formatINR(p.outstanding_amount, { withSymbol: false })}</td>
-                  <td>
+                  <td className="hidden md:table-cell">{p.client_name || <span className="text-gray-400">None</span>}</td>
+                  <td className="max-w-[200px] hidden md:table-cell"><div className="line-clamp-2 text-xs">{p.site_location || '—'}</div></td>
+                  <td className="num hidden sm:table-cell">{formatINR(p.quoted_amount, { withSymbol: false })}</td>
+                  <td className="num hidden sm:table-cell">{formatINR(p.received_amount, { withSymbol: false })}</td>
+                  <td className="num font-semibold text-xs" style={{ color: p.outstanding_amount > 0 ? 'var(--cc-accent)' : 'var(--cc-dark-green)' }}>{formatINR(p.outstanding_amount)}</td>
+                  <td className="hidden sm:table-cell text-center">
                     <span className={`badge ${p.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`}>{p.status}</span>
                   </td>
                   <td>
-                    <div className="flex gap-1 justify-end flex-wrap">
+                    <div className="grid grid-cols-2 gap-1 w-max mx-auto">
                       <Link to={`/projects/${p.id}`} className="btn btn-outline btn-sm" data-testid={`arch-view-${p.project_code}`} title="View project">
                         <Eye size={13}/>
                       </Link>
@@ -305,10 +305,10 @@ const ArchitectDetailPage = () => {
               <tr>
                 <th>Document No.</th>
                 <th>Type</th>
-                <th>Client</th>
-                <th>Plot / Place</th>
+                <th className="hidden sm:table-cell">Client</th>
+                <th className="hidden md:table-cell">Plot / Place</th>
                 <th>Date</th>
-                <th className="text-right">Actions</th>
+                <th className="text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -318,11 +318,11 @@ const ArchitectDetailPage = () => {
                 <tr key={d.id} data-testid={`architect-doc-row-${d.id}`}>
                   <td className="font-mono-data text-xs font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{d.doc_number}</td>
                   <td className="text-sm">{d.doc_type_name}</td>
-                  <td className="text-sm">{d.client_name || <span className="text-gray-400">—</span>}</td>
-                  <td className="text-sm max-w-[220px]"><div className="line-clamp-2">{d.plot_place || '—'}</div></td>
+                  <td className="text-sm hidden sm:table-cell">{d.client_name || <span className="text-gray-400">—</span>}</td>
+                  <td className="text-sm max-w-[220px] hidden md:table-cell"><div className="line-clamp-2">{d.plot_place || '—'}</div></td>
                   <td className="text-xs font-mono-data">{(d.document_date || '').slice(0, 10) || '—'}</td>
                   <td>
-                    <div className="flex gap-1 justify-end">
+                    <div className="flex gap-1 justify-center">
                       <button
                         onClick={() => openDocMove(d)}
                         className="btn btn-outline btn-sm"

@@ -16,7 +16,7 @@ import {
   FileText, Archive, ArchiveRestore, ArrowUpDown, ArrowUp, ArrowDown,
   Phone, Mail,
 } from 'lucide-react';
-// Columns visible to admins/staff. Engineers see a slimmed list (no money).
+// Columns visible to admins/draftsman. Engineers see a slimmed list (no money).
 const SORTABLE_COLUMNS_FULL = {
   name: 'Project Name',
   client_name: 'Client',
@@ -37,15 +37,19 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
   const { schedule } = useUndo();
   const { byUsername } = useUserDirectory();
   const { user } = useAuth();
-  const isEngineer = user?.role === 'engineer';
+  const isEngineer = user?.role === 'engineer' || user?.role === 'draftsman';
   const isAccount = user?.role === 'account';
   const isAdmin = user?.role === 'admin';
   const SORTABLE_COLUMNS = isEngineer ? SORTABLE_COLUMNS_ENGINEER : SORTABLE_COLUMNS_FULL;
   const [projects, setProjects] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const limit = 25;
   const [stats, setStats] = useState(null);
   const [svStats, setSvStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [payTargetId, setPayTargetId] = useState(null);
   const [importing, setImporting] = useState(false);
   const [toast, setToast] = useState(null);
@@ -55,19 +59,27 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
   const [hiddenIds, setHiddenIds] = useState(new Set());
   const fileInputRef = useRef(null);
 
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [search]);
+
   const load = async () => {
     setLoading(true);
     try {
-      const params = {};
-      if (search) params.search = search;
+      const params = { page, limit, q: debouncedSearch };
       if (showArchived) params.archived_only = true;
       // Engineers don't get to see financial stats — skip those calls entirely.
       const [p, s, sv] = await Promise.all([
-        api.get('/projects', { params }),
+        api.get('/projects/paginated', { params }),
         isEngineer ? Promise.resolve({ data: null }) : api.get('/dashboard/stats'),
         api.get('/dashboard/site-visit-stats', { params: { days: 7 } }).catch(() => ({ data: null })),
       ]);
-      setProjects(p.data);
+      setProjects(p.data.data || []);
+      setTotal(p.data.total || 0);
       setStats(s.data);
       setSvStats(sv.data);
     } catch (e) {
@@ -77,7 +89,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
     }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [showArchived]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [showArchived, page, debouncedSearch]);
 
   const sortedProjects = useMemo(() => {
     const visible = projects.filter((p) => !hiddenIds.has(p.id));
@@ -115,7 +127,6 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
 
   const handleSearch = (e) => {
     e.preventDefault();
-    load();
   };
 
   const handleArchive = async (id, code) => {
@@ -199,7 +210,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
             {showArchived ? 'Restore or permanently delete archived projects.' : 'Track quotes, payments and receivables in one place.'}
           </p>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto [&_.btn]:w-full sm:[&_.btn]:w-auto">
           <button
             onClick={() => setShowArchived(!showArchived)}
             className={`btn ${showArchived ? 'btn-primary' : 'btn-outline'}`}
@@ -207,7 +218,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
           >
             <Archive size={15}/> {showArchived ? 'Back to Active' : 'View Archived'}
           </button>
-          {!showArchived && <>
+          {!showArchived && !isEngineer && <>
             <button onClick={handleExport} className="btn btn-outline" data-testid="btn-export-excel">
               <Download size={15} /> Export Excel
             </button>
@@ -225,20 +236,20 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
       {!showArchived && isAdmin && <DashboardKPI stats={stats} svStats={svStats} hideSiteVisits={isAccount} />}
       {!showArchived && isAdmin && <MonthlyRevenueChart />}
 
-      <form onSubmit={handleSearch} className="card p-3 mb-4 flex gap-2" data-testid="search-form">
-        <div className="flex-1 relative">
+      <form onSubmit={handleSearch} className="card p-3 mb-4 flex flex-col sm:flex-row gap-2" data-testid="search-form">
+        <div className="flex-1 relative w-full sm:w-auto">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
-            className="input pl-9"
+            className="input pl-9 w-full"
             placeholder="Search by project ID, name, client, architect, location..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             data-testid="search-input"
           />
         </div>
-        <button type="submit" className="btn btn-accent" data-testid="search-btn">Search</button>
+        <button type="submit" className="btn btn-accent w-full sm:w-auto" data-testid="search-btn">Search</button>
         {search && (
-          <button type="button" onClick={() => { setSearch(''); setTimeout(load, 0); }} className="btn btn-outline" data-testid="search-clear-btn">Clear</button>
+          <button type="button" onClick={() => { setSearch(''); setTimeout(load, 0); }} className="btn btn-outline w-full sm:w-auto" data-testid="search-clear-btn">Clear</button>
         )}
       </form>
 
@@ -247,17 +258,16 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
           <table className="cc-table" data-testid="projects-table">
             <thead>
               <tr>
-                <th className="w-12" data-testid="col-sr-no">Sr. No</th>
+                <th className="w-12 hidden sm:table-cell text-center" data-testid="col-sr-no">Sr. No</th>
                 <th onClick={() => toggleSort('name')} className="cursor-pointer select-none" data-testid="sort-name">Project Name<SortIcon col="name"/></th>
-                <th onClick={() => toggleSort('client_name')} className="cursor-pointer select-none" data-testid="sort-client_name">Client<SortIcon col="client_name"/></th>
-                <th onClick={() => toggleSort('architect_name')} className="cursor-pointer select-none" data-testid="sort-architect_name">Architect<SortIcon col="architect_name"/></th>
-                <th>Site Location</th>
-                {!isEngineer && <th onClick={() => toggleSort('quoted_amount')} className="cursor-pointer select-none text-right" data-testid="sort-quoted_amount">Quoted (₹)<SortIcon col="quoted_amount"/></th>}
-                {!isEngineer && <th onClick={() => toggleSort('received_amount')} className="cursor-pointer select-none text-right" data-testid="sort-received_amount">Received (₹)<SortIcon col="received_amount"/></th>}
-                {!isEngineer && <th onClick={() => toggleSort('outstanding_amount')} className="cursor-pointer select-none text-right" data-testid="sort-outstanding_amount">Outstanding (₹)<SortIcon col="outstanding_amount"/></th>}
-                {!isEngineer && <th onClick={() => toggleSort('status')} className="cursor-pointer select-none" data-testid="sort-status">Status<SortIcon col="status"/></th>}
-                <th>Edited By</th>
-                <th className="text-right">Actions</th>
+                <th onClick={() => toggleSort('client_name')} className="cursor-pointer select-none hidden sm:table-cell" data-testid="sort-client_name">Client<SortIcon col="client_name"/></th>
+                <th onClick={() => toggleSort('architect_name')} className="cursor-pointer select-none hidden lg:table-cell" data-testid="sort-architect_name">Architect<SortIcon col="architect_name"/></th>
+                <th className="hidden lg:table-cell">Site Location</th>
+                {!isEngineer && <th onClick={() => toggleSort('quoted_amount')} className="cursor-pointer select-none text-right hidden md:table-cell" data-testid="sort-quoted_amount">Quoted (₹)<SortIcon col="quoted_amount"/></th>}
+                {!isEngineer && <th onClick={() => toggleSort('received_amount')} className="cursor-pointer select-none text-right hidden md:table-cell" data-testid="sort-received_amount"><div className="flex items-center justify-end gap-1"><SortIcon col="received_amount"/> Received (₹)</div></th>}
+                {!isEngineer && <th onClick={() => toggleSort('outstanding_amount')} className="cursor-pointer select-none text-right" data-testid="sort-outstanding_amount"><div className="flex items-center justify-end gap-1"><SortIcon col="outstanding_amount"/> Outstanding (₹)</div></th>}
+                {!isEngineer && <th onClick={() => toggleSort('status')} className="cursor-pointer select-none hidden md:table-cell text-center" data-testid="sort-status"><div className="flex items-center justify-center gap-1">Status<SortIcon col="status"/></div></th>}
+                <th className="text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -271,7 +281,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
                 </td></tr>
               ) : sortedProjects.map((p, idx) => (
                 <tr key={p.id} data-testid={`project-row-${p.project_code}`}>
-                  <td className="font-mono-data text-center" style={{ color: 'var(--cc-text-muted)' }} data-testid={`sr-no-${p.project_code}`}>{idx + 1}</td>
+                  <td className="font-mono-data text-center hidden sm:table-cell" style={{ color: 'var(--cc-text-muted)' }} data-testid={`sr-no-${p.project_code}`}>{(page - 1) * limit + idx + 1}</td>
                   <td className="font-medium">
                     <div className="flex items-center gap-2 flex-wrap">
                       {p.offer_type && (
@@ -293,7 +303,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
                       <span>{p.name}</span>
                     </div>
                   </td>
-                  <td>
+                  <td className="hidden sm:table-cell">
                     {p.client_name ? (
                       <div>
                         {p.client_id ? (
@@ -323,7 +333,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
                       </div>
                     ) : <span className="text-gray-400">None</span>}
                   </td>
-                  <td>
+                  <td className="hidden lg:table-cell">
                     {p.architect_name ? (
                       <div>
                         {p.architect_id ? (
@@ -348,17 +358,17 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
                       </div>
                     ) : <span className="text-gray-400">None</span>}
                   </td>
-                  <td className="max-w-[220px]"><div className="line-clamp-2 text-xs">{p.site_location || '—'}</div></td>
-                  {!isEngineer && <td className="num">{formatINR(p.quoted_amount, { withSymbol: false })}</td>}
-                  {!isEngineer && <td className="num">{formatINR(p.received_amount, { withSymbol: false })}</td>}
+                  <td className="max-w-[220px] hidden lg:table-cell"><div className="line-clamp-2 text-xs">{p.site_location || '—'}</div></td>
+                  {!isEngineer && <td className="num hidden md:table-cell">{formatINR(p.quoted_amount, { withSymbol: false })}</td>}
+                  {!isEngineer && <td className="num hidden md:table-cell">{formatINR(p.received_amount, { withSymbol: false })}</td>}
                   {!isEngineer && <td className="num font-semibold">{formatINR(p.outstanding_amount, { withSymbol: false })}</td>}
                   {!isEngineer && (
-                    <td>
+                    <td className="hidden md:table-cell text-center">
                       <span className={`badge ${p.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`} data-testid={`status-${p.project_code}`}>{p.status}</span>
                     </td>
                   )}
                   <td>
-                    <div className="flex gap-1 justify-end flex-wrap">
+                    <div className="grid grid-cols-2 gap-1 w-max mx-auto">
                       {showArchived ? (
                         <>
                           <button onClick={() => handleUnarchive(p.id, p.project_code)} className="btn btn-accent btn-sm" title="Restore" data-testid={`btn-restore-${p.project_code}`}>
@@ -394,6 +404,34 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
               ))}
             </tbody>
           </table>
+        </div>
+        
+        {/* Pagination Controls */}
+        <div className="flex flex-col sm:flex-row-reverse justify-between items-center p-4 border-t gap-4" style={{ borderColor: 'var(--cc-border)' }}>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setPage(p => Math.max(1, p - 1))} 
+              disabled={page === 1}
+              className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Previous Page"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <div className="bg-black text-white px-3 py-1 rounded text-sm font-semibold min-w-[32px] text-center">
+              {page}
+            </div>
+            <button 
+              onClick={() => setPage(p => p + 1)} 
+              disabled={page * limit >= total}
+              className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Next Page"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            </button>
+          </div>
+          <div className="text-sm" style={{ color: 'var(--cc-text-muted)' }}>
+            Showing {total === 0 ? 0 : (page - 1) * limit + 1} to {Math.min(page * limit, total)} of {total} entries
+          </div>
         </div>
       </div>
 

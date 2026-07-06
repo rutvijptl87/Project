@@ -1,7 +1,7 @@
 """
 Custom username + password JWT authentication for Creator Consultant.
 
-- Single admin (seeded from .env) plus admin-created staff users.
+- Single admin (seeded from .env) plus admin-created draftsman users.
 - Login by username + password. Returns JWT (HS256, 24h).
 - Frontend stores JWT in localStorage and sends as Authorization: Bearer <token>.
 """
@@ -93,7 +93,7 @@ class UserPublic(BaseModel):
     id: str
     username: str
     name: str = ""
-    role: str = "staff"
+    role: str = "draftsman"
     color: str = "#0F3D2A"
     default_signature: Optional[str] = None
     created_at: Optional[str] = None
@@ -104,7 +104,7 @@ class UserCreateIn(BaseModel):
     username: str = Field(..., min_length=2, max_length=40)
     password: str = Field(..., min_length=4, max_length=128)
     name: Optional[str] = ""
-    role: str = "staff"  # admin | staff
+    role: str = "draftsman"  # admin | draftsman
     color: Optional[str] = None
 
 
@@ -237,7 +237,7 @@ async def login(data: LoginIn, request: Request):
         {"id": user["id"]},
         {"$set": {"last_login_at": _now().isoformat()}},
     )
-    token = _create_token(user["id"], user["username"], user.get("role", "staff"))
+    token = _create_token(user["id"], user["username"], user.get("role", "draftsman"))
     return {
         "token": token,
         "expires_in_hours": int(os.environ.get("JWT_TOKEN_HOURS", "24")),
@@ -245,7 +245,7 @@ async def login(data: LoginIn, request: Request):
             "id": user["id"],
             "username": user["username"],
             "name": user.get("name", ""),
-            "role": user.get("role", "staff"),
+            "role": user.get("role", "draftsman"),
         },
     }
 
@@ -318,8 +318,8 @@ async def create_user(body: UserCreateIn, _: dict = Depends(require_admin)):
     username = body.username.strip().lower()
     if await _db.users.find_one({"username": username}):
         raise HTTPException(status_code=400, detail="Username already exists")
-    if body.role not in ("admin", "staff", "engineer", "account"):
-        raise HTTPException(status_code=400, detail="Role must be 'admin', 'staff', 'engineer' or 'account'")
+    if body.role not in ("admin", "draftsman", "engineer", "account"):
+        raise HTTPException(status_code=400, detail="Role must be 'admin', 'draftsman', 'engineer' or 'account'")
     doc = {
         "id": _new_id(),
         "username": username,
@@ -352,8 +352,8 @@ async def update_user(user_id: str, body: UserUpdateIn, current: dict = Depends(
     if body.name is not None:
         update["name"] = body.name
     if body.role is not None:
-        if body.role not in ("admin", "staff", "engineer", "account"):
-            raise HTTPException(400, "Role must be 'admin', 'staff', 'engineer' or 'account'")
+        if body.role not in ("admin", "draftsman", "engineer", "account"):
+            raise HTTPException(400, "Role must be 'admin', 'draftsman', 'engineer' or 'account'")
         # Prevent demoting the only remaining admin
         if target.get("role") == "admin" and body.role != "admin":
             admin_count = await _db.users.count_documents({"role": "admin"})

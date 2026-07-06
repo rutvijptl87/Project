@@ -175,7 +175,7 @@ async def _build_backup_payload() -> dict:
     return payload
 
 
-LOCAL_BACKUP_DIR = Path("/app/backend/backups")
+LOCAL_BACKUP_DIR = Path(__file__).parent / "backups"
 LOCAL_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
 

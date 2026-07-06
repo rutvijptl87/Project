@@ -33,7 +33,7 @@ const SiteVisitDetailPage = () => {
       try {
         const r = await api.get(`/site-visits/${id}`);
         setV(r.data);
-        // Pull linked project for the financials card (admin/staff only — engineers
+        // Pull linked project for the financials card (admin/draftsman only — engineers
         // are RBAC-blocked from project detail anyway, but they can still read summary).
         if (r.data?.project_id) {
           try {
@@ -103,7 +103,7 @@ const SiteVisitDetailPage = () => {
     </div>
   );
 
-  const isEngineer = user?.role === 'engineer';
+  const isEngineer = user?.role === 'engineer' || user?.role === 'draftsman';
   const isAccount = user?.role === 'account';
   const canDelete = !isEngineer && !isAccount;
   const canEdit = !isAccount;
@@ -188,7 +188,7 @@ const SiteVisitDetailPage = () => {
         )}
       </div>
 
-      {/* Linked Project Accounting (admin/staff only — engineers don't need to see money) */}
+      {/* Linked Project Accounting (admin/draftsman only — engineers don't need to see money) */}
       {project && !isEngineer && (
         <div className="card p-5 mb-4" data-testid="detail-project-financials">
           <div className="flex items-start justify-between flex-wrap gap-3 mb-3">

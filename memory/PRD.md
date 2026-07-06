@@ -63,7 +63,7 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
 - ✅ **Project Detail WhatsApp shortcut + Monthly Revenue chart** (2026-02) — Client/Architect contact bar on `/projects/:id` now shows Call + Email + **WhatsApp** (auto-pre-fills `Hi {name}, regarding {project name} ({code}) — outstanding is ₹X.XX.`). New `GET /api/dashboard/monthly-revenue?months=12` aggregates `payments` + `audit_payments` into per-month buckets (last 6/12/24 months). New `MonthlyRevenueChart` component (recharts stacked bar — Projects green / Audits dark green) added to Projects dashboard right below the KPI row. Header shows total received in that period + a range selector.
 
 - ✅ **Site Visit Inspection module + Site Engineer role + PWA** (2026-02-28) — major feature for on-site engineers.
-  - New `engineer` role added to auth (alongside `admin` / `staff`). Engineer login lands on `/site-visits`; navbar shows only "Site Visits + Projects"; `/audits /documents /clients /architects /settings` all redirect to `/site-visits`.
+  - New `engineer` role added to auth (alongside `admin` / `draftsman`). Engineer login lands on `/site-visits`; navbar shows only "Site Visits + Projects"; `/audits /documents /clients /architects /settings` all redirect to `/site-visits`.
   - Backend: `site_visits` + `site_visit_templates` Mongo collections. 5 default templates seeded on startup (Column / Slab / Beam / Foundation / Waterproofing). 12 endpoints under `/api/site-visits` and `/api/site-visit-templates` covering full CRUD + photo upload + PDF.
   - Photos uploaded as separate files on disk under `/app/backend/uploads/site-visits/<random>.{jpg|png|webp|heic}` and served via mounted `StaticFiles` at `/api/uploads/`. Random-token filenames so URLs are unguessable. Multipart upload endpoint: `POST /api/site-visits/uploads`.
   - PDF generation via ReportLab — branded Creator RCC Consultant LLP header, checklist table with Yes/No/N/A compliance pills, observations list, photo grid (2-up), and two signature blocks. Endpoint: `GET /api/site-visits/{id}/pdf` (JWT).
@@ -230,7 +230,7 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
 - **P1** — WhatsApp / SMS share of payment reminder (via Twilio) to clients with outstanding balance
 - **P2** — Monthly revenue chart on dashboard (recharts already installed)
 - **P2** — Multi-currency support (currently INR only)
-- **P3** — Multi-user with roles (admin / staff) + Google Auth if needed
+- **P3** — Multi-user with roles (admin / draftsman) + Google Auth if needed
 - **P3** — PWA/offline mode
 
 ## Next Tasks
@@ -299,7 +299,7 @@ User shared a screenshot of an existing "Creator Consultant" app. Built a modern
 - ✅ **Site Visit Job No auto-fill** now prefers `project.job_no` (e.g. "3324") over the project_code tail ("0126"). Fallback chain: `job_no → name → codeTail(project_code)`. Smart Job No typing also matches by `job_no`.
 - ✅ **Default Signature**: New `default_signature` field on User, with `PUT /api/auth/me/signature` (set/clear with size + format validation). New `DefaultSignatureCard` lets the user draw and save it; SiteVisitFormPage auto-loads it on **new** visits (skipped on edit, never overwrites a user-drawn one).
 - ✅ **Mobile Notifications**: New `MobileNotificationsCard` exposes a prominent Enable/Disable + Send Test for Web Push using the existing `usePushSubscription` hook. iOS detection shows "Add to Home Screen" hint when needed.
-- ✅ **`/profile` route** accessible to every role (admin/staff/engineer). New "Profile" nav link in engineer's desktop nav + mobile bottom-nav. Admin's user-info chip in navbar is now a Link to `/profile`. Settings page also mounts both cards for admins.
+- ✅ **`/profile` route** accessible to every role (admin/draftsman/engineer). New "Profile" nav link in engineer's desktop nav + mobile bottom-nav. Admin's user-info chip in navbar is now a Link to `/profile`. Settings page also mounts both cards for admins.
 - ✅ Tests: 13/13 new backend pytest cases pass (`/app/backend/tests/test_iteration17_jobno_signature_profile.py`); iter16 27/27 regression still green; frontend e2e confirms all flows.
 
 ### Files added / changed (iter17)
@@ -322,7 +322,7 @@ Four critical issues reported on production (`creatorconsultant.online`) after t
 ### Fixes
 - **(P0) Engineer's project picker was empty.** Removed `assigned_engineer_ids` filter on `list_projects`. Engineers now browse all non-archived projects (write endpoints still RBAC-locked).
 - **(P0) Photos broke when admin viewed engineer's uploads.** Root cause: photos stored on the pod's ephemeral local disk. Fix: switched to **MongoDB GridFS** (bucket `site_visit_photos`). Upload writes to GridFS; new public `GET /api/uploads/site-visits/{filename}` streams from GridFS with disk fallback. PDF builder gets bytes pre-loaded asynchronously via `_preload_visit_photo_bytes`.
-- **(P1) Accounting hidden from admin's site visit review.** SiteVisitDetailPage now fetches the linked project and renders a Linked Project card (admin/staff only) with Quoted/Received/Outstanding tiles.
+- **(P1) Accounting hidden from admin's site visit review.** SiteVisitDetailPage now fetches the linked project and renders a Linked Project card (admin/draftsman only) with Quoted/Received/Outstanding tiles.
 - **(NEW) Visit code listings now show Job No.** Both card and table views show `SV-NNNN · Job NNNN`.
 
 ### Tests
@@ -366,7 +366,7 @@ the Audit form (no auto-numbering).
 Three independent UI/UX requests delivered in one batch.
 
 ### 1. Engineer can now edit submitted site visits
-- `SiteVisitDetailPage.jsx` — Edit button is shown for ALL roles (admin/staff/engineer) regardless of visit status (draft/submitted). Delete button stays admin/staff-only via new `canDelete` flag.
+- `SiteVisitDetailPage.jsx` — Edit button is shown for ALL roles (admin/draftsman/engineer) regardless of visit status (draft/submitted). Delete button stays admin/draftsman-only via new `canDelete` flag.
 
 ### 2. MonthlyRevenueChart compacted
 - Card padding `p-5 → p-3`, `mb-6 → mb-4`
@@ -402,7 +402,7 @@ Three independent UI/UX requests delivered in one batch.
 | `GET /api/site-visits` | 403 | ✅ 403 |
 | `POST /api/projects` | 403 | ✅ 403 |
 | `DELETE /api/projects/x` | 403 | ✅ 403 |
-| `POST /api/auth/users` with `role:"hacker"` | 400 | ✅ "Role must be 'admin', 'staff', 'engineer' or 'account'" |
+| `POST /api/auth/users` with `role:"hacker"` | 400 | ✅ "Role must be 'admin', 'draftsman', 'engineer' or 'account'" |
 
 Frontend visual verification — account user lands on `/`, sees correct nav and hidden chart; admin user still sees compact chart at 245px card height.
 

@@ -36,7 +36,7 @@ const ProjectFormPage = () => {
       ]);
       setClients(c.data);
       setArchitects(a.data);
-      setEngineers((u.data || []).filter((x) => x.role === 'engineer'));
+      setEngineers((u.data || []).filter((x) => x.role === 'engineer' || x.role === 'draftsman'));
       if (isEdit) {
         try {
           const r = await api.get(`/projects/${id}`);
@@ -192,7 +192,7 @@ const ProjectFormPage = () => {
             </div>
           )}
           <div className="text-[11px] mt-1" style={{ color: 'var(--cc-text-muted)' }}>
-            Engineers can only see projects they are assigned to. Leave empty to keep this project admin/staff-only.
+            Engineers can only see projects they are assigned to. Leave empty to keep this project admin/draftsman-only.
           </div>
         </div>
 

@@ -17,10 +17,16 @@ import SiteVisitDetailPage from './pages/SiteVisitDetailPage';
 import ProjectFormPage from './pages/ProjectFormPage';
 import ProjectDetailPage from './pages/ProjectDetailPage';
 import SettingsPage from './pages/SettingsPage';
+import InvoicesPage from './pages/InvoicesPage';
 import ProfilePage from './pages/ProfilePage';
 import LoginPage from './pages/LoginPage';
+import TasksPage from './pages/TasksPage';
+import EngineeringTasksPage from './pages/EngineeringTasksPage';
+import AccountingTasksPage from './pages/AccountingTasksPage';
 import { AuthProvider, useAuth } from './lib/auth';
 import { UndoProvider } from './lib/undo';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 const SplashLoading = () => (
   <div className="min-h-screen flex items-center justify-center" style={{ background: '#0A2E1F' }}>
@@ -34,7 +40,7 @@ const ProtectedApp = () => {
 
   if (loading) return <SplashLoading />;
 
-  const isEngineer = user?.role === 'engineer';
+  const isEngineer = user?.role === 'engineer' || user?.role === 'draftsman';
   const isAccount = user?.role === 'account';
 
   return (
@@ -64,7 +70,7 @@ const ProtectedApp = () => {
                   {!isAccount && <Route path="/site-visits/:id" element={<SiteVisitDetailPage />} />}
                   {!isAccount && <Route path="/site-visits/:id/edit" element={<SiteVisitFormPage />} />}
 
-                  {/* Engineer can also browse projects read-only — admin/staff get full app */}
+                  {/* Engineer can also browse projects read-only — admin/draftsman get full app */}
                   {!isEngineer && <Route path="/audits" element={<AuditsPage />} />}
                   {!isEngineer && <Route path="/audits/:id" element={<AuditDetailPage />} />}
                   {!isEngineer && <Route path="/documents" element={<DocumentsPage />} />}
@@ -74,9 +80,24 @@ const ProtectedApp = () => {
                   {!isEngineer && <Route path="/architects/:id" element={<ArchitectDetailPage />} />}
                   {!isEngineer && <Route path="/projects/new" element={<ProjectFormPage />} />}
                   {!isEngineer && <Route path="/projects/:id/edit" element={<ProjectFormPage />} />}
+                  {isEngineer && <Route path="/projects/new" element={<Navigate to="/projects" replace />} />}
                   <Route path="/projects/:id" element={<ProjectDetailPage />} />
                   <Route path="/projects" element={<ProjectsPage showPayModal={showPayModal} setShowPayModal={setShowPayModal} />} />
                   {!isEngineer && <Route path="/settings" element={<SettingsPage />} />}
+                  {!isEngineer && <Route path="/invoices" element={<InvoicesPage />} />}
+                  <Route path="/tasks" element={
+                    isEngineer ? <Navigate to="/engineering-tasks" replace /> :
+                    isAccount ? <Navigate to="/accounting-tasks" replace /> :
+                    <TasksPage />
+                  } />
+                  <Route path="/engineering-tasks" element={
+                    isAccount ? <Navigate to="/accounting-tasks" replace /> :
+                    <EngineeringTasksPage />
+                  } />
+                  <Route path="/accounting-tasks" element={
+                    isEngineer ? <Navigate to="/engineering-tasks" replace /> :
+                    <AccountingTasksPage />
+                  } />
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="*" element={<Navigate to={isEngineer ? '/site-visits' : '/'} replace />} />
                 </Routes>
@@ -103,6 +124,7 @@ function App() {
       <BrowserRouter>
         <ProtectedApp />
       </BrowserRouter>
+      <ToastContainer position="top-right" />
     </AuthProvider>
   );
 }

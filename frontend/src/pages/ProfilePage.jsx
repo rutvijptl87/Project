@@ -5,7 +5,7 @@ import DefaultSignatureCard from '../components/DefaultSignatureCard';
 import MobileNotificationsCard from '../components/MobileNotificationsCard';
 
 /**
- * Per-user profile page. Accessible to every signed-in role (admin / staff /
+ * Per-user profile page. Accessible to every signed-in role (admin / draftsman /
  * engineer) so site engineers can pre-fit their signature and enable mobile
  * push notifications without needing admin access.
  */

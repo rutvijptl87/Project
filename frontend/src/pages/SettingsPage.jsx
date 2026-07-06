@@ -11,6 +11,7 @@ import SiteVisitNumberSeriesCard from '../components/SiteVisitNumberSeriesCard';
 import AuditOfferSeriesCard from '../components/AuditOfferSeriesCard';
 import DefaultSignatureCard from '../components/DefaultSignatureCard';
 import MobileNotificationsCard from '../components/MobileNotificationsCard';
+import CompanyDetailsCard from '../components/CompanyDetailsCard';
 
 const SettingsPage = () => {
   const [stats, setStats] = useState(null);
@@ -65,6 +66,9 @@ const SettingsPage = () => {
       {/* Account & users */}
       <UserManagementCard />
 
+      {/* Company Details Configuration */}
+      <CompanyDetailsCard />
+
       {/* Pre-fitted engineer signature (per user) */}
       <DefaultSignatureCard />
 
@@ -109,7 +113,7 @@ const SettingsPage = () => {
         <p className="text-sm mb-4" style={{ color: 'var(--cc-text-muted)' }}>
           Export your full database as a multi-sheet Excel file, or import historic projects from a similar file.
         </p>
-        <div className="flex gap-2 flex-wrap">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto [&_.btn]:w-full sm:[&_.btn]:w-auto">
           <a href={`${API}/export/excel`} className="btn btn-primary" data-testid="settings-btn-export">
             <Download size={15}/> Export All to Excel
           </a>
