@@ -106,7 +106,7 @@ const DocumentsPage = () => {
         case 'client_name': return (d.client_name || '').toLowerCase();
         case 'architect_name': return (d.architect_name || '').toLowerCase();
         case 'plot_place': return (d.plot_place || '').toLowerCase();
-        case 'contact_person': return (d.contact_person || '').toLowerCase();
+        case 'contact_person': return (d.client_name || '').toLowerCase();
         case 'status': {
           // Pending → Confirmed → On Hold → Cancelled (consistent order, easy to scan)
           const order = { pending: 0, confirmed: 1, on_hold: 2, cancelled: 3 };
@@ -489,9 +489,9 @@ const DocumentsPage = () => {
                   <td className="text-sm hidden md:table-cell">{d.architect_name || <span className="text-gray-400">—</span>}</td>
                   <td className="text-sm max-w-[220px] hidden md:table-cell"><div className="line-clamp-2">{d.plot_place || '—'}</div></td>
                   <td className="text-xs hidden md:table-cell">
-                    {d.contact_person && <div>{d.contact_person}</div>}
-                    {d.mobile && <div className="font-mono-data text-gray-500">{d.mobile}</div>}
-                    {!d.contact_person && !d.mobile && <span className="text-gray-400">—</span>}
+                    {d.client_name && <div>{d.client_name}</div>}
+                    {d.client_phone && <div className="font-mono-data text-gray-500">{d.client_phone}</div>}
+                    {!d.client_name && !d.client_phone && <span className="text-gray-400">—</span>}
                   </td>
                   <td className="text-xs font-mono-data hidden sm:table-cell">{(d.document_date || '').slice(0, 10) || '—'}</td>
                   <td className="text-xs">
@@ -602,17 +602,6 @@ const DocumentsPage = () => {
           <div>
             <label className="label">Path of Folder</label>
             <input className="input font-mono-data" value={form.remark} onChange={(e) => update('remark', e.target.value)} placeholder="e.g. D:/Projects/2026/ACCP-003" data-testid="document-form-folder-path" />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="label">Contact Person Name</label>
-              <input className="input" value={form.contact_person} onChange={(e) => update('contact_person', e.target.value)} placeholder="e.g. Vicky Sharma" data-testid="document-form-contact" />
-            </div>
-            <div>
-              <label className="label">Mobile No</label>
-              <input className="input font-mono-data" value={form.mobile} onChange={(e) => update('mobile', e.target.value)} placeholder="10-digit number" data-testid="document-form-mobile" />
-            </div>
           </div>
 
           <div>

@@ -464,8 +464,10 @@ class Document(BaseModel):
     document_date: Optional[str] = None
     client_id: Optional[str] = None
     client_name: Optional[str] = ""
+    client_phone: Optional[str] = ""
     architect_id: Optional[str] = None
     architect_name: Optional[str] = ""
+    architect_phone: Optional[str] = ""
     plot_place: str = ""
     phase: str = ""
     number_field: str = ""
