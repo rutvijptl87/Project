@@ -1,11 +1,22 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { HardHat, Calculator, ChevronRight } from 'lucide-react';
+import { useAuth } from '../lib/auth';
+import { HardHat, Calculator, ChevronRight , X } from 'lucide-react';
 
 const TasksPage = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isDraftsman = user?.role === 'draftsman';
+  const isEngineerRole = user?.role === 'engineer' || user?.role === 'draftsman';
+  const isAccountRole = user?.role === 'account';
 
-  const options = [
+  React.useEffect(() => {
+    if (isDraftsman) {
+      navigate('/engineering-tasks', { replace: true });
+    }
+  }, [isDraftsman, navigate]);
+
+  let options = [
     {
       key: 'engineering',
       label: 'Engineering Tasks',
@@ -26,7 +37,27 @@ const TasksPage = () => {
       bg: '#ECFDF5',
       border: '#6EE7B7',
     },
+    {
+      key: 'structural',
+      label: 'Structural Audit Tasks',
+      description: 'Site visits, report preparation, and structural audits.',
+      Icon: HardHat,
+      path: '/structural-tasks',
+      accent: '#0A2E1F',
+      bg: '#F0FDF4',
+      border: '#86EFAC',
+    },
   ];
+
+  if (isDraftsman) {
+    options = options.filter(o => o.key !== 'structural');
+  }
+  if (isEngineerRole) {
+    options = options.filter(o => o.key !== 'accounting');
+  }
+  if (isAccountRole) {
+    options = options.filter(o => o.key !== 'engineering');
+  }
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="tasks-page">
@@ -36,11 +67,11 @@ const TasksPage = () => {
             Tasks Module
           </h1>
           <p className="text-sm" style={{ color: 'var(--cc-text-muted)' }}>
-            Manage and track engineering and accounting tasks.
+            Manage and track engineering, accounting, and structural audit tasks.
           </p>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl w-full">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl w-full">
           {options.map(({ key, label, description, Icon, path }) => (
             <div
               key={key}

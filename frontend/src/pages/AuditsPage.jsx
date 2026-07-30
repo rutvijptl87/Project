@@ -8,10 +8,10 @@ import Modal from '../components/Modal';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import InlinePicker from '../components/InlinePicker';
 import { logger } from '../lib/logger';
+import Pagination from '../components/Pagination';
 import {
   Plus, Search, Eye, Pencil, Trash2, IndianRupee, FileText, Archive, ArchiveRestore,
-  ArrowUpDown, ArrowUp, ArrowDown, Phone, Mail, ClipboardCheck,
-} from 'lucide-react';
+  ArrowUpDown, ArrowUp, ArrowDown, Phone, Mail, ClipboardCheck, X } from 'lucide-react';
 
 const SORTABLE_COLUMNS = {
   audit_offer: 'Audit Offer Number',
@@ -41,22 +41,137 @@ const emptyAudit = {
   client_email_override: '',
   total_amount: '',
   status: 'Outstanding',
-  notes: '',
+  address: '',
   file_path: '',
+};
+
+const StructuralAuditTaskModal = ({ open, onClose, audit, users, onSave }) => {
+  const [form, setForm] = useState({
+    audit_offer_no: '',
+    description: '',
+    site_visit_date: '',
+    preparation_date: '',
+    submission_date: '',
+    assigned_to_user_id: '',
+    assigned_to_accountant_id: ''
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (open && audit) {
+      setForm({
+        audit_offer_no: audit.audit_offer || '',
+        description: '',
+        site_visit_date: '',
+        preparation_date: '',
+        submission_date: '',
+        assigned_to_user_id: '',
+        assigned_to_accountant_id: ''
+      });
+      setError('');
+    }
+  }, [open, audit]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.description.trim()) { setError('Description is required for task work'); return; }
+    setSaving(true);
+    try {
+      await api.post('/tasks', {
+        category: 'structural',
+        audit_id: audit.id,
+        work: 'Structural Audit',
+        description: form.description.trim(),
+        site_visit_date: form.site_visit_date || null,
+        preparation_date: form.preparation_date || null,
+        submission_date: form.submission_date || null,
+        assigned_to_user_id: form.assigned_to_user_id || null,
+        assigned_to_accountant_id: form.assigned_to_accountant_id || null
+      });
+      await onSave();
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Failed to create task');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Confirm Audit ${audit?.audit_code || ''}`}>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div>
+          <label className="label">Audit Offer No</label>
+          <input className="input bg-gray-50 text-gray-500" value={form.audit_offer_no} disabled />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="label">Assign Engineer</label>
+            <select className="select" value={form.assigned_to_user_id} onChange={(e) => setForm({ ...form, assigned_to_user_id: e.target.value })}>
+              <option value="">— Unassigned —</option>
+              {users.filter(u => ['admin', 'engineer'].includes(u.role)).map(u => (
+                <option key={u.id} value={u.id}>{u.username}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Assign Accountant</label>
+            <select className="select" value={form.assigned_to_accountant_id} onChange={(e) => setForm({ ...form, assigned_to_accountant_id: e.target.value })}>
+              <option value="">— Unassigned —</option>
+              {users.filter(u => ['admin', 'account'].includes(u.role)).map(u => (
+                <option key={u.id} value={u.id}>{u.username}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div>
+          <label className="label">Description <span className="text-red-500">*</span></label>
+          <textarea className="textarea" rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} required />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className="label">Site Visit Date</label>
+            <input type="date" className="input" value={form.site_visit_date} min={new Date().toISOString().split('T')[0]} onChange={(e) => setForm({ ...form, site_visit_date: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">Preparation Date</label>
+            <input type="date" className="input" value={form.preparation_date} min={new Date().toISOString().split('T')[0]} onChange={(e) => setForm({ ...form, preparation_date: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">Submission Date</label>
+            <input type="date" className="input" value={form.submission_date} min={new Date().toISOString().split('T')[0]} onChange={(e) => setForm({ ...form, submission_date: e.target.value })} />
+          </div>
+        </div>
+        {error && <div className="text-sm text-red-600">{error}</div>}
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" onClick={onClose} className="btn btn-outline">Cancel</button>
+          <button type="submit" disabled={saving || !form.description.trim()} className="btn btn-primary">
+            {saving ? 'Saving...' : 'Confirm & Create Task'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
 };
 
 const AuditsPage = () => {
   const { schedule } = useUndo();
   const [audits, setAudits] = useState([]);
   const [clients, setClients] = useState([]);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [sortBy, setSortBy] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
   const [hiddenIds, setHiddenIds] = useState(new Set());
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const limit = 25;
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [confirmingAudit, setConfirmingAudit] = useState(null);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyAudit);
   const [saving, setSaving] = useState(false);
@@ -79,44 +194,41 @@ const AuditsPage = () => {
     }
   };
 
-  const load = async () => {
+  const load = async (overrideSearch) => {
     setLoading(true);
     try {
-      const params = {};
-      if (search) params.search = search;
+      const params = {
+        page,
+        limit,
+        sort_by: sortBy,
+        sort_dir: sortDir,
+      };
+      const activeSearch = typeof overrideSearch === 'string' ? overrideSearch : search;
+      if (activeSearch) params.search = activeSearch;
       if (showArchived) params.archived = true;
-      const [a, c] = await Promise.all([
-        api.get('/audits', { params }),
+      const [a, c, u] = await Promise.all([
+        api.get('/audits/paginated', { params }),
         api.get('/clients'),
+        api.get('/auth/users/directory'),
       ]);
-      setAudits(a.data);
+      setAudits(a.data.data);
+      setTotal(a.data.total);
       setClients(c.data);
+      if (u) setUsers(u.data);
     } catch (e) { logger.error('Audits load failed:', e); }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [showArchived]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [showArchived, page, sortBy, sortDir]);
 
   const sortedAudits = useMemo(() => {
-    const visible = audits.filter((a) => !hiddenIds.has(a.id));
-    const arr = [...visible];
-    arr.sort((a, b) => {
-      const va = a[sortBy];
-      const vb = b[sortBy];
-      let cmp;
-      if (typeof va === 'number' || typeof vb === 'number') {
-        cmp = (Number(va) || 0) - (Number(vb) || 0);
-      } else {
-        cmp = String(va || '').localeCompare(String(vb || ''), undefined, { numeric: true });
-      }
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-    return arr;
-  }, [audits, sortBy, sortDir, hiddenIds]);
+    return audits.filter((a) => !hiddenIds.has(a.id));
+  }, [audits, hiddenIds]);
 
   const toggleSort = (col) => {
     if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortBy(col); setSortDir('asc'); }
+    else { setSortBy(col); setSortDir('asc'); setPage(1); }
   };
 
   const SortIcon = ({ col }) => {
@@ -148,7 +260,7 @@ const AuditsPage = () => {
       client_email_override: a.client_email_override || '',
       total_amount: a.total_amount != null ? String(a.total_amount) : '',
       status: a.status || 'Outstanding',
-      notes: a.notes || '',
+      address: a.address || '',
       file_path: a.file_path || '',
     });
     setFormError('');
@@ -171,21 +283,26 @@ const AuditsPage = () => {
         client_email_override: (form.client_email_override || '').trim(),
         total_amount: parseFloat(form.total_amount) || 0,
         status: form.status || 'Outstanding',
-        notes: form.notes || '',
+        address: form.address || '',
         file_path: (form.file_path || '').trim(),
       };
-      if (editing) await api.put(`/audits/${editing.id}`, payload);
-      else await api.post('/audits', payload);
+      if (editing) {
+        await api.put(`/audits/${editing.id}`, payload);
+        load();
+      } else {
+        await api.post('/audits', payload);
+        setSearch('');
+        load('');
+      }
       setModalOpen(false);
       showToast(editing ? 'Audit updated' : 'Audit created');
-      load();
     } catch (err) {
       setFormError(err?.response?.data?.detail || 'Failed to save');
     } finally { setSaving(false); }
   };
 
   const handleDelete = (a) => {
-    if (!window.confirm(`Are you sure you want to permanently DELETE audit ${a.audit_code}?\n\nThis will also delete all its payments and activity history.\n\nYou can undo within 60 seconds.`)) return;
+    
     setHiddenIds((prev) => new Set([...prev, a.id]));
     schedule({
       label: `Audit ${a.audit_code} deleted`,
@@ -207,7 +324,7 @@ const AuditsPage = () => {
   };
 
   const handleArchive = async (a) => {
-    if (!window.confirm(`Archive audit ${a.audit_code}? It will be hidden from the main list but can be restored.`)) return;
+    
     try { await api.post(`/audits/${a.id}/archive`); showToast('Audit archived'); load(); }
     catch { showToast('Failed to archive', 'error'); }
   };
@@ -215,6 +332,46 @@ const AuditsPage = () => {
   const handleUnarchive = async (a) => {
     try { await api.post(`/audits/${a.id}/unarchive`); showToast(`Audit ${a.audit_code} restored`); load(); }
     catch { showToast('Failed to restore', 'error'); }
+  };
+
+  const handleStatusChange = async (audit, newStatus) => {
+    if (newStatus === 'Confirm') {
+      setConfirmingAudit(audit);
+      setTaskModalOpen(true);
+      return;
+    }
+    
+    // Optimistically update UI for Outstanding/Cancelled
+    const previousStatus = audit.status;
+    setAudits(prev => prev.map(a => a.id === audit.id ? { ...a, status: newStatus } : a));
+    
+    try {
+      await api.put(`/audits/${audit.id}`, {
+        audit_code: audit.audit_code,
+        audit_offer: audit.audit_offer,
+        status: newStatus
+      });
+      showToast(`Status changed to ${newStatus}`);
+    } catch (err) {
+      setAudits(prev => prev.map(a => a.id === audit.id ? { ...a, status: previousStatus } : a));
+      showToast('Failed to update status', 'error');
+    }
+  };
+
+  const handleTaskModalSave = async () => {
+    try {
+      await api.put(`/audits/${confirmingAudit.id}`, {
+        audit_code: confirmingAudit.audit_code,
+        audit_offer: confirmingAudit.audit_offer,
+        status: 'Confirm'
+      });
+      setTaskModalOpen(false);
+      setConfirmingAudit(null);
+      showToast('Audit confirmed and Task created!');
+      load();
+    } catch (err) {
+      showToast('Task created but failed to update Audit status', 'error');
+    }
   };
 
   const openPay = (id) => { setPayAuditId(id); setPayOpen(true); };
@@ -278,7 +435,7 @@ const AuditsPage = () => {
                   </th>
                 ))}
                 <th className="hidden md:table-cell">Contact</th>
-                <th className="hidden lg:table-cell">Notes</th>
+                <th className="hidden lg:table-cell">Address</th>
                 <th className="text-right">Actions</th>
               </tr>
             </thead>
@@ -300,10 +457,24 @@ const AuditsPage = () => {
                   <td className="font-mono-data text-sm hidden md:table-cell" style={{ color: '#92400E' }}>{formatINR(a.received_amount)}</td>
                   <td className="font-mono-data text-sm font-semibold" style={{ color: a.outstanding_amount > 0 ? '#DC2626' : '#065F46' }}>{formatINR(a.outstanding_amount)}</td>
                   <td className="hidden md:table-cell">
-                    <span className={`badge ${a.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`}>{a.status}</span>
+                    <select
+                      className={`text-xs font-semibold py-1 pl-2 pr-6 rounded-full border appearance-none outline-none cursor-pointer focus:ring-2 focus:ring-offset-1 transition-all shadow-sm ${a.status === 'Confirm' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : a.status === 'Cancelled' ? 'bg-gray-100 text-gray-800 border-gray-300' : 'bg-red-50 text-red-800 border-red-300'}`}
+                      style={{
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='currentColor'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
+                        backgroundRepeat: 'no-repeat',
+                        backgroundPosition: 'right 0.4rem center',
+                        backgroundSize: '0.8em 0.8em',
+                      }}
+                      value={a.status || 'Outstanding'}
+                      onChange={(e) => handleStatusChange(a, e.target.value)}
+                    >
+                      <option value="Outstanding">Outstanding</option>
+                      <option value="Confirm">Confirm</option>
+                      <option value="Cancelled">Cancelled</option>
+                    </select>
                   </td>
                   <td className="hidden md:table-cell">{contactCell(a)}</td>
-                  <td className="text-xs max-w-[160px] hidden lg:table-cell"><div className="line-clamp-2">{a.notes || '—'}</div></td>
+                  <td className="text-xs max-w-[160px] hidden lg:table-cell"><div className="line-clamp-2">{a.address || '—'}</div></td>
                   <td>
                     <div className="flex gap-1 justify-end flex-wrap">
                       <Link to={`/audits/${a.id}`} className="btn btn-outline btn-sm" title="View details" data-testid={`btn-view-audit-${a.audit_code}`}><Eye size={13}/></Link>
@@ -321,6 +492,10 @@ const AuditsPage = () => {
               ))}
             </tbody>
           </table>
+        </div>
+        
+        <div className="mt-4 border-t border-gray-100 bg-white">
+          <Pagination page={page} setPage={setPage} limit={limit} total={total} />
         </div>
       </div>
 
@@ -410,8 +585,8 @@ const AuditsPage = () => {
             </div>
           </div>
           <div>
-            <label className="label">Notes</label>
-            <textarea className="textarea" rows={3} value={form.notes} onChange={(e) => update('notes', e.target.value)} placeholder="Initial site visit completed, half-cell test pending, etc." data-testid="audit-form-notes" />
+            <label className="label">Address</label>
+            <textarea className="textarea" rows={3} value={form.address} onChange={(e) => update('address', e.target.value)} placeholder="Site Location / Address" data-testid="audit-form-address" />
           </div>
           <div>
             <label className="label">File Path <span className="text-xs font-normal" style={{ color: 'var(--cc-text-muted)' }}>(path of the audit report PDF / Excel on your PC)</span></label>
@@ -432,6 +607,15 @@ const AuditsPage = () => {
       </Modal>
 
       {/* Payment modal */}
+      {/* Task Modal */}
+      <StructuralAuditTaskModal
+        open={taskModalOpen}
+        onClose={() => setTaskModalOpen(false)}
+        audit={confirmingAudit}
+        users={users}
+        onSave={handleTaskModalSave}
+      />
+
       <RecordPaymentModal
         open={payOpen}
         onClose={() => setPayOpen(false)}

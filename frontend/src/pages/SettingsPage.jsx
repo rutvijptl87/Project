@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { api, API } from '../lib/api';
-import { Download, Database, ExternalLink, CheckCircle2, Upload } from 'lucide-react';
+import { Download, Database, ExternalLink, CheckCircle2, Upload , X } from 'lucide-react';
 import BackupCard from '../components/BackupCard';
 import RestoreCard from '../components/RestoreCard';
 import UserManagementCard from '../components/UserManagementCard';
@@ -24,7 +24,7 @@ const SettingsPage = () => {
   }, []);
 
   const handleSeed = async () => {
-    if (!window.confirm('Seed demo data? This only runs if the database is empty.')) return;
+    
     const r = await api.post('/seed');
     alert(r.data.seeded ? 'Demo data added!' : 'Data already exists.');
     const s = await api.get('/dashboard/stats');
@@ -34,10 +34,7 @@ const SettingsPage = () => {
   const handleSqliteImport = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!window.confirm(`Import ${file.name}?\nThis will ADD new records to your existing data (duplicates skipped by project code / client name).`)) {
-      if (sqliteRef.current) sqliteRef.current.value = '';
-      return;
-    }
+    
     const replace = window.confirm('Do you also want to REPLACE all existing projects/clients/architects/payments with the imported data?\n\nClick OK to replace, Cancel to merge.');
     setImporting(true);
     setImportMsg(null);

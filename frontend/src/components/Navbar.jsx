@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { NavLink, Link } from 'react-router-dom';
-import { Plus, IndianRupee, Settings as SettingsIcon, LogOut, User, ClipboardList, Menu } from 'lucide-react';
+import { Plus, IndianRupee, Settings as SettingsIcon, LogOut, User, ClipboardList, Menu, Download } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import NotificationBell from './NotificationBell';
 import Swal from 'sweetalert2';
@@ -9,9 +9,31 @@ import Swal from 'sweetalert2';
 const Navbar = ({ onRecordPayment }) => {
   const { user, logout } = useAuth();
   const isEngineer = user?.role === 'engineer' || user?.role === 'draftsman';
+  const isDraftsman = user?.role === 'draftsman';
   const isAccount = user?.role === 'account';
+  const isAdmin = user?.role === 'admin';
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+    setMenuOpen(false);
+  };
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -81,11 +103,21 @@ const Navbar = ({ onRecordPayment }) => {
             <NavLink to="/architects" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setMenuOpen(false)}>Architects</NavLink>
             <NavLink to="/settings" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setMenuOpen(false)}>Settings</NavLink>
             <NavLink to="/invoices" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setMenuOpen(false)}>Invoices</NavLink>
+            <NavLink to="/quotations" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setMenuOpen(false)}>Quotation</NavLink>
+            <NavLink to="/sales-orders" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setMenuOpen(false)}>Sales Orders</NavLink>
           </>
         )}
       </div>
       
       <div className="mt-auto pt-1 pb-1">
+        {deferredPrompt && (
+          <button
+            onClick={handleInstallClick}
+            className="block w-full text-left px-4 py-2 text-sm text-emerald-700 font-semibold hover:bg-emerald-50 flex items-center gap-2"
+          >
+            <Download size={14} /> Install App
+          </button>
+        )}
         <Link
           to="/profile"
           className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
@@ -151,6 +183,7 @@ const Navbar = ({ onRecordPayment }) => {
               <NavLink to="/architects" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-architects">Architects</NavLink>
               <NavLink to="/settings" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-settings"><SettingsIcon size={14} className="inline mr-1" />Settings</NavLink>
               <NavLink to="/invoices" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-invoices">Invoices</NavLink>
+              <NavLink to="/quotations" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-quotations">Quotation</NavLink>
             </>
           )}
         </nav>

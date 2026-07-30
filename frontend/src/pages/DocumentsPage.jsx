@@ -6,7 +6,8 @@ import { downloadFile } from '../lib/download';
 import Modal from '../components/Modal';
 import InlinePicker from '../components/InlinePicker';
 import { logger } from '../lib/logger';
-import { Plus, Search, FileText, Pencil, Trash2, Archive, ArchiveRestore, FileSignature, CheckCircle2, RotateCcw, ArrowUp, ArrowDown, Link2, PauseCircle, XCircle, ArrowRightLeft } from 'lucide-react';
+import Pagination from '../components/Pagination';
+import { Plus, Search, FileText, Pencil, Trash2, Archive, ArchiveRestore, FileSignature, CheckCircle2, RotateCcw, ArrowUp, ArrowDown, Link2, PauseCircle, XCircle, ArrowRightLeft , X } from 'lucide-react';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
@@ -43,6 +44,9 @@ const DocumentsPage = () => {
   const [hiddenIds, setHiddenIds] = useState(new Set());
   const [sortKey, setSortKey] = useState('document_date');
   const [sortDir, setSortDir] = useState('desc'); // 'asc' | 'desc'
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const limit = 25;
 
   // Confirm-order modal
   const [confirmModal, setConfirmModal] = useState(null); // the document being confirmed, or null
@@ -64,7 +68,12 @@ const DocumentsPage = () => {
   const load = async () => {
     setLoading(true);
     try {
-      const params = {};
+      const params = {
+        page,
+        limit,
+        sort_by: sortKey,
+        sort_dir: sortDir,
+      };
       if (typeFilter) params.type_id = typeFilter;
       if (clientFilter) params.client_id = clientFilter;
       if (architectFilter) params.architect_id = architectFilter;
@@ -74,22 +83,24 @@ const DocumentsPage = () => {
         api.get('/document-types'),
         api.get('/clients'),
         api.get('/architects'),
-        api.get('/documents', { params }),
+        api.get('/documents/paginated', { params }),
       ]);
       setTypes(t.data);
       setClients(c.data);
       setArchitects(ar.data);
-      setDocs(d.data);
+      setDocs(d.data.data);
+      setTotal(d.data.total);
     } catch (e) { logger.error('Documents load failed:', e); } finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [typeFilter, clientFilter, architectFilter, showArchived]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [typeFilter, clientFilter, architectFilter, showArchived, page, sortKey, sortDir]);
 
   // Client-side date range filter (backend doesn't yet expose date filtering on documents)
   const visible = useMemo(() => {
     const fromTs = dateFrom ? new Date(dateFrom + 'T00:00:00').getTime() : null;
     const toTs = dateTo ? new Date(dateTo + 'T23:59:59').getTime() : null;
-    const filtered = docs.filter((d) => {
+    return docs.filter((d) => {
       if (hiddenIds.has(d.id)) return false;
       if (fromTs || toTs) {
         const ts = d.document_date ? new Date(d.document_date).getTime() : null;
@@ -99,33 +110,7 @@ const DocumentsPage = () => {
       }
       return true;
     });
-    const getKey = (d) => {
-      switch (sortKey) {
-        case 'doc_number': return d.doc_number || '';
-        case 'doc_type_name': return d.doc_type_name || '';
-        case 'client_name': return (d.client_name || '').toLowerCase();
-        case 'architect_name': return (d.architect_name || '').toLowerCase();
-        case 'plot_place': return (d.plot_place || '').toLowerCase();
-        case 'contact_person': return (d.client_name || '').toLowerCase();
-        case 'status': {
-          // Pending → Confirmed → On Hold → Cancelled (consistent order, easy to scan)
-          const order = { pending: 0, confirmed: 1, on_hold: 2, cancelled: 3 };
-          const s = (d.status || (d.confirmed ? 'confirmed' : 'pending')).toLowerCase();
-          return order[s] ?? 99;
-        }
-        case 'document_date':
-        default:
-          return d.document_date ? new Date(d.document_date).getTime() : 0;
-      }
-    };
-    const sorted = [...filtered].sort((a, b) => {
-      const ka = getKey(a); const kb = getKey(b);
-      if (ka < kb) return sortDir === 'asc' ? -1 : 1;
-      if (ka > kb) return sortDir === 'asc' ? 1 : -1;
-      return 0;
-    });
-    return sorted;
-  }, [docs, hiddenIds, dateFrom, dateTo, sortKey, sortDir]);
+  }, [docs, hiddenIds, dateFrom, dateTo]);
 
   const onSort = (key) => {
     if (sortKey === key) {
@@ -133,6 +118,7 @@ const DocumentsPage = () => {
     } else {
       setSortKey(key);
       setSortDir(key === 'document_date' ? 'desc' : 'asc');
+      setPage(1);
     }
   };
 
@@ -221,7 +207,7 @@ const DocumentsPage = () => {
   };
 
   const handleDelete = (d) => {
-    if (!window.confirm(`Permanently delete document ${d.doc_number}?\n\nYou can undo within 60 seconds.`)) return;
+    
     setHiddenIds((p) => new Set([...p, d.id]));
     schedule({
       label: `Document ${d.doc_number} deleted`,
@@ -238,7 +224,7 @@ const DocumentsPage = () => {
   };
 
   const handleArchive = async (d) => {
-    if (!window.confirm(`Archive document ${d.doc_number}?`)) return;
+    
     try { await api.post(`/documents/${d.id}/archive`); load(); showToast('Archived'); }
     catch { showToast('Failed to archive', 'error'); }
   };
@@ -294,7 +280,7 @@ const DocumentsPage = () => {
   };
 
   const unconfirm = async (d) => {
-    if (!window.confirm(`Reset ${d.doc_number} to Pending?\n\nThis will clear the linked project/audit.`)) return;
+    
     try {
       await api.post(`/documents/${d.id}/status`, { status: 'pending' });
       load();
@@ -303,7 +289,7 @@ const DocumentsPage = () => {
   };
 
   const setHold = async (d) => {
-    if (!window.confirm(`Put ${d.doc_number} ON HOLD?`)) return;
+    
     try {
       await api.post(`/documents/${d.id}/status`, { status: 'on_hold' });
       load();
@@ -312,7 +298,7 @@ const DocumentsPage = () => {
   };
 
   const setCancelled = async (d) => {
-    if (!window.confirm(`CANCEL ${d.doc_number}?\n\nLinked project/audit will be cleared. You can reset to Pending later.`)) return;
+    
     try {
       await api.post(`/documents/${d.id}/status`, { status: 'cancelled' });
       load();
@@ -503,14 +489,14 @@ const DocumentsPage = () => {
                       >
                         {StatusIcon ? <StatusIcon size={12}/> : null} {style.label}
                       </span>
-                      {st === 'confirmed' && d.linked_project_code && (
+                      {st === 'confirmed' && d.linked_project_id && (
                         <Link to={`/projects/${d.linked_project_id}`} className="inline-flex items-center gap-1 link-underline text-[11px]" data-testid={`doc-linked-project-${d.id}`} style={{ color: 'var(--cc-accent)' }}>
-                          <Link2 size={10}/> <span className="font-mono-data">{d.linked_project_code}</span>
+                          <Link2 size={10}/> <span>View Project</span>
                         </Link>
                       )}
-                      {st === 'confirmed' && d.linked_audit_code && (
+                      {st === 'confirmed' && d.linked_audit_id && (
                         <Link to={`/audits/${d.linked_audit_id}`} className="inline-flex items-center gap-1 link-underline text-[11px]" data-testid={`doc-linked-audit-${d.id}`} style={{ color: 'var(--cc-accent)' }}>
-                          <Link2 size={10}/> <span className="font-mono-data">{d.linked_audit_code}</span>
+                          <Link2 size={10}/> <span>View Audit</span>
                         </Link>
                       )}
                     </div>
@@ -540,6 +526,9 @@ const DocumentsPage = () => {
               );})}
             </tbody>
           </table>
+        </div>
+        <div className="mt-4 border-t border-gray-100 bg-white">
+          <Pagination page={page} setPage={setPage} limit={limit} total={total} />
         </div>
       </div>
 
@@ -727,7 +716,7 @@ const DocumentsPage = () => {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="font-medium truncate">
-                          <span className="font-mono-data text-xs font-semibold" style={{ color: 'var(--cc-accent)' }}>{p.project_code}</span>
+                          <span className="font-mono-data text-xs font-semibold" style={{ color: 'var(--cc-accent)' }}>{p.job_no || 'Project'}</span>
                           <span className="ml-2">{p.name}</span>
                         </div>
                         <div className="text-xs truncate" style={{ color: 'var(--cc-text-muted)' }}>

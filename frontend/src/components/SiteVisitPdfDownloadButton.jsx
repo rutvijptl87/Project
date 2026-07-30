@@ -1,7 +1,7 @@
 import React from 'react';
 import { FileText } from 'lucide-react';
 
-const BACKEND = process.env.REACT_APP_BACKEND_URL;
+const BACKEND = (process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '');
 
 /**
  * Site-Visit PDF download — uses direct `window.location.href = url` which is

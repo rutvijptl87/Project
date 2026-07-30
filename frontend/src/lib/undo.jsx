@@ -72,6 +72,7 @@ export const UndoProvider = ({ children }) => {
   useEffect(() => {
     return () => {
       timersRef.current.forEach((t) => clearTimeout(t.commitTimer));
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       timersRef.current.forEach((t) => t.tickTimer && clearInterval(t.tickTimer));
     };
   }, []);

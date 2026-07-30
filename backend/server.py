@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Depends, Form, Body
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Depends, Form, Body, Query
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
@@ -13,9 +13,10 @@ import logging
 import bcrypt
 import secrets
 import shutil
+import time
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
-from typing import List, Optional
+from typing import List, Optional, Union, Any, Dict
 from datetime import datetime, timezone, date, timedelta
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
@@ -42,6 +43,8 @@ ROOT_DIR = Path(__file__).parent
 pdfmetrics.registerFont(TTFont('Roboto', str(Path(__file__).parent / 'fonts' / 'Roboto-Regular.ttf')))
 pdfmetrics.registerFont(TTFont('Roboto-Bold', str(Path(__file__).parent / 'fonts' / 'Roboto-Bold.ttf')))
 pdfmetrics.registerFont(TTFont('Roboto-Medium', str(Path(__file__).parent / 'fonts' / 'Roboto-Medium.ttf')))
+pdfmetrics.registerFontFamily('Roboto', normal='Roboto', bold='Roboto-Bold', italic='Roboto', boldItalic='Roboto-Bold')
+
 load_dotenv(ROOT_DIR / '.env')
 
 mongo_url = os.environ['MONGO_URL']
@@ -55,6 +58,16 @@ import auth as auth_module  # noqa: E402
 auth_module.init(db)
 auth_public_router = APIRouter(prefix="/api")
 auth_public_router.include_router(auth_module.router)
+
+def _parse_bool(val) -> bool:
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.lower() in ("true", "1", "yes", "t")
+    if isinstance(val, (int, float)):
+        return bool(val)
+    return False
+
 
 # Main API router — every endpoint here requires a valid JWT
 api_router = APIRouter(prefix="/api", dependencies=[Depends(auth_module.get_current_user)])
@@ -84,6 +97,526 @@ def format_place_of_supply(pos: str, gstin: str = "") -> str:
     return GST_STATE_CODES.get(code, code)
 
 # ---------------------- MODELS ----------------------
+class JobTypeIn(BaseModel):
+    name: str
+    greetings: Optional[str] = ""
+
+class JobType(JobTypeIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = ""
+    created_at: str
+
+class PaginatedJobTypes(BaseModel):
+    data: List[JobType]
+    total: int
+
+class UOMIn(BaseModel):
+    uom_name: str
+    must_be_whole_number: Optional[bool] = False
+    enabled: Optional[bool] = True
+
+class UOM(UOMIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = ""
+    created_at: str
+
+class PaginatedUOMs(BaseModel):
+    data: List[UOM]
+    total: int
+
+class JobSubTypeIn(BaseModel):
+    name: str
+    parent_job_type_name: Optional[str] = ""
+    description: Optional[str] = ""
+    image: Optional[str] = None
+
+class JobSubType(JobSubTypeIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = ""
+    created_at: str
+
+class PaginatedJobSubTypes(BaseModel):
+    data: List[JobSubType]
+    total: int
+
+class TaxCategoryIn(BaseModel):
+    title: str
+    source_state: Optional[str] = ""
+    disabled: bool = False
+    is_inter_state: bool = False
+    is_reverse_charge: bool = False
+
+class TaxCategory(TaxCategoryIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = ""
+    created_at: str
+
+class PaginatedTaxCategories(BaseModel):
+    data: List[TaxCategory]
+    total: int
+
+class TaxChargeRow(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    type: Optional[str] = "On Net Total"
+    account_head: str
+    tax_rate: Optional[float] = 0.0
+    amount: Optional[float] = 0.0
+    total: Optional[float] = 0.0
+
+class SalesTaxTemplateIn(BaseModel):
+    title: str
+    company: str
+    tax_category: Optional[str] = ""
+    is_default: bool = False
+    disabled: bool = False
+    taxes: List[TaxChargeRow] = []
+
+class SalesTaxTemplate(SalesTaxTemplateIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = ""
+    created_at: str
+
+class PaginatedSalesTaxTemplates(BaseModel):
+    data: List[SalesTaxTemplate]
+    total: int
+
+class PaymentTermDetail(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    payment_term: Optional[str] = ""
+    payment_term_name: Optional[str] = ""
+    description: Optional[str] = ""
+    invoice_portion: float = 0.0
+    due_date_based_on: Optional[str] = "Day(s) after invoice date"
+    credit_days: int = 0
+    credit_months: int = 0
+    mode_of_payment: Optional[str] = ""
+    discount_type: Optional[str] = ""
+    discount: float = 0.0
+    discount_validity_based_on: Optional[str] = "Day(s) after invoice date"
+    discount_validity: int = 0
+
+class PaymentTermIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    payment_term_name: Optional[str] = ""
+    payment_term: Optional[str] = ""
+    invoice_portion: float = 0.0
+    due_date_based_on: Optional[str] = "Day(s) after invoice date"
+    credit_days: int = 0
+    credit_months: int = 0
+    mode_of_payment: Optional[str] = ""
+    description: Optional[str] = ""
+    discount_type: Optional[str] = ""
+    discount: float = 0.0
+    discount_validity_based_on: Optional[str] = "Day(s) after invoice date"
+    discount_validity: int = 0
+    assigned_to: List[str] = []
+    attachments: List[dict] = []
+    tags: List[str] = []
+    shared_with: List[str] = []
+    comments: List[dict] = []
+    likes_users: List[str] = []
+    followers: List[str] = []
+    likes_count: int = 0
+
+class PaymentTermMaster(PaymentTermIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = ""
+    created_at: str
+
+class PaginatedPaymentTerms(BaseModel):
+    data: List[PaymentTermMaster]
+    total: int
+
+class PaymentTermsTemplateIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    template_name: str
+    allocate_payment_based_on_payment_terms: bool = False
+    terms: List[PaymentTermDetail] = []
+    assigned_to: List[str] = []
+    attachments: List[dict] = []
+    tags: List[str] = []
+    shared_with: List[str] = []
+    comments: List[dict] = []
+    likes_users: List[str] = []
+    followers: List[str] = []
+    likes_count: int = 0
+
+class PaymentTermsTemplate(PaymentTermsTemplateIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = ""
+    created_at: str
+
+class PaginatedPaymentTermsTemplates(BaseModel):
+    data: List[PaymentTermsTemplate]
+    total: int
+
+class TermsAndConditionsIn(BaseModel):
+    title: str
+    disabled: bool = False
+    selling: bool = False
+    buying: bool = False
+    hr: bool = False
+    terms: str = ""
+
+class TermsAndConditions(TermsAndConditionsIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = ""
+    created_at: str
+
+class PaginatedTermsAndConditions(BaseModel):
+    data: List[TermsAndConditions]
+    total: int
+
+
+class TestTemplateItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    test_name: Optional[str] = ""
+    points: Optional[Union[float, int, str]] = ""
+    test_image: Optional[str] = ""
+    test_description: Optional[str] = ""
+
+class TestTemplateIn(BaseModel):
+    test_name: str
+    job_type: str = ""
+    job_sub_type: str = ""
+    test_details: List[TestTemplateItem] = Field(default_factory=list)
+
+class TestTemplate(TestTemplateIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = ""
+    created_at: str
+
+class PaginatedTestTemplates(BaseModel):
+    data: List[TestTemplate]
+    total: int
+
+class LetterHeadIn(BaseModel):
+    name: str
+    disabled: bool = False
+    is_default: bool = False
+    content: str = ""
+    footer_content: str = ""
+
+class LetterHead(LetterHeadIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = ""
+    created_at: str
+
+class PaginatedLetterHeads(BaseModel):
+    data: List[LetterHead]
+    total: int
+
+class PrintHeadingIn(BaseModel):
+    print_heading: str
+    description: str = ""
+
+class PrintHeading(PrintHeadingIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = ""
+    created_at: str
+
+class PaginatedPrintHeadings(BaseModel):
+    data: List[PrintHeading]
+    total: int
+
+class OpportunityTypeIn(BaseModel):
+    name: str
+
+class OpportunityType(OpportunityTypeIn):
+    id: str
+
+class OpportunityIn(BaseModel):
+    name: str
+    party_name: str
+    opportunity_type: str = ""
+    status: str = "Open"
+
+class Opportunity(OpportunityIn):
+    id: str
+    created_at: datetime
+
+class EmailTemplateIn(BaseModel):
+    name: str
+    subject: str
+    use_html: bool = False
+    response: str
+
+class EmailTemplate(EmailTemplateIn):
+    id: str
+    created_at: datetime
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = None
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = None
+    last_edited_at: Optional[datetime] = None
+
+class PaginatedEmailTemplates(BaseModel):
+    data: List[EmailTemplate]
+    total: int
+
+class SalesPersonTargetItem(BaseModel):
+    item_group: str = ""
+    fiscal_year: str = ""
+    target_qty: float = 0
+    target_amount: float = 0
+    target_distribution: str = ""
+
+class SalesPersonIn(BaseModel):
+    sales_person_name: str
+    employee: str = ""
+    parent_sales_person: str = ""
+    commission_rate: float = 0
+    is_group: bool = False
+    enabled: bool = True
+    targets: List[SalesPersonTargetItem] = []
+
+class SalesPerson(SalesPersonIn):
+    id: str
+    created_at: datetime
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = None
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = None
+    last_edited_at: Optional[datetime] = None
+
+
+class LeadIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    lead_name: str
+    company_name: Optional[str] = ""
+    email_id: Optional[str] = ""
+    mobile_no: Optional[str] = ""
+    status: Optional[str] = "Lead"
+    source: Optional[str] = "Cold Calling"
+    party: Optional[str] = ""
+    name: Optional[str] = ""
+
+class Lead(LeadIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    created_at: Optional[str] = ""
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = ""
+
+class PaginatedLeads(BaseModel):
+    data: List[Lead]
+    total: int
+
+
+class ItemIn(BaseModel):
+    item_code: str
+    item_group: str
+    hsn_sac: str
+    default_uom: str
+    maintain_stock: bool = False
+    is_fixed_asset: bool = False
+    item_name: Optional[str] = ""
+    description: Optional[str] = ""
+    standard_rate: Optional[float] = 0.0
+    lumpsum_amount: Optional[float] = 0.0
+    is_nil_exempt: bool = False
+    is_non_gst: bool = False
+    image: Optional[str] = ""
+
+class Item(ItemIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = ""
+    created_at: str
+
+class PaginatedItems(BaseModel):
+    data: List[Item]
+    total: int
+
+class ScopeOfWorkIn(BaseModel):
+    job_type_name: str
+    job_sub_type_name: Optional[str] = ""
+    details: str
+
+class ScopeOfWork(ScopeOfWorkIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    name: Optional[str] = "" # E.g. Design-MS Shed
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = ""
+    created_at: str
+
+class PaginatedScopeOfWorks(BaseModel):
+    data: List[ScopeOfWork]
+    total: int
+class AddressIn(BaseModel):
+    link_document_type: str = "Customer"
+    link_name: str
+    gstin: Optional[str] = ""
+    address_type: str = "Billing"
+    gst_category: str = "Unregistered"
+    is_primary_address: Optional[bool] = False
+    is_shipping_address: Optional[bool] = False
+    is_your_company_address: Optional[bool] = False
+    disabled: Optional[bool] = False
+    postal_code: str
+    city: str
+    address_line1: str
+    address_line2: Optional[str] = ""
+    state: str
+    country: str = "India"
+    address_title: Optional[str] = ""
+    email: Optional[str] = ""
+    phone: Optional[str] = ""
+    fax: Optional[str] = ""
+    tax_category: Optional[str] = ""
+
+class Address(AddressIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
+    created_at: str
+
+class PaginatedAddresses(BaseModel):
+    data: List[Address]
+    total: int
+
+class SiteAddressIn(BaseModel):
+    gstin: Optional[str] = ""
+    address_type: str = "Site"
+    gst_category: str = "Unregistered"
+    is_primary_address: Optional[bool] = False
+    is_shipping_address: Optional[bool] = False
+    is_your_company_address: Optional[bool] = False
+    disabled: Optional[bool] = False
+    postal_code: str
+    city: str
+    address_line1: str
+    address_line2: Optional[str] = ""
+    state: str
+    country: str = "India"
+    address_title: Optional[str] = ""
+
+class SiteAddress(SiteAddressIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = ""
+    created_at: str
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
+
+class PaginatedSiteAddresses(BaseModel):
+    data: List[SiteAddress]
+    total: int
+
+
+class ContactEmail(BaseModel):
+    email_id: str
+    is_primary: bool = False
+
+class ContactNumber(BaseModel):
+    number: str
+    is_primary_phone: bool = False
+    is_primary_mobile: bool = False
+
+class ContactLink(BaseModel):
+    link_document_type: str
+    link_name: str
+    link_title: Optional[str] = ""
+
+class ContactIn(BaseModel):
+    first_name: str
+    middle_name: Optional[str] = ""
+    last_name: Optional[str] = ""
+    status: str = "Passive"
+    salutation: Optional[str] = ""
+    designation: Optional[str] = ""
+    gender: Optional[str] = ""
+    user_id: Optional[str] = ""
+    address: Optional[str] = ""
+    company_name: Optional[str] = ""
+    sync_with_google_contacts: bool = False
+    emails: List[ContactEmail] = []
+    numbers: List[ContactNumber] = []
+    links: List[ContactLink] = []
+    is_primary_contact: bool = False
+    is_billing_contact: bool = False
+    department: Optional[str] = ""
+    unsubscribed: bool = False
+
+class Contact(ContactIn):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    last_edited_by_user_id: Optional[str] = None
+    last_edited_by_username: Optional[str] = ""
+    last_edited_at: Optional[str] = ""
+    created_at: str
+
+class PaginatedContacts(BaseModel):
+    data: List[Contact]
+    total: int
+
 class ClientIn(BaseModel):
     name: str
     phone: Optional[str] = ""
@@ -116,6 +649,10 @@ class ArchitectIn(BaseModel):
     phone: Optional[str] = ""
     email: Optional[str] = ""
     firm: Optional[str] = ""
+    address: Optional[str] = ""
+    gstin: Optional[str] = ""
+    pan: Optional[str] = ""
+    place_of_supply: Optional[str] = ""
 
 
 class Architect(ArchitectIn):
@@ -390,6 +927,7 @@ class InvoiceIn(BaseModel):
     hsn_code: str = "998332"
     client_id: str
     client_name: str
+    client_company: Optional[str] = ""
     client_address: Optional[str] = ""
     client_gstin: Optional[str] = ""
     client_mobile: Optional[str] = ""
@@ -421,6 +959,166 @@ class Invoice(InvoiceIn):
 
 class PaginatedInvoices(BaseModel):
     data: List[Invoice]
+    total: int
+
+
+class QuotationItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    item_code: Optional[str] = ""
+    item_name: Optional[str] = ""
+    description: Optional[str] = ""
+    qty: Optional[Union[float, int, str]] = 1.0
+    rate: Optional[Union[float, int, str]] = 0.0
+    amount: Optional[Union[float, int, str]] = 0.0
+    uom: Optional[str] = "Nos"
+    conversion_factor: Optional[Union[float, int, str]] = 1.0
+    stock_uom: Optional[str] = "Nos"
+    stock_qty: Optional[Union[float, int, str]] = 0.0
+    qty_warehouse: Optional[Union[float, int, str]] = 0.0
+    qty_company: Optional[Union[float, int, str]] = 0.0
+    price_list_rate: Optional[Union[float, int, str]] = 0.0
+    rate_of_stock_uom: Optional[Union[float, int, str]] = 0.0
+    is_free_item: bool = False
+    is_alternative: bool = False
+    item_tax_template: Optional[str] = ""
+    valuation_rate: Optional[Union[float, int, str]] = 0.0
+    gross_profit: Optional[Union[float, int, str]] = 0.0
+    weight_per_unit: Optional[Union[float, int, str]] = 0.0
+    total_weight: Optional[Union[float, int, str]] = 0.0
+    weight_uom: Optional[str] = ""
+    warehouse: Optional[str] = ""
+    against_blanket_order: bool = False
+    projected_qty: Optional[Union[float, int, str]] = 0.0
+    additional_notes: Optional[str] = ""
+    page_break: bool = False
+    hsn_sac: Optional[str] = ""
+    is_nil_exempt: bool = False
+    is_non_gst: bool = False
+    image: Optional[str] = ""
+    taxable_value: Optional[Union[float, int, str]] = 0.0
+
+
+class PaymentScheduleItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    payment_term: Optional[str] = ""
+    description: Optional[str] = ""
+    due_date: Optional[str] = ""
+    invoice_portion: Optional[Union[float, int, str]] = 0.0
+    value: Optional[Union[float, int, str]] = 0.0
+
+class SalesOrderIn(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    transaction_date: str
+    valid_till: Optional[str] = ""
+    client_id: str
+    client_name: str
+    client_gstin: Optional[str] = ""
+    client_address: Optional[str] = ""
+    place_of_supply: Optional[str] = ""
+    items: List[dict] = []
+    total_qty: float = 0.0
+    total_net_weight: float = 0.0
+    net_total: float = 0.0
+    total_taxes_and_charges: float = 0.0
+    grand_total: float = 0.0
+    rounded_total: float = 0.0
+    rounding_adjustment: float = 0.0
+    in_words: str = ""
+    taxes: List[dict] = []
+    is_lumpsum: bool = False
+    payment_schedule: List[dict] = []
+    company: str = "Nova Gadget House"
+    currency: str = "INR"
+    order_type: str = "Sales"
+    status: str = "Draft"
+    quotation_ref: str = ""
+
+class SalesOrder(SalesOrderIn):
+    id: str
+    created_at: str
+    updated_at: str
+    created_by_username: str = "Administrator"
+    assigned_to: List[str] = []
+    attachments: List[dict] = []
+    tags: List[str] = []
+    shared_with: List[str] = []
+
+
+
+class BulkActionPayload(BaseModel):
+    action: str
+    ids: List[str]
+    assignee: Optional[str] = None
+    tags: Optional[List[str]] = []
+
+class QuotationIn(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    transaction_date: str
+    client_id: str
+    client_name: str
+    client_gstin: Optional[str] = ""
+    client_address: Optional[str] = ""
+    place_of_supply: Optional[str] = ""
+    subject: Optional[str] = ""
+    items: List[QuotationItem] = []
+    test_details: List[TestTemplateItem] = Field(default_factory=list)
+    scope_of_work_details: Optional[str] = ""
+    scope_of_work_template: Optional[str] = ""
+    gst_percent: float = 18.0
+    grand_total: Optional[Union[float, int]] = 0.0
+    total_taxes_and_charges: Optional[Union[float, int]] = 0.0
+    in_words: Optional[str] = ""
+    status: str = "Draft"
+    is_lumpsum: bool = False
+    order_lost_reason: Optional[str] = ""
+    
+    # Custom fields from ERPNext Details
+    series: str = "SAL-QTN-.YYYY.-"
+    quotation_to: str = "Customer"
+    job_type: Optional[str] = ""
+    job_sub_type: Optional[str] = ""
+    greetings: Optional[str] = ""
+    
+    # Address & Contact fields
+    customer_address: Optional[str] = ""
+    address_display: Optional[str] = ""
+    contact_person: Optional[str] = ""
+    contact_display: Optional[str] = ""
+    contact_mobile: Optional[str] = ""
+    contact_email: Optional[str] = ""
+    
+    # Terms fields
+    payment_terms_template: Optional[str] = ""
+    payment_schedule: List[PaymentScheduleItem] = []
+    tc_name: Optional[str] = ""
+    terms: Optional[str] = ""
+    
+    # More Info fields
+    utm_source: Optional[str] = ""
+    utm_medium: Optional[str] = ""
+    utm_campaign: Optional[str] = ""
+    utm_content: Optional[str] = ""
+    opportunity: Optional[str] = ""
+    supplier_quotation: Optional[str] = ""
+    auto_repeat: Optional[str] = ""
+    letter_head: Optional[str] = ""
+    group_same_items: bool = False
+    select_print_heading: Optional[str] = ""
+    language: Optional[str] = ""
+    internal_notes: Optional[str] = ""
+
+
+class Quotation(QuotationIn):
+    model_config = ConfigDict(extra="allow")
+    id: str
+    quotation_no: str
+    created_by_user_id: Optional[str] = None
+    created_by_username: Optional[str] = ""
+    created_at: str
+
+
+class PaginatedQuotations(BaseModel):
+    data: List[Quotation]
     total: int
 
 
@@ -622,7 +1320,14 @@ async def _enrich_projects_batch(projects: List[dict]) -> List[dict]:
 
 # ---------------------- CLIENTS ----------------------
 @api_router.get("/clients/verify-gstin/{gstin}")
-async def verify_gstin(gstin: str):
+async def verify_gstin(gstin: str, exclude_id: Optional[str] = None):
+    query = {"gstin": {"$regex": f"^{gstin}$", "$options": "i"}}
+    if exclude_id:
+        query["id"] = {"$ne": exclude_id}
+    existing = await db.clients.find_one(query)
+    if existing:
+        raise HTTPException(400, "GSTIN is already present. Please enter another GSTIN.")
+
     api_key = os.environ.get("GSTZEN_API_KEY")
     if not api_key:
         raise HTTPException(500, "GSTZEN_API_KEY is not configured on the server.")
@@ -703,7 +1408,13 @@ async def list_clients():
 
 
 @api_router.get("/clients/paginated", response_model=PaginatedClients)
-async def list_clients_paginated(page: int = 1, limit: int = 25, q: Optional[str] = None):
+async def list_clients_paginated(
+    page: int = 1, 
+    limit: int = 25, 
+    q: Optional[str] = None,
+    sort_by: Optional[str] = "created_at",
+    sort_dir: Optional[str] = "desc"
+):
     skip = (page - 1) * limit
     query = {}
     if q:
@@ -722,7 +1433,11 @@ async def list_clients_paginated(page: int = 1, limit: int = 25, q: Optional[str
         }
     
     total = await db.clients.count_documents(query)
-    items = await db.clients.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    
+    sort_order = -1 if sort_dir == "desc" else 1
+    sort_field = sort_by if sort_by else "created_at"
+    
+    items = await db.clients.find(query, {"_id": 0}).sort(sort_field, sort_order).skip(skip).limit(limit).to_list(limit)
     
     return {"data": items, "total": total}
 
@@ -973,6 +1688,37 @@ async def list_architects():
     items = await db.architects.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return items
 
+class PaginatedArchitects(BaseModel):
+    data: List[Architect]
+    total: int
+
+@api_router.get("/architects/paginated", response_model=PaginatedArchitects)
+async def list_architects_paginated(
+    page: int = 1, 
+    limit: int = 25, 
+    q: Optional[str] = None
+):
+    skip = (page - 1) * limit
+    query: dict = {}
+    
+    if q:
+        s = q.strip()
+        query["$or"] = [
+            {"name": {"$regex": s, "$options": "i"}},
+            {"firm": {"$regex": s, "$options": "i"}},
+            {"phone": {"$regex": s, "$options": "i"}},
+            {"email": {"$regex": s, "$options": "i"}},
+            {"address": {"$regex": s, "$options": "i"}},
+            {"gstin": {"$regex": s, "$options": "i"}},
+            {"pan": {"$regex": s, "$options": "i"}},
+            {"place_of_supply": {"$regex": s, "$options": "i"}}
+        ]
+        
+    total = await db.architects.count_documents(query)
+    items = await db.architects.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    
+    return {"data": items, "total": total}
+
 
 @api_router.get("/architects/{architect_id}")
 async def get_architect_detail(architect_id: str):
@@ -995,6 +1741,7 @@ async def get_architect_detail(architect_id: str):
         {"architect_id": architect_id, "archived": {"$ne": True}}, {"_id": 0}
     ).sort("created_at", -1).to_list(2000)
     for d in documents:
+        await _enrich_document(d)
         # client_name already enriched on write; architect_name fill so card is self-contained
         d.setdefault("architect_name", architect.get("name", ""))
     total_quoted = sum(p.get("quoted_amount", 0) for p in projects) + sum(a.get("total_amount", 0) for a in audits)
@@ -1172,6 +1919,7 @@ async def get_client_detail(client_id: str):
         {"client_id": client_id, "archived": {"$ne": True}}, {"_id": 0}
     ).sort("created_at", -1).to_list(2000)
     for d in documents:
+        await _enrich_document(d)
         d.setdefault("client_name", client_doc.get("name", ""))
     total_quoted = sum(p.get("quoted_amount", 0) for p in projects) + sum(a.get("total_amount", 0) for a in audits)
     total_received = sum(p.get("received_amount", 0) for p in projects) + sum(a.get("received_amount", 0) for a in audits)
@@ -2052,7 +2800,7 @@ class AuditIn(BaseModel):
     client_email_override: Optional[str] = ""
     total_amount: float = 0.0
     status: Optional[str] = "Outstanding"
-    notes: Optional[str] = ""
+    address: Optional[str] = ""
     file_path: Optional[str] = ""        # path on user's PC, e.g. D:\Audits\2026\STR-AUDIT-006.pdf
 
 
@@ -2073,7 +2821,7 @@ class Audit(BaseModel):
     received_amount: float = 0.0
     outstanding_amount: float = 0.0
     status: str = "Outstanding"
-    notes: str = ""
+    address: str = ""
     file_path: str = ""
     archived: bool = False
     last_edited_by_user_id: Optional[str] = None
@@ -2304,7 +3052,7 @@ async def list_audits(archived: Optional[bool] = False, search: Optional[str] = 
             {"audit_offer": {"$regex": s, "$options": "i"}},
             {"report_id": {"$regex": s, "$options": "i"}},
             {"client_name": {"$regex": s, "$options": "i"}},
-            {"notes": {"$regex": s, "$options": "i"}},
+            {"address": {"$regex": s, "$options": "i"}},
         ]
     items = await db.audits.find(query, {"_id": 0}).sort("created_at", -1).to_list(5000)
     for a in items:
@@ -2514,12 +3262,12 @@ def _audit_to_project_shape(a: dict) -> dict:
         "architect_name": "",
         "architect_phone": "",
         "architect_email": "",
-        "site_location": "",
+        "site_location": a.get("address", ""),
         "quoted_amount": float(a.get("total_amount", 0) or 0),
         "received_amount": float(a.get("received_amount", 0) or 0),
         "outstanding_amount": float(a.get("outstanding_amount", 0) or 0),
         "status": a.get("status", "Outstanding"),
-        "notes": a.get("notes", "") or f"Report ID: {a.get('report_id', '')}",
+        "notes": f"Report ID: {a.get('report_id', '')}",
         "created_at": a.get("created_at", _now()),
     }
 
@@ -2639,11 +3387,11 @@ async def export_audit_excel(audit_id: str):
         ("Audit Offer", audit.get("audit_offer", "")),
         ("Report ID", audit.get("report_id", "")),
         ("Client", audit.get("client_name", "")),
-        ("Current Total (INR)", audit.get("total_amount", 0)),
+        ("Total Amount", audit.get("total_amount", 0)),
         ("Received (INR)", audit.get("received_amount", 0)),
         ("Outstanding (INR)", audit.get("outstanding_amount", 0)),
+        ("Address", audit.get("address", "")),
         ("Status", audit.get("status", "")),
-        ("Notes", audit.get("notes", "")),
         ("Created", audit.get("created_at", "")),
     ]
     for label, value in info_rows:
@@ -2893,6 +3641,11 @@ async def auth_verify(data: PasswordVerifyIn):
         raise HTTPException(401, "Incorrect password")
     return {"ok": True, "password_set": True}
 
+@api_router.get("/auth/users")
+async def get_all_users():
+    cursor = db.users.find({}, {"_id": 0, "password_hash": 0})
+    return await cursor.to_list(length=None)
+
 
 @api_router.post("/auth/set-password")
 async def auth_set_password(data: PasswordSetIn):
@@ -3043,7 +3796,7 @@ async def _build_offer_pdf(offer: dict, client_doc: Optional[dict]) -> bytes:
         scope_text = offer.get("description") or f"{offer.get('effective_type', '')} consultancy services as per industry standard practices."
         if offer.get("notes"):
             scope_text += f"\n\nInclusions / Methodology: {offer['notes']}"
-    p = Paragraph(scope_text.replace("\n", "<br/>"), body_style)
+    p = Paragraph(scope_text.replace("<br>", "<br/>").replace("\n", "<br/>"), body_style)
     w_para, h_para = p.wrap(width - 36 * mm, 80 * mm)
     p.drawOn(c, 18 * mm, y - h_para)
     y -= h_para + 8 * mm
@@ -3153,6 +3906,771 @@ async def offer_pdf(offer_id: str):
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ---------------------- QUOTATION & SALES ORDER PDF GENERATION ----------------------
+
+def _clean_quill_html(html_str: str) -> list:
+    import re
+    if not html_str:
+        return []
+    text = str(html_str).replace('&nbsp;', ' ')
+    
+    def rgb_to_hex(match):
+        r, g, b = map(int, match.groups())
+        return f'#{r:02x}{g:02x}{b:02x}'
+        
+    def replace_style_color(match):
+        content = match.group(2)
+        style = match.group(1)
+        rgb_match = re.search(r'color:\s*rgb\((\d+),\s*(\d+),\s*(\d+)\)', style, flags=re.IGNORECASE)
+        hex_match = re.search(r'color:\s*(#[0-9a-fA-F]{3,6})', style, flags=re.IGNORECASE)
+        
+        color = None
+        if rgb_match:
+            color = rgb_to_hex(rgb_match)
+        elif hex_match:
+            color = hex_match.group(1)
+            
+        if color:
+            return f'<font color="{color}">{content}</font>'
+        return content
+
+    text = re.sub(r'<span[^>]*style=["\']([^"\']*)["\'][^>]*>(.*?)</span>', replace_style_color, text, flags=re.IGNORECASE|re.DOTALL)
+    text = re.sub(r'<strong[^>]*style=["\']([^"\']*)["\'][^>]*>(.*?)</strong>', lambda m: f'<b>{replace_style_color(m)}</b>', text, flags=re.IGNORECASE|re.DOTALL)
+
+    text = re.sub(r'<strong\b[^>]*>(.*?)</strong>', r'<b>\1</b>', text, flags=re.IGNORECASE|re.DOTALL)
+    text = re.sub(r'<b\b[^>]*>(.*?)</b>', r'<b>\1</b>', text, flags=re.IGNORECASE|re.DOTALL)
+    text = re.sub(r'<em\b[^>]*>(.*?)</em>', r'<i>\1</i>', text, flags=re.IGNORECASE|re.DOTALL)
+    text = re.sub(r'<i\b[^>]*>(.*?)</i>', r'<i>\1</i>', text, flags=re.IGNORECASE|re.DOTALL)
+    text = re.sub(r'<u\b[^>]*>(.*?)</u>', r'<u>\1</u>', text, flags=re.IGNORECASE|re.DOTALL)
+    
+    text = re.sub(r'</?span[^>]*>', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<br\s*/?>', '<br/>', text, flags=re.IGNORECASE)
+
+    parts = []
+    
+    if not re.search(r'<(p|ul|ol|div)[^>]*>', text, flags=re.IGNORECASE):
+        text = text.replace('\n', '<br/>')
+        if text.strip():
+            parts.append(text.strip())
+        return parts
+
+    for block in re.split(r'(<ul[^>]*>.*?</ul>|<ol[^>]*>.*?</ol>)', text, flags=re.IGNORECASE|re.DOTALL):
+        if block.lower().startswith('<ul') or block.lower().startswith('<ol'):
+            for li in re.findall(r'<li[^>]*>(.*?)</li>', block, flags=re.IGNORECASE|re.DOTALL):
+                clean_li = li.strip()
+                if clean_li:
+                    parts.append('• ' + clean_li)
+        else:
+            sub_blocks = re.split(r'<(?:p|div)[^>]*>(.*?)</(?:p|div)>', block, flags=re.IGNORECASE|re.DOTALL)
+            for i, sub in enumerate(sub_blocks):
+                if sub.strip() and sub.strip() != '<br/>':
+                    clean_sub = sub.strip().replace('\n', '')
+                    parts.append(clean_sub)
+
+    return parts
+
+
+async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_type: str = "QUOTATION") -> bytes:
+    """Generate Creator Consultant branded Quotation / Sales Order PDF using ReportLab.
+    Stamps the Creator Consultant letterhead under every page via _apply_letterhead.
+    """
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    margin = 18 * mm
+    LH_TOP_RESERVE = 22 * mm
+    LH_BOTTOM_RESERVE = 34 * mm
+    page_bottom_limit = LH_BOTTOM_RESERVE
+
+    styles = getSampleStyleSheet()
+    body_style = ParagraphStyle("qo_body", parent=styles["Normal"], fontSize=9.5, leading=14, fontName="Roboto", spaceAfter=0, spaceBefore=0)
+    bold_style = ParagraphStyle("qo_bold", parent=styles["Normal"], fontSize=9.5, leading=14, fontName="Roboto-Bold", spaceAfter=0, spaceBefore=0)
+    title_style = ParagraphStyle("qo_title", parent=styles["Normal"], fontSize=11, leading=15, fontName="Roboto-Bold", textColor=BRAND_GREEN, spaceAfter=0, spaceBefore=0)
+    tbl_hdr_style = ParagraphStyle("qo_th", parent=styles["Normal"], fontSize=9, leading=12, fontName="Roboto-Bold", alignment=1, spaceAfter=0, spaceBefore=0)
+    tbl_cell_style = ParagraphStyle("qo_tc", parent=styles["Normal"], fontSize=9, leading=12, fontName="Roboto", spaceAfter=0, spaceBefore=0)
+    tbl_num_style = ParagraphStyle("qo_tn", parent=styles["Normal"], fontSize=9, leading=12, fontName="Roboto", alignment=2, spaceAfter=0, spaceBefore=0)
+
+    page_num = 1
+
+    def header():
+        if page_num == 1:
+            c.setFillColor(colors.black)
+            c.setFont("Roboto-Bold", 11)
+            doc_no = doc.get("quotation_no") or doc.get("sales_order_no") or doc.get("id") or "DRAFT"
+            c.drawString(margin, height - LH_TOP_RESERVE, doc_no)
+            
+            t_date = doc.get("transaction_date") or doc.get("created_at") or ""
+            try:
+                d_str = datetime.fromisoformat(t_date.replace("Z", "+00:00")).strftime("%d-%m-%Y") if t_date else datetime.now().strftime("%d-%m-%Y")
+            except Exception:
+                d_str = t_date[:10] if t_date else datetime.now().strftime("%d-%m-%Y")
+            c.drawRightString(width - margin, height - LH_TOP_RESERVE, f"Date: {d_str}")
+
+    y = height - LH_TOP_RESERVE - 14 * mm
+    header()
+
+    def check_space(needed_h):
+        nonlocal y, page_num
+        if y - needed_h < page_bottom_limit:
+            c.showPage()
+            page_num += 1
+            header()
+            y = height - LH_TOP_RESERVE - 5 * mm
+
+    # To Section
+    check_space(25 * mm)
+    c.setFont("Roboto-Bold", 10)
+    c.drawString(margin, y, "To,")
+    y -= 4.5 * mm
+    client_name = (client_doc or {}).get("name") or doc.get("client_name") or "Client Name"
+    c.drawString(margin, y, f"{client_name},")
+    y -= 4.5 * mm
+    client_addr = (client_doc or {}).get("address") or doc.get("billing_address") or doc.get("address_display") or ""
+    if client_addr:
+        p_addr = Paragraph(client_addr.replace("<br>", "<br/>").replace("\n", "<br/>"), body_style)
+        _, p_h = p_addr.wrap(width - 2 * margin, 30 * mm)
+        p_addr.drawOn(c, margin, y - p_h)
+        y -= p_h + 5 * mm
+    else:
+        y -= 4 * mm
+
+    # Job Sub Type (Commented out as requested)
+    # job_sub_type_name = doc.get("job_sub_type")
+    # if job_sub_type_name:
+    #     jst_doc = await db.job_sub_types.find_one({"name": job_sub_type_name})
+    #     if jst_doc:
+    #         check_space(15 * mm)
+    #         p_jst = Paragraph(f'<font name="Roboto-Bold">Job Sub Type:</font> {job_sub_type_name}', body_style)
+    #         _, s_h = p_jst.wrap(width - 2 * margin, 30 * mm)
+    #         p_jst.drawOn(c, margin, y - s_h)
+    #         y -= s_h + 4 * mm
+    #         img_val = jst_doc.get("image")
+    #         if img_val:
+    #             img_bytes = None
+    #             if img_val.startswith("data:image/"):
+    #                 try:
+    #                     _, encoded = img_val.split(",", 1)
+    #                     img_bytes = base64.b64decode(encoded)
+    #                 except Exception:
+    #                     pass
+    #             elif img_val.startswith("/api/uploads/") or img_val.startswith("http") or img_val.startswith("uploads/"):
+    #                 fname = img_val.rsplit("/", 1)[-1]
+    #                 for sub in ["job-sub-types", "general", "item-images", "test-images", "auditjobs"]:
+    #                     fp = ROOT_DIR / "uploads" / sub / fname
+    #                     if fp.exists():
+    #                         try:
+    #                             img_bytes = fp.read_bytes()
+    #                             if fp.suffix == '.b64':
+    #                                 b64_content = img_bytes.decode('utf-8')
+    #                                 if "," in b64_content and b64_content.startswith("data:"):
+    #                                     _, b64_str = b64_content.split(",", 1)
+    #                                 else:
+    #                                     b64_str = b64_content
+    #                                 img_bytes = base64.b64decode(b64_str)
+    #                             break
+    #                         except Exception:
+    #                             pass
+    #             if img_bytes:
+    #                 try:
+    #                     ir = ImageReader(io.BytesIO(img_bytes))
+    #                     img_w, img_h = ir.getSize()
+    #                     max_w = 50 * mm
+    #                     max_h = 35 * mm
+    #                     scale = min(max_w / float(img_w), max_h / float(img_h), 1.0)
+    #                     dw = img_w * scale
+    #                     dh = img_h * scale
+    #                     check_space(dh + 5 * mm)
+    #                     c.drawImage(ir, margin, y - dh, width=dw, height=dh, preserveAspectRatio=True)
+    #                     y -= dh + 6 * mm
+    #                 except Exception:
+    #                     pass
+
+    # Site Address resolution
+    site_address_id = doc.get("site_address") or doc.get("site_address_text") or ""
+    sa_text = ""
+    if site_address_id:
+        if isinstance(site_address_id, str) and site_address_id.startswith("SADDR-"):
+            sa_doc = await db.site_addresses.find_one({"id": site_address_id})
+        elif isinstance(site_address_id, str) and site_address_id.startswith("ADDR-"):
+            sa_doc = await db.addresses.find_one({"id": site_address_id})
+        else:
+            sa_doc = None
+
+        if sa_doc:
+            parts_sa = [sa_doc.get("address_line1"), sa_doc.get("address_line2"), sa_doc.get("city"), sa_doc.get("state"), sa_doc.get("country"), sa_doc.get("postal_code")]
+            sa_text = ", ".join([str(p).strip() for p in parts_sa if p and str(p).strip()])
+        else:
+            sa_raw = str(site_address_id).replace("<br>", "<br/>").replace("\n", "<br/>")
+            sa_text = "" if (sa_raw.startswith("SADDR-") or sa_raw.startswith("ADDR-")) else sa_raw
+
+    # Subject: Proposal for [Job Sub-Type] - [Customer] - [Site Address] (For Design job type: omit customer name)
+    check_space(15 * mm)
+    job_type_val = str(doc.get("job_type") or "").strip()
+    job_sub_type_val = str(doc.get("job_sub_type") or doc.get("job_type") or "").strip()
+    cust_val = (client_doc or {}).get("name") or doc.get("client_name") or ""
+    
+    is_design = "design" in job_type_val.lower() or "design" in job_sub_type_val.lower()
+    if not is_design and doc.get("job_sub_type"):
+        jst_doc = await db.job_sub_types.find_one({"name": doc.get("job_sub_type")})
+        if jst_doc and "design" in str(jst_doc.get("parent_job_type_name") or "").lower():
+            is_design = True
+    
+    if doc.get("subject") and str(doc.get("subject")).strip():
+        user_subj = str(doc.get("subject")).strip()
+        if user_subj.lower().startswith("proposal for"):
+            subj = user_subj
+        else:
+            subj = f"Proposal for {user_subj}"
+    else:
+        if is_design:
+            subj_components = [p.strip() for p in [job_sub_type_val, sa_text] if p and str(p).strip()]
+            if subj_components:
+                subj = "Proposal for " + " - ".join(subj_components)
+            else:
+                subj = "Proposal for Design"
+        else:
+            subj_components = [p.strip() for p in [job_sub_type_val, cust_val, sa_text] if p and str(p).strip()]
+            if subj_components:
+                subj = "Proposal for " + " - ".join(subj_components)
+            else:
+                subj = f"Proposal for {cust_val or 'Client'}"
+
+    p_subj = Paragraph(f'<font name="Roboto-Bold">Subject:</font> {subj}', body_style)
+    _, s_h = p_subj.wrap(width - 2 * margin, 30 * mm)
+    p_subj.drawOn(c, margin, y - s_h)
+    y -= s_h + 6 * mm
+
+    # Greetings
+    greetings = doc.get("greetings")
+    if (not greetings or not str(greetings).strip() or str(greetings).strip() in ["<p><br></p>", "<p></p>"]) and doc.get("job_type"):
+        jt_doc = await db.job_types.find_one({"name": doc.get("job_type")})
+        if jt_doc and jt_doc.get("greetings"):
+            greetings = jt_doc.get("greetings")
+    if not greetings or str(greetings).strip() in ["<p><br></p>", "<p></p>"]:
+        greetings = ""
+
+    check_space(25 * mm)
+    
+    greetings_parts = _clean_quill_html(greetings)
+    if greetings_parts:
+        import re
+        for i, p_str in enumerate(greetings_parts):
+            clean_s = p_str.strip()
+            is_heading = False
+            if re.search(r'<h[1-6][^>]*>', clean_s, re.IGNORECASE):
+                is_heading = True
+            else:
+                text_outside_b = re.sub(r'<(b|strong)[^>]*>.*?</\1>', '', clean_s, flags=re.IGNORECASE|re.DOTALL)
+                if not re.sub(r'<[^>]+>', '', text_outside_b).strip() and clean_s:
+                    is_heading = True
+
+            is_bullet = clean_s.startswith('•')
+            gap = 3.5 * mm if is_heading else (1.0 * mm if is_bullet else 0.0 * mm)
+            
+            if is_heading and i > 0:
+                y -= 2.0 * mm
+
+            p_greet = Paragraph(p_str, body_style)
+            _, g_h = p_greet.wrap(width - 2 * margin, 80 * mm)
+            check_space(g_h + gap)
+            p_greet.drawOn(c, margin, y - g_h)
+            y -= g_h + gap
+        y -= 4.5 * mm
+    else:
+        y -= 8 * mm
+
+    # Pricing Details Table
+    check_space(20 * mm)
+    c.setFont("Roboto-Bold", 10.5)
+    c.drawString(margin, y, "Pricing Details-")
+    y -= 6 * mm
+
+    items = doc.get("items") or []
+    if not items:
+        items = [{"description": doc.get("scope_of_work") or "Professional Services", "amount": doc.get("total_amount") or 0}]
+
+    is_lumpsum = _parse_bool(doc.get("is_lumpsum"))
+
+    if is_lumpsum:
+        table_data = [[
+            Paragraph("<b>Sr</b>", tbl_hdr_style),
+            Paragraph("<b>Description</b>", ParagraphStyle("th_desc", parent=tbl_hdr_style, alignment=0)),
+            Paragraph("<b>Amount</b>", tbl_hdr_style)
+        ]]
+    else:
+        table_data = [[
+            Paragraph("<b>Sr</b>", tbl_hdr_style),
+            Paragraph("<b>Description</b>", ParagraphStyle("th_desc", parent=tbl_hdr_style, alignment=0)),
+            Paragraph("<b>Number</b>", tbl_hdr_style),
+            Paragraph("<b>Rate</b>", tbl_hdr_style),
+            Paragraph("<b>Amount</b>", tbl_hdr_style)
+        ]]
+
+    for idx, item in enumerate(items):
+        desc_text = str(item.get("item_code") or item.get("item_name") or item.get("description", "") or "Item").replace("<br>", "<br/>").replace("\n", "<br/>")
+        qty_val = float(item.get("number") or item.get("qty") or 1.0)
+        rate_val = float(item.get("rate", 0) or 0)
+        item_amt = float(item.get("amount") or 0)
+        if item_amt == 0:
+            item_amt = qty_val * rate_val
+        if item_amt == 0 and is_lumpsum:
+            item_amt = float(doc.get("grand_total") or doc.get("net_total") or 0)
+        
+        if is_lumpsum:
+            table_data.append([
+                Paragraph(str(idx + 1), tbl_hdr_style),
+                Paragraph(desc_text, tbl_cell_style),
+                Paragraph(_format_inr(item_amt), tbl_num_style)
+            ])
+        else:
+            table_data.append([
+                Paragraph(str(idx + 1), tbl_hdr_style),
+                Paragraph(desc_text, tbl_cell_style),
+                Paragraph(f"{int(qty_val)}" if qty_val.is_integer() else f"{qty_val:.2f}", tbl_hdr_style),
+                Paragraph(_format_inr(rate_val), tbl_num_style),
+                Paragraph(_format_inr(item_amt), tbl_num_style)
+            ])
+
+    if is_lumpsum:
+        col_widths = [14 * mm, width - 2 * margin - 42 * mm, 28 * mm]
+    else:
+        col_widths = [14 * mm, width - 2 * margin - 82 * mm, 28 * mm, 26 * mm, 28 * mm]
+        
+    t = Table(table_data, colWidths=col_widths, repeatRows=1)
+    t.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#E5E7EB")),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+    ]))
+    _, t_h = t.wrap(width - 2 * margin, height)
+    check_space(t_h + 5 * mm)
+    t.drawOn(c, margin, y - t_h)
+    y -= t_h + 8 * mm
+
+    # Subtotal / Taxes / Total / Amount in words
+    check_space(45 * mm)
+    def _item_amount(item):
+        a = float(item.get("amount") or 0)
+        if a == 0:
+            a = float(item.get("number") or item.get("qty") or 1.0) * float(item.get("rate", 0))
+        return a
+    sub_tot = float(doc.get("sub_total") or doc.get("net_total") or 0)
+    if sub_tot == 0:
+        sub_tot = sum(_item_amount(it) for it in items)
+
+    taxes = doc.get("tax_categories_list") or doc.get("taxes") or []
+    tax_total = 0.0
+    tax_lines = []
+    for tax in taxes:
+        t_name = tax.get("name") or tax.get("account_head") or "Tax"
+        t_amt = float(tax.get("amount") or tax.get("tax_amount") or tax.get("computed_amount") or 0)
+        if t_amt == 0 and tax.get("tax_rate") and tax.get("charge_type") in ("On Net Total", None, ""):
+            t_amt = sub_tot * float(tax.get("tax_rate", 0) or 0) / 100
+        if t_amt > 0:
+            tax_total += t_amt
+            if "%" not in t_name and "(" not in t_name and tax.get("tax_rate"):
+                tr = float(tax.get("tax_rate"))
+                tr_str = f"{int(tr)}" if tr.is_integer() else f"{tr}"
+                t_name = f"{t_name} ({tr_str}%)"
+            tax_lines.append(f"{t_name}: Rs {t_amt:.2f}")
+
+    for t_line in tax_lines:
+        c.setFont("Roboto-Bold", 10.5)
+        c.drawString(margin, y, t_line)
+        y -= 6 * mm
+
+    tot_amt = float(doc.get("total_amount") or doc.get("grand_total") or 0)
+    if tot_amt == 0:
+        tot_amt = float(doc.get("rounded_total") or 0)
+    if tot_amt == 0:
+        tot_amt = sub_tot + tax_total
+
+    c.setFont("Roboto-Bold", 10.5)
+    if tax_total > 0 or taxes:
+        c.drawString(margin, y, f"Grand Total (Inclusive of GST): Rs {tot_amt:.2f}")
+    else:
+        c.drawString(margin, y, f"Grand Total: Rs {tot_amt:.2f}")
+    y -= 6 * mm
+
+    def _words_inr_only(num: float) -> str:
+        if num == 0 or not num:
+            return "Zero"
+        a = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"]
+        b = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+        num_str = str(int(round(num)))
+        if len(num_str) > 9:
+            return "Overflow"
+        num_str = num_str.zfill(9)
+        cr = int(num_str[0:2])
+        lk = int(num_str[2:4])
+        th = int(num_str[4:6])
+        hd = int(num_str[6:7])
+        rest = int(num_str[7:9])
+        
+        parts = []
+        if cr > 0:
+            parts.append((a[cr] if cr < 20 else b[cr // 10] + (" " + a[cr % 10] if cr % 10 != 0 else "")) + " Crore")
+        if lk > 0:
+            parts.append((a[lk] if lk < 20 else b[lk // 10] + (" " + a[lk % 10] if lk % 10 != 0 else "")) + " Lakh")
+        if th > 0:
+            parts.append((a[th] if th < 20 else b[th // 10] + (" " + a[th % 10] if th % 10 != 0 else "")) + " Thousand")
+        if hd > 0:
+            parts.append(a[hd] + " Hundred")
+        if rest > 0:
+            parts.append(a[rest] if rest < 20 else b[rest // 10] + (" " + a[rest % 10] if rest % 10 != 0 else ""))
+        
+        words_str = ", ".join([p.strip() for p in parts[:-1]]) + (f", {parts[-1].strip()}" if len(parts) > 1 else parts[0].strip()) if parts else "Zero"
+        return f"INR {words_str} only."
+
+    words = str(doc.get("amount_in_words") or doc.get("in_words") or "").strip()
+    if words.startswith("INR INR"):
+        words = words[4:].strip()
+    if not words or "zero" in str(words).lower() or (tot_amt > 0 and "zero" in str(words).lower()):
+        words = _words_inr_only(tot_amt)
+
+    words_para = Paragraph(f"<b>Amount in Words:</b> {words}", ParagraphStyle("qo_w", parent=styles["Normal"], fontSize=10.5, leading=14, fontName="Roboto-Bold"))
+    _, w_h = words_para.wrap(width - 2 * margin, 20 * mm)
+    words_para.drawOn(c, margin, y - w_h + 3 * mm)
+    y -= w_h + 6 * mm
+
+    # Scope of Work section
+    sow_details = doc.get("scope_of_work_details") or ""
+    if (not sow_details or not str(sow_details).strip() or str(sow_details).strip() in ["<p><br></p>", "<p></p>"]) and doc.get("job_type"):
+        sow_doc = await db.scope_of_works.find_one({"job_type_name": doc.get("job_type")})
+        if sow_doc and sow_doc.get("details"):
+            sow_details = sow_doc.get("details")
+    if not sow_details or str(sow_details).strip() in ["<p><br></p>", "<p></p>"]:
+        sow_details = ""
+
+    sow_clean_parts = _clean_quill_html(sow_details)
+    
+    if sow_clean_parts:
+        check_space(30 * mm)
+
+        import re
+        for i, p_str in enumerate(sow_clean_parts):
+            clean_s = p_str.strip()
+            is_heading = False
+            if re.search(r'<h[1-6][^>]*>', clean_s, re.IGNORECASE):
+                is_heading = True
+            else:
+                text_outside_b = re.sub(r'<(b|strong)[^>]*>.*?</\1>', '', clean_s, flags=re.IGNORECASE|re.DOTALL)
+                if not re.sub(r'<[^>]+>', '', text_outside_b).strip() and clean_s:
+                    is_heading = True
+
+            is_bullet = clean_s.startswith('•')
+            gap = 3.5 * mm if is_heading else (1.0 * mm if is_bullet else 0.0 * mm)
+
+            if is_heading and i > 0:
+                y -= 2.0 * mm
+
+            p_sow = Paragraph(p_str, body_style)
+            _, ps_h = p_sow.wrap(width - 2 * margin, 40 * mm)
+            check_space(ps_h + gap)
+            p_sow.drawOn(c, margin, y - ps_h)
+            y -= ps_h + gap
+        y -= 6 * mm
+
+    test_details = doc.get("test_details") or []
+    job_type = str(doc.get("job_type") or "").strip().lower()
+    if job_type != "design":
+        # Test Table Intro
+        check_space(20 * mm)
+        p_ti1 = Paragraph("<b>We shall carry out this survey & submit the report. Our professional fees will be as follows.</b>", body_style)
+        _, pti1_h = p_ti1.wrap(width - 2 * margin, 25 * mm)
+        p_ti1.drawOn(c, margin, y - pti1_h)
+        y -= pti1_h + 4 * mm
+
+        p_ti2 = Paragraph("<b>The cost includes NDT (Advance Test)</b>", body_style)
+        _, pti2_h = p_ti2.wrap(width - 2 * margin, 25 * mm)
+        p_ti2.drawOn(c, margin, y - pti2_h)
+        y -= pti2_h + 5 * mm
+
+        p_ti3 = Paragraph("<b>Following work is included -</b>", body_style)
+        _, pti3_h = p_ti3.wrap(width - 2 * margin, 25 * mm)
+        p_ti3.drawOn(c, margin, y - pti3_h)
+        y -= pti3_h + 5 * mm
+
+        # Tests / Scope of work
+        if test_details:
+            check_space(20 * mm)
+
+            t_data = [[
+                Paragraph("<b>Sr</b>", tbl_hdr_style),
+                Paragraph("<b>Test Name</b>", ParagraphStyle("th_t", parent=tbl_hdr_style, alignment=0)),
+                Paragraph("<b>Points</b>", tbl_hdr_style)
+            ]]
+            for idx, td in enumerate(test_details):
+                t_data.append([
+                    Paragraph(str(idx + 1), tbl_hdr_style),
+                    Paragraph(str(td.get("test_name", "")), tbl_cell_style),
+                    Paragraph(str(td.get("points", 0)), tbl_hdr_style)
+                ])
+            t_tests = Table(t_data, colWidths=[14 * mm, width - 2 * margin - 34 * mm, 20 * mm], repeatRows=1)
+            t_tests.setStyle(TableStyle([
+                ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#F1F5F9")),
+                ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                ('TOPPADDING', (0,0), (-1,-1), 4),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ]))
+            _, tt_h = t_tests.wrap(width - 2 * margin, height)
+            check_space(tt_h + 6 * mm)
+            t_tests.drawOn(c, margin, y - tt_h)
+            y -= tt_h + 8 * mm
+
+    # Payment Schedule Table
+    sch_items = doc.get("payment_schedule") or []
+    if sch_items:
+        check_space(25 * mm)
+        c.setFont("Roboto-Bold", 10.5)
+        c.drawString(margin, y, "Payment Schedule")
+        y -= 6 * mm
+        sch_data = [[
+            Paragraph("<b>Sr</b>", tbl_hdr_style),
+            Paragraph("<b>Payment Term</b>", ParagraphStyle("th_pt", parent=tbl_hdr_style, alignment=0)),
+            Paragraph("<b>Portion</b>", tbl_hdr_style),
+            Paragraph("<b>Amount (₹)</b>", tbl_hdr_style)
+        ]]
+        tot_amt_for_sch = float(doc.get("grand_total") or doc.get("rounded_total") or doc.get("net_total") or doc.get("total_amount") or 0)
+        for idx, sch in enumerate(sch_items):
+            portion_val = sch.get("invoice_portion", "")
+            p_float = 0.0
+            try:
+                p_float = float(str(portion_val).replace("%", "").strip())
+                portion_str = f"{p_float:.2f}".rstrip("0").rstrip(".") + "%"
+            except Exception:
+                portion_str = f"{portion_val}%" if portion_val and "%" not in str(portion_val) else str(portion_val)
+
+            sch_amt = float(sch.get("payment_amount", sch.get("amount", sch.get("value", 0))) or 0)
+            if sch_amt == 0 and tot_amt_for_sch > 0 and p_float > 0:
+                sch_amt = (p_float / 100.0) * tot_amt_for_sch
+
+            sch_data.append([
+                Paragraph(str(idx + 1), tbl_hdr_style),
+                Paragraph(str(sch.get("payment_term", "")), tbl_cell_style),
+                Paragraph(portion_str, tbl_hdr_style),
+                Paragraph(_format_inr(sch_amt), tbl_num_style)
+            ])
+        t_sch = Table(sch_data, colWidths=[14 * mm, width - 2 * margin - 64 * mm, 25 * mm, 25 * mm], repeatRows=1)
+        t_sch.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#F1F5F9")),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ]))
+        _, sch_h = t_sch.wrap(width - 2 * margin, height)
+        check_space(sch_h + 6 * mm)
+        t_sch.drawOn(c, margin, y - sch_h)
+        y -= sch_h + 8 * mm
+
+    # Terms & Conditions
+    terms = doc.get("terms_conditions") or doc.get("terms") or ""
+    if (not terms or not str(terms).strip() or str(terms).strip() in ["<p><br></p>", "<p></p>"]) and doc.get("tc_name"):
+        tc_doc = await db.terms_and_conditions.find_one({"title": doc.get("tc_name")})
+        if tc_doc and tc_doc.get("terms"):
+            terms = tc_doc.get("terms")
+    if not terms or str(terms).strip() in ["<p><br></p>", "<p></p>"]:
+        terms = ""
+    if terms:
+        check_space(35 * mm)
+        c.setFont("Roboto-Bold", 10.5)
+        c.drawString(margin, y, "Terms & Conditions")
+        y -= 6 * mm
+        
+        terms_parts = _clean_quill_html(terms)
+        if terms_parts:
+            for p_str in terms_parts:
+                p_tc = Paragraph(p_str, body_style)
+                _, tc_h = p_tc.wrap(width - 2 * margin, 40 * mm)
+                check_space(tc_h + 0 * mm)
+                p_tc.drawOn(c, margin, y - tc_h)
+                y -= tc_h + 0 * mm
+        y -= 6 * mm
+
+    # Sign off & Bank Details Box
+    check_space(50 * mm)
+    y -= 2 * mm
+    c.setFont("Roboto", 9.5)
+    c.drawString(margin, y, "Thanking You,")
+    c.drawString(margin, y - 4.5 * mm, "Yours faithfully,")
+    
+    c.setFont("Roboto-Bold", 9.5)
+    c.drawString(margin, y - 32 * mm, "M/S. CREATOR RCC CONSULTANT LLP")
+    c.drawString(margin, y - 36.5 * mm, "Mr. Rutvij Patel")
+    c.setFont("Roboto", 9.5)
+    c.drawString(margin, y - 41 * mm, "Consulting Structural Engineer")
+
+    # Bank Box on right
+    box_w = 80 * mm
+    box_h = 32 * mm
+    box_x = width - margin - box_w
+    box_y = y - box_h - 7 * mm
+    c.setStrokeColor(colors.black)
+    c.setLineWidth(0.8)
+    c.rect(box_x, box_y, box_w, box_h, fill=0, stroke=1)
+    c.setFont("Roboto-Bold", 9.5)
+    c.drawString(box_x + 3 * mm, box_y + box_h - 6 * mm, "KOTAK BANK,")
+    c.setFont("Roboto", 8.5)
+    c.drawString(box_x + 3 * mm, box_y + box_h - 11 * mm, "CREATOR RCC CONSULTANT LLP")
+    c.drawString(box_x + 3 * mm, box_y + box_h - 16 * mm, "A/C - 9987076241")
+    c.drawString(box_x + 3 * mm, box_y + box_h - 21 * mm, "IFSC - KKBK0001360")
+    c.drawString(box_x + 3 * mm, box_y + box_h - 26 * mm, "Branch - Airoli, Sector 6")
+    y = box_y - 6 * mm
+
+    # Draw any test descriptions & images right at the end on a new page
+    has_test_section = any((td.get("test_description") or td.get("test_image")) for td in test_details)
+    if has_test_section:
+        c.showPage()
+        page_num += 1
+        header()
+        y = height - LH_TOP_RESERVE - 5 * mm
+        for td in test_details:
+            td_desc = td.get("test_description") or ""
+            td_img = td.get("test_image") or ""
+            if td_desc or td_img:
+                check_space(25 * mm)
+                c.setFont("Roboto-Bold", 10.5)
+                c.drawString(margin, y, str(td.get("test_name", "Test Detail")))
+                y -= 5 * mm
+                if td_desc:
+                    p_td = Paragraph(str(td_desc).replace("<br>", "<br/>").replace("\n", "<br/>"), body_style)
+                    _, pd_h = p_td.wrap(width - 2 * margin, height)
+                    check_space(pd_h + 5 * mm)
+                    p_td.drawOn(c, margin, y - pd_h)
+                    y -= pd_h + 6 * mm
+                if td_img:
+                    img_bytes = None
+                    if td_img.startswith("data:image/"):
+                        try:
+                            _, encoded = td_img.split(",", 1)
+                            img_bytes = base64.b64decode(encoded)
+                        except Exception:
+                            pass
+                    elif td_img.startswith("/api/uploads/") or td_img.startswith("http") or td_img.startswith("uploads/"):
+                        fname = td_img.rsplit("/", 1)[-1]
+                        for sub in ["test-images", "site-visits", "general", "item-images"]:
+                            fp = ROOT_DIR / "uploads" / sub / fname
+                            if fp.exists():
+                                try:
+                                    raw = fp.read_bytes()
+                                    if fp.suffix.lower() == '.b64':
+                                        b64_content = raw.decode('utf-8', errors='ignore')
+                                        if ',' in b64_content and b64_content.startswith('data:'):
+                                            _, b64_str = b64_content.split(',', 1)
+                                        else:
+                                            b64_str = b64_content
+                                        img_bytes = base64.b64decode(b64_str.strip())
+                                    else:
+                                        img_bytes = raw
+                                    break
+                                except Exception as e:
+                                    print(f"[pdf] Local img read error for {fname}: {e}")
+                    if not img_bytes:
+                        img_bytes = await _load_photo_bytes(td_img)
+                    if not img_bytes and td.get("test_name"):
+                        try:
+                            t_match = None
+                            if doc.get("test_template"):
+                                t_match = await db.test_templates.find_one({"test_name": doc["test_template"]})
+                            if not t_match:
+                                t_match = await db.test_templates.find_one({"test_details.test_name": td.get("test_name")})
+                            if t_match and t_match.get("test_details"):
+                                for t_td in t_match["test_details"]:
+                                    if t_td.get("test_name") == td.get("test_name") and t_td.get("test_image"):
+                                        fb_url = t_td["test_image"]
+                                        fname = fb_url.rsplit("/", 1)[-1]
+                                        for sub in ["test-images", "site-visits", "general", "item-images"]:
+                                            fp = ROOT_DIR / "uploads" / sub / fname
+                                            if fp.exists():
+                                                try:
+                                                    raw = fp.read_bytes()
+                                                    if fp.suffix.lower() == '.b64':
+                                                        b64_content = raw.decode('utf-8', errors='ignore')
+                                                        if ',' in b64_content and b64_content.startswith('data:'):
+                                                            _, b64_str = b64_content.split(',', 1)
+                                                        else:
+                                                            b64_str = b64_content
+                                                        img_bytes = base64.b64decode(b64_str.strip())
+                                                    else:
+                                                        img_bytes = raw
+                                                    break
+                                                except Exception:
+                                                    pass
+                                        if not img_bytes:
+                                            img_bytes = await _load_photo_bytes(fb_url)
+                                        break
+                        except Exception as e:
+                            print(f"[pdf] Test template fallback failed: {e}")
+                    if img_bytes:
+                        try:
+                            ir = ImageReader(io.BytesIO(img_bytes))
+                            img_w, img_h = ir.getSize()
+                            max_w = width - 2 * margin
+                            max_h = 75 * mm
+                            scale = min(max_w / float(img_w), max_h / float(img_h), 1.0)
+                            dw = img_w * scale
+                            dh = img_h * scale
+                            check_space(dh + 6 * mm)
+                            c.drawImage(ir, margin + (max_w - dw) / 2, y - dh, width=dw, height=dh, preserveAspectRatio=True)
+                            y -= dh + 8 * mm
+                        except Exception as e:
+                            print(f"[pdf] Test image draw failed: {e}")
+
+    c.showPage()
+    c.save()
+    pdf_bytes = buf.getvalue()
+    buf.close()
+    return _apply_letterhead(pdf_bytes)
+
+
+@api_router.get("/quotations/{quotation_id}/pdf")
+async def quotation_pdf(quotation_id: str):
+    doc = await db.quotations.find_one({"id": quotation_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Quotation not found")
+    client_doc = None
+    if doc.get("client_id"):
+        client_doc = await db.clients.find_one({"id": doc["client_id"]}, {"_id": 0})
+    pdf_bytes = await _build_quotation_or_so_pdf(doc, client_doc, doc_type="QUOTATION")
+    fname = f"quotation_{doc.get('quotation_no') or doc.get('id', 'draft')}.pdf".replace(" ", "_")
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{fname}"',
+            "Cache-Control": "no-cache, no-store, must-revalidate"
+        }
+    )
+
+
+@api_router.get("/sales-orders/{so_id}/pdf")
+async def sales_order_pdf(so_id: str):
+    try:
+        return await _sales_order_pdf_inner(so_id)
+    except Exception as e:
+        import traceback; traceback.print_exc(); open("err.txt", "w").write(traceback.format_exc())
+        raise
+
+async def _sales_order_pdf_inner(so_id: str):
+    doc = await db.sales_orders.find_one({"id": so_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Sales Order not found")
+    client_doc = None
+    if doc.get("client_id"):
+        client_doc = await db.clients.find_one({"id": doc["client_id"]}, {"_id": 0})
+    pdf_bytes = await _build_quotation_or_so_pdf(doc, client_doc, doc_type="SALES ORDER")
+    fname = f"sales_order_{doc.get('sales_order_no') or doc.get('id', 'draft')}.pdf".replace(" ", "_")
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'}
     )
 
 
@@ -3880,7 +5398,6 @@ async def seed_demo():
 # ---------------------- DOCUMENTS MODULE ----------------------
 
 DEFAULT_DOCUMENT_TYPES = [
-    ("Quotation", "QT"),
     ("PMC Quotation", "PMC-QT"),
     ("Inspection Report Letter", "INSP"),
     ("Acceptance Letter", "ACC"),
@@ -3900,6 +5417,52 @@ DEFAULT_DOCUMENT_TYPES = [
     ("Declaration Certificate", "DEC"),
 ]
 
+async def _seed_tax_categories_if_missing():
+    count = await db.tax_categories.count_documents({})
+    if count == 0:
+        logger.info("Seeding tax categories...")
+        seed_data = [
+            {"id": "registered-composition", "title": "Registered Composition", "source_state": "", "disabled": False, "is_inter_state": False, "is_reverse_charge": False, "created_at": _now()},
+            {"id": "reverse-charge-out-state", "title": "Reverse Charge Out-State", "source_state": "", "disabled": False, "is_inter_state": True, "is_reverse_charge": True, "created_at": _now()},
+            {"id": "reverse-charge-in-state", "title": "Reverse Charge In-State", "source_state": "", "disabled": False, "is_inter_state": False, "is_reverse_charge": True, "created_at": _now()},
+            {"id": "out-state", "title": "Out-State", "source_state": "", "disabled": False, "is_inter_state": True, "is_reverse_charge": False, "created_at": _now()},
+            {"id": "in-state", "title": "In-State", "source_state": "", "disabled": False, "is_inter_state": False, "is_reverse_charge": False, "created_at": _now()}
+        ]
+        await db.tax_categories.insert_many(seed_data)
+
+async def _seed_sales_tax_templates_if_missing():
+    count = await db.sales_tax_templates.count_documents({})
+    if count == 0:
+        logger.info("Seeding sales tax templates...")
+        seed_data = [
+            {
+                "id": "output-gst-in-state", 
+                "title": "Output GST In-state", 
+                "company": "Creator Consultant", 
+                "tax_category": "In-State",
+                "is_default": False, 
+                "disabled": False,
+                "taxes": [
+                    {"type": "On Net Total", "account_head": "Output CGST - CC", "tax_rate": 9.0, "amount": 0.0, "total": 0.0},
+                    {"type": "On Net Total", "account_head": "Output SGST - CC", "tax_rate": 9.0, "amount": 0.0, "total": 0.0}
+                ],
+                "created_at": _now()
+            },
+            {
+                "id": "output-gst-out-state", 
+                "title": "Output GST Out-state", 
+                "company": "Creator Consultant", 
+                "tax_category": "Out-State",
+                "is_default": False, 
+                "disabled": False,
+                "taxes": [
+                    {"type": "On Net Total", "account_head": "Output IGST - CC", "tax_rate": 18.0, "amount": 0.0, "total": 0.0}
+                ],
+                "created_at": _now()
+            }
+        ]
+        await db.sales_tax_templates.insert_many(seed_data)
+
 
 async def _seed_document_types_if_missing():
     if await db.document_types.count_documents({}) > 0:
@@ -3912,6 +5475,8 @@ async def _seed_document_types_if_missing():
         # One-shot migration: drop "Audit Offer" doc type entirely. Audit offer
         # numbers are now entered manually on the Audit form (no auto-numbering).
         await db.document_types.delete_many({"prefix": "AUD-OFR"})
+        # One-shot migration: drop "Quotation" doc type.
+        await db.document_types.delete_many({"prefix": "QT"})
         return
     now = _now()
     docs = []
@@ -4337,7 +5902,7 @@ async def document_pdf(doc_id: str):
             continue
         c.setFont("Roboto-Bold", 10)
         c.drawString(label_x, y, f"{label}:")
-        para = Paragraph(str(val).replace("\n", "<br/>"), body_style)
+        para = Paragraph(str(val).replace("<br>", "<br/>").replace("\n", "<br/>"), body_style)
         avail_w = width - value_x - margin
         w, h = para.wrap(avail_w, 100 * mm)
         para.drawOn(c, value_x, y - h + 11)
@@ -5000,21 +6565,39 @@ def _photo_to_image_reader(p: dict) -> Optional[ImageReader]:
 
 
 async def _load_photo_bytes(url: str) -> Optional[bytes]:
-    """Download a site-visit photo's raw bytes for the PDF builder. Tries disk
-    first (legacy files), then GridFS by filename."""
+    """Download an image's raw bytes for the PDF builder. Tries disk folders
+    first (test-images, site-visits, item-images, general), decoding .b64 if needed,
+    then tries GridFS by filename."""
     if not url:
         return None
     fname = url.rsplit("/", 1)[-1]
-    fpath = SITE_VISIT_UPLOAD_DIR / fname
-    if fpath.exists():
-        try:
-            return fpath.read_bytes()
-        except Exception:
-            pass
+    for folder in [TEST_IMAGE_UPLOAD_DIR, SITE_VISIT_UPLOAD_DIR, ITEM_IMAGE_UPLOAD_DIR, UPLOAD_ROOT / "general"]:
+        fpath = folder / fname
+        if fpath.exists():
+            try:
+                raw = fpath.read_bytes()
+                if fpath.suffix.lower() == '.b64':
+                    b64_content = raw.decode('utf-8', errors='ignore')
+                    if ',' in b64_content and b64_content.startswith('data:'):
+                        _, b64_str = b64_content.split(',', 1)
+                    else:
+                        b64_str = b64_content
+                    return base64.b64decode(b64_str.strip())
+                return raw
+            except Exception:
+                pass
     try:
         stream = await _photo_bucket.open_download_stream_by_name(fname)
         try:
-            return await stream.read()
+            raw = await stream.read()
+            if fname.lower().endswith('.b64'):
+                b64_content = raw.decode('utf-8', errors='ignore')
+                if ',' in b64_content and b64_content.startswith('data:'):
+                    _, b64_str = b64_content.split(',', 1)
+                else:
+                    b64_str = b64_content
+                return base64.b64decode(b64_str.strip())
+            return raw
         finally:
             try:
                 stream.close()
@@ -5387,72 +6970,84 @@ async def _send_task_due_reminders() -> int:
     today = datetime.now(timezone.utc).date()
     sent_count = 0
     
-    # Only look at incomplete tasks that have a due_date and an assigned user
-    q = {
-        "status": "pending",
-        "due_date": {"$exists": True, "$ne": None, "$ne": ""},
-        "assigned_to_user_id": {"$exists": True, "$ne": None, "$ne": ""}
-    }
+    # Only look at incomplete tasks
+    q = {"status": "pending"}
     
     async for task in db.tasks.find(q):
-        try:
-            due_date = datetime.fromisoformat(task["due_date"].split("T")[0]).date()
-        except Exception:
-            continue
-            
-        start_date = None
-        if task.get("start_date"):
-            try:
-                start_date = datetime.fromisoformat(task["start_date"].split("T")[0]).date()
-            except Exception:
-                pass
+        reminders = []
+        assigned_user = task.get("assigned_to_user_id")
+        
+        if task.get("category") == "structural":
+            if task.get("site_visit_date") and task.get("site_visit_status", "todo") == "todo" and assigned_user:
+                reminders.append((task["site_visit_date"], assigned_user, "Site Visit"))
+            if task.get("preparation_date") and task.get("preparation_status", "todo") == "todo" and assigned_user:
+                reminders.append((task["preparation_date"], assigned_user, "Preparation"))
+            if task.get("submission_date") and task.get("submission_status", "todo") == "todo":
+                reminders.append((task["submission_date"], "ACCOUNTANTS", "Submission"))
+        else:
+            if task.get("due_date") and assigned_user:
+                reminders.append((task["due_date"], assigned_user, "Task Due"))
                 
-        # Calculate timeline
-        if start_date:
-            timeline_days = (due_date - start_date).days
-        else:
-            timeline_days = 3 # treat as > 2 days
+        for date_str, target, phase_name in reminders:
+            try:
+                due_date = datetime.fromisoformat(date_str.split("T")[0]).date()
+            except Exception:
+                continue
+                
+            start_date = None
+            if task.get("start_date"):
+                try:
+                    start_date = datetime.fromisoformat(task["start_date"].split("T")[0]).date()
+                except Exception:
+                    pass
+                    
+            if start_date:
+                timeline_days = (due_date - start_date).days
+            else:
+                timeline_days = 3
+                
+            days_until_due = (due_date - today).days
             
-        days_until_due = (due_date - today).days
-        
-        should_send = False
-        message = ""
-        
-        if timeline_days <= 2:
-            # Short timeline: only send on due date
-            if days_until_due == 0:
-                should_send = True
-                message = f"Reminder: Task '{task.get('work', 'Untitled')}' is due today!"
-        else:
-            # Long timeline: send on due_date - 1 and due_date
+            should_send = False
+            message = ""
+            
             if days_until_due == 1:
                 should_send = True
-                message = f"Reminder: Task '{task.get('work', 'Untitled')}' is due tomorrow!"
+                message = f"Reminder: '{task.get('work', 'Untitled')}' {phase_name} is due tomorrow!"
             elif days_until_due == 0:
                 should_send = True
-                message = f"Reminder: Task '{task.get('work', 'Untitled')}' is due today!"
-                
-        if should_send:
-            doc = {
-                "id": _new_id(),
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "title": "Task Due Reminder",
-                "message": message,
-                "target_user_id": task["assigned_to_user_id"],
-                "target_role": None,
-                "related_entity_id": task["id"],
-                "read_by": []
-            }
-            await db.notifications.insert_one(doc)
-            
-            # Send push notification to the assigned user
-            await _push_to_user(task["assigned_to_user_id"], {
-                "title": "Task Due Reminder",
-                "body": message,
-                "url": "/tasks"
-            })
-            
-            sent_count += 1
+                message = f"Reminder: '{task.get('work', 'Untitled')}' {phase_name} is due today!"
+            elif days_until_due < 0:
+                should_send = True
+                overdue_days = abs(days_until_due)
+                message = f"OVERDUE: '{task.get('work', 'Untitled')}' {phase_name} is overdue by {overdue_days} day{'s' if overdue_days != 1 else ''}!"
+                    
+            if should_send:
+                targets = []
+                if target == "ACCOUNTANTS":
+                    accs = await db.users.find({"role": "account"}).to_list(None)
+                    targets = [a["id"] for a in accs]
+                else:
+                    targets = [target]
+                    
+                for t_id in targets:
+                    doc = {
+                        "id": _new_id(),
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "title": f"{phase_name} Overdue!" if days_until_due < 0 else f"{phase_name} Reminder",
+                        "message": message,
+                        "target_user_id": t_id,
+                        "target_role": None,
+                        "related_entity_id": task["id"],
+                        "read_by": []
+                    }
+                    await db.notifications.insert_one(doc)
+                    await _push_to_user(t_id, {
+                        "title": f"{phase_name} Overdue!" if days_until_due < 0 else f"{phase_name} Reminder",
+                        "body": message,
+                        "url": "/tasks"
+                    })
+                    sent_count += 1
             
     if sent_count > 0:
         logger.info(f"Housekeeping: sent {sent_count} task due reminders")
@@ -5693,15 +7288,27 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
 # ---------------------- TASKS ----------------------
 
 class TaskIn(BaseModel):
-    category: str                        # "engineering" or "accounting"
+    category: str                        # "engineering", "accounting", or "structural"
     project_id: Optional[str] = None     # Reference to project for engineering/accounting
-    audit_id: Optional[str] = None       # Reference to audit for accounting
+    audit_id: Optional[str] = None       # Reference to audit for accounting/structural
+    audit_offer_no: Optional[str] = ""   # Pre-filled from audit for structural
     site_location: Optional[str] = ""    # Pre-filled from project, editable
-    work: str                            # Required short work summary
-    description: Optional[str] = ""      # extra notes / description
+    work: Optional[str] = ""             # Optional short work summary
+    description: Optional[str] = ""      # extra notes / description (kept for backward compatibility with engineering/structural)
+    notes: Optional[str] = ""            # New field for accounting
+    contact_name: Optional[str] = ""
+    contact_no: Optional[str] = ""
     start_date: Optional[str] = None
-    due_date: Optional[str] = None
+    due_date: Optional[str] = None       # kept for engineering
+    follow_up_date: Optional[str] = None # new field for accounting
+    site_visit_date: Optional[str] = None
+    site_visit_status: str = "todo"
+    submission_date: Optional[str] = None
+    submission_status: str = "todo"
+    preparation_date: Optional[str] = None
+    preparation_status: str = "todo"
     assigned_to_user_id: Optional[str] = None
+    assigned_to_accountant_id: Optional[str] = None
 
 
 class TaskOut(BaseModel):
@@ -5712,16 +7319,35 @@ class TaskOut(BaseModel):
     project_code: str = ""
     audit_id: Optional[str] = None
     audit_code: str = ""
+    audit_offer_no: str = ""
     site_location: Optional[str] = ""
-    work: str
+    work: str = ""
     description: str = ""
+    notes: str = ""
+    contact_name: str = ""
+    contact_no: str = ""
     start_date: Optional[str] = None
     due_date: Optional[str] = None
+    follow_up_date: Optional[str] = None
+    site_visit_date: Optional[str] = None
+    site_visit_status: str = "todo"
+    site_visit_completed_at: Optional[str] = None
+    submission_date: Optional[str] = None
+    submission_status: str = "todo"
+    submission_completed_at: Optional[str] = None
+    preparation_date: Optional[str] = None
+    preparation_status: str = "todo"
+    preparation_completed_at: Optional[str] = None
     status: str = "pending"
+    completed_at: Optional[str] = None
     assigned_to_user_id: Optional[str] = None
     assigned_to_name: str = ""
     assigned_to_username: str = ""
     assigned_to_color: str = ""
+    assigned_to_accountant_id: Optional[str] = None
+    assigned_accountant_name: str = ""
+    assigned_accountant_username: str = ""
+    assigned_accountant_color: str = ""
     created_by_user_id: Optional[str] = None
     created_by_username: str = ""
     created_at: str
@@ -5742,6 +7368,13 @@ async def _enrich_task(t: dict):
             t["assigned_to_name"] = u.get("name") or ""
             t["assigned_to_username"] = u.get("username") or ""
             t["assigned_to_color"] = u.get("color") or ""
+
+    if t.get("assigned_to_accountant_id"):
+        u = await db.users.find_one({"id": t["assigned_to_accountant_id"]}, {"_id": 0, "name": 1, "username": 1, "color": 1})
+        if u:
+            t["assigned_accountant_name"] = u.get("name") or ""
+            t["assigned_accountant_username"] = u.get("username") or ""
+            t["assigned_accountant_color"] = u.get("color") or ""
             
     # Enrich audit_code if missing
     if t.get("audit_id") and not t.get("audit_code"):
@@ -5761,13 +7394,10 @@ async def list_tasks(category: Optional[str] = None, project_id: Optional[str] =
     user = get_current_user_safe()
     query: dict = {}
     if user and user.get("role") != "admin":
-        query["assigned_to_user_id"] = user["id"]
-    elif category == "engineering":
-        eng_users = await db.users.find({"role": {"$in": ["admin", "engineer", "draftsman"]}}, {"id": 1}).to_list(None)
-        query["assigned_to_user_id"] = {"$in": [u["id"] for u in eng_users]}
-    elif category == "accounting":
-        acc_users = await db.users.find({"role": {"$in": ["admin", "accountant"]}}, {"id": 1}).to_list(None)
-        query["assigned_to_user_id"] = {"$in": [u["id"] for u in acc_users]}
+        query["$or"] = [
+            {"assigned_to_user_id": user["id"]},
+            {"assigned_to_accountant_id": user["id"]}
+        ]
         
     if category:
         query["category"] = category
@@ -5785,26 +7415,29 @@ async def list_tasks_paginated(
     page: int = 1, 
     limit: int = 25, 
     q: Optional[str] = None,
-    category: Optional[str] = None
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+    sort_by: Optional[str] = "created_at",
+    sort_dir: Optional[str] = "desc"
 ):
     skip = (page - 1) * limit
     user = get_current_user_safe()
-    query: dict = {}
+    base_query: dict = {}
     if user and user.get("role") != "admin":
-        query["assigned_to_user_id"] = user["id"]
-    elif category == "engineering":
-        eng_users = await db.users.find({"role": {"$in": ["admin", "engineer", "draftsman"]}}, {"id": 1}).to_list(None)
-        query["assigned_to_user_id"] = {"$in": [u["id"] for u in eng_users]}
-    elif category == "accounting":
-        acc_users = await db.users.find({"role": {"$in": ["admin", "accountant"]}}, {"id": 1}).to_list(None)
-        query["assigned_to_user_id"] = {"$in": [u["id"] for u in acc_users]}
+        base_query["$and"] = base_query.get("$and", [])
+        base_query["$and"].append({
+            "$or": [
+                {"assigned_to_user_id": user["id"]},
+                {"assigned_to_accountant_id": user["id"]}
+            ]
+        })
         
     if category:
-        query["category"] = category
+        base_query["category"] = category
         
     if q:
         s = q.strip()
-        query["$or"] = [
+        search_or = [
             {"work": {"$regex": s, "$options": "i"}},
             {"description": {"$regex": s, "$options": "i"}},
             {"project_code": {"$regex": s, "$options": "i"}},
@@ -5814,26 +7447,61 @@ async def list_tasks_paginated(
             {"assigned_to_username": {"$regex": s, "$options": "i"}},
             {"client_name": {"$regex": s, "$options": "i"}}
         ]
+        base_query["$and"] = base_query.get("$and", [])
+        base_query["$and"].append({"$or": search_or})
         
-    total = await db.tasks.count_documents(query)
-    
-    pending_query = query.copy()
+    pending_query = base_query.copy()
     pending_query["status"] = {"$in": ["pending", None, ""]}
     total_pending = await db.tasks.count_documents(pending_query)
 
-    in_progress_query = query.copy()
-    in_progress_query["status"] = "in progress"
+    in_progress_query = base_query.copy()
+    in_progress_query["status"] = {"$in": ["in progress", "follow up required"]}
     total_in_progress = await db.tasks.count_documents(in_progress_query)
     
-    done_query = query.copy()
+    done_query = base_query.copy()
     done_query["status"] = "done"
     total_done = await db.tasks.count_documents(done_query)
 
-    cancelled_query = query.copy()
+    cancelled_query = base_query.copy()
     cancelled_query["status"] = "cancelled"
     total_cancelled = await db.tasks.count_documents(cancelled_query)
 
-    items = await db.tasks.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    query = base_query.copy()
+    if status:
+        status_list = [s.strip() for s in status.split(",")]
+        match_in = []
+        for s in status_list:
+            if s == "pending":
+                match_in.extend(["pending", None, ""])
+            else:
+                match_in.append(s)
+        query["status"] = {"$in": match_in}
+            
+    total = await db.tasks.count_documents(query)
+
+    sort_order = -1 if sort_dir == "desc" else 1
+    sort_field = sort_by if sort_by else "created_at"
+
+    pipeline = [
+        {"$match": query},
+        {"$addFields": {
+            "computed_sort_code": {
+                "$cond": [
+                    { "$gt": [{ "$strLenCP": { "$ifNull": ["$audit_code", ""] } }, 0] },
+                    "$audit_code",
+                    "$project_code"
+                ]
+            }
+        }},
+        {"$sort": {
+            ("computed_sort_code" if sort_field == "project_code" else sort_field): sort_order
+        }},
+        {"$skip": skip},
+        {"$limit": limit},
+        {"$project": {"_id": 0, "computed_sort_code": 0}}
+    ]
+
+    items = await db.tasks.aggregate(pipeline, collation={"locale": "en", "strength": 2}).to_list(limit)
     
     # Needs to match sr_no for current page
     for idx, t in enumerate(items):
@@ -5845,11 +7513,14 @@ async def list_tasks_paginated(
 @api_router.post("/tasks")
 async def create_task(data: TaskIn):
     user = get_current_user_safe()
-    if data.category not in ("engineering", "accounting"):
-        raise HTTPException(400, "category must be 'engineering' or 'accounting'")
+    if data.category not in ("engineering", "accounting", "structural"):
+        raise HTTPException(400, "category must be 'engineering', 'accounting', or 'structural'")
     if data.assigned_to_user_id:
         if not await db.users.find_one({"id": data.assigned_to_user_id}):
             raise HTTPException(404, "Assigned user not found")
+    if data.assigned_to_accountant_id:
+        if not await db.users.find_one({"id": data.assigned_to_accountant_id}):
+            raise HTTPException(404, "Assigned accountant not found")
 
     doc = data.model_dump()
     doc["id"] = _new_id()
@@ -5866,6 +7537,13 @@ async def create_task(data: TaskIn):
             doc["project_code"] = p.get("job_no") or p.get("project_code") or ""
             if not (data.site_location or "").strip():
                 doc["site_location"] = p.get("site_location") or ""
+    elif data.audit_id:
+        a = await db.audits.find_one({"id": data.audit_id}, {"_id": 0, "address": 1, "audit_code": 1, "audit_offer": 1})
+        if a:
+            doc["audit_code"] = a.get("audit_code") or ""
+            doc["audit_offer_no"] = a.get("audit_offer") or ""
+            if not (data.site_location or "").strip():
+                doc["site_location"] = a.get("address") or ""
 
     await db.tasks.insert_one(doc.copy())
     doc["sr_no"] = 1
@@ -5873,9 +7551,22 @@ async def create_task(data: TaskIn):
     doc.pop("_id", None)
     
     if doc.get("assigned_to_user_id"):
+        message = f"You have been assigned a task: {doc.get('work')}"
+        if doc.get("submission_date"):
+            message += f" (Due: {doc['submission_date']})"
         await _notify_user(
             user_id=doc["assigned_to_user_id"],
-            message=f"You have been assigned a task: {doc.get('work')}",
+            message=message,
+            related_task_id=doc["id"]
+        )
+        
+    if doc.get("assigned_to_accountant_id"):
+        message = f"You have been assigned a task: {doc.get('work')}"
+        if doc.get("submission_date"):
+            message += f" (Due: {doc['submission_date']})"
+        await _notify_user(
+            user_id=doc["assigned_to_accountant_id"],
+            message=message,
             related_task_id=doc["id"]
         )
         
@@ -5890,6 +7581,9 @@ async def update_task(task_id: str, data: TaskIn):
     if data.assigned_to_user_id:
         if not await db.users.find_one({"id": data.assigned_to_user_id}):
             raise HTTPException(404, "Assigned user not found")
+    if data.assigned_to_accountant_id:
+        if not await db.users.find_one({"id": data.assigned_to_accountant_id}):
+            raise HTTPException(404, "Assigned accountant not found")
 
     update = data.model_dump()
     if data.project_id:
@@ -5898,15 +7592,39 @@ async def update_task(task_id: str, data: TaskIn):
             update["project_code"] = p.get("job_no") or p.get("project_code") or ""
             if not (data.site_location or "").strip():
                 update["site_location"] = p.get("site_location") or ""
+    elif data.audit_id:
+        a = await db.audits.find_one({"id": data.audit_id}, {"_id": 0, "address": 1, "audit_code": 1, "audit_offer": 1})
+        if a:
+            update["audit_code"] = a.get("audit_code") or ""
+            update["audit_offer_no"] = a.get("audit_offer") or ""
+            if not (data.site_location or "").strip():
+                update["site_location"] = a.get("address") or ""
 
     result = await db.tasks.find_one_and_update(
         {"id": task_id}, {"$set": update}, return_document=True, projection={"_id": 0}
     )
     
-    if result.get("assigned_to_user_id") and result.get("assigned_to_user_id") != old_task.get("assigned_to_user_id"):
+    assigned_changed = result.get("assigned_to_user_id") and result.get("assigned_to_user_id") != old_task.get("assigned_to_user_id")
+    due_date_changed = result.get("submission_date") and result.get("submission_date") != old_task.get("submission_date")
+    
+    if result.get("assigned_to_user_id") and (assigned_changed or due_date_changed):
+        message = f"You have been assigned a task: {result.get('work')}" if assigned_changed else f"Deadline updated for task: {result.get('work')}"
+        if result.get("submission_date"):
+            message += f" (Due: {result['submission_date']})"
         await _notify_user(
             user_id=result["assigned_to_user_id"],
-            message=f"You have been assigned a task: {result.get('work')}",
+            message=message,
+            related_task_id=result["id"]
+        )
+
+    accountant_changed = result.get("assigned_to_accountant_id") and result.get("assigned_to_accountant_id") != old_task.get("assigned_to_accountant_id")
+    if result.get("assigned_to_accountant_id") and (accountant_changed or due_date_changed):
+        message = f"You have been assigned a task: {result.get('work')}" if accountant_changed else f"Deadline updated for task: {result.get('work')}"
+        if result.get("submission_date"):
+            message += f" (Due: {result['submission_date']})"
+        await _notify_user(
+            user_id=result["assigned_to_accountant_id"],
+            message=message,
             related_task_id=result["id"]
         )
 
@@ -5930,19 +7648,83 @@ class TaskStatusUpdate(BaseModel):
 
 @api_router.put("/tasks/{task_id}/status")
 async def update_task_status(task_id: str, data: TaskStatusUpdate):
-    if data.status not in ["pending", "in progress", "done", "cancelled"]:
+    if data.status not in ["pending", "in progress", "follow up required", "done", "cancelled"]:
         raise HTTPException(400, "Invalid status")
     
     t = await db.tasks.find_one({"id": task_id})
     if not t:
         raise HTTPException(404, "Task not found")
     
+    update_fields = {"status": data.status}
+    if data.status == "done" and t.get("status") != "done":
+        update_fields["completed_at"] = _now()
+    elif data.status != "done" and t.get("completed_at"):
+        update_fields["completed_at"] = None
+
     result = await db.tasks.find_one_and_update(
         {"id": task_id},
-        {"$set": {"status": data.status}},
+        {"$set": update_fields},
         return_document=True,
         projection={"_id": 0}
     )
+    
+    if data.status == "done" and t.get("status") != "done":
+        pass # Accountant notification moved to phase completion
+    result["sr_no"] = 0
+    await _enrich_task(result)
+    return result
+
+class TaskPhaseUpdate(BaseModel):
+    phase: str
+    status: str
+
+@api_router.put("/tasks/{task_id}/phase")
+async def update_task_phase(task_id: str, data: TaskPhaseUpdate):
+    user = get_current_user_safe()
+    if not user:
+        raise HTTPException(401, "Not authenticated")
+    role = user.get("role")
+    
+    if data.phase in ["site_visit", "preparation"]:
+        if role not in ["admin", "engineer"]:
+            raise HTTPException(403, f"Only engineers can update {data.phase}")
+    elif data.phase == "submission":
+        if role not in ["admin", "account"]:
+            raise HTTPException(403, "Only accountants can update submission")
+    else:
+        raise HTTPException(400, "Invalid phase")
+        
+    t = await db.tasks.find_one({"id": task_id})
+    if not t:
+        raise HTTPException(404, "Task not found")
+        
+    update_fields = {f"{data.phase}_status": data.status}
+    
+    if data.status == "done":
+        if t.get(f"{data.phase}_status") != "done":
+            update_fields[f"{data.phase}_completed_at"] = _now()
+    else:
+        update_fields[f"{data.phase}_completed_at"] = None
+        
+    result = await db.tasks.find_one_and_update(
+        {"id": task_id},
+        {"$set": update_fields},
+        return_document=True,
+        projection={"_id": 0}
+    )
+    
+    # Notify accountants when both site_visit and preparation are newly completed
+    if data.status == "done" and data.phase in ["site_visit", "preparation"]:
+        if result.get("site_visit_status") == "done" and result.get("preparation_status") == "done":
+            if t.get("site_visit_status") != "done" or t.get("preparation_status") != "done":
+                accountants = await db.users.find({"role": "account"}).to_list(None)
+                for acc in accountants:
+                    await _notify_user(
+                        user_id=acc["id"],
+                        message=f"Structural task '{result.get('work', 'Untitled')}' site visit and preparation are completed.",
+                        related_task_id=result["id"]
+                    )
+                    
     result["sr_no"] = 0
     await _enrich_task(result)
     return result
@@ -6077,6 +7859,51 @@ async def serve_company_asset(filename: str):
         raise HTTPException(404, "File not found")
 
 
+@api_router.post("/files/upload")
+async def upload_generic_file(file: UploadFile = File(...)):
+    if not file.filename:
+        raise HTTPException(400, "Missing filename")
+    ext = (file.filename.rsplit(".", 1)[-1] or "bin").lower()
+    fname = f"file_{secrets.token_urlsafe(12)}_{file.filename}"
+    content_type = file.content_type or "application/octet-stream"
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty upload")
+    
+    await _photo_bucket.upload_from_stream(
+        fname, io.BytesIO(data), metadata={"content_type": content_type, "original_filename": file.filename},
+    )
+    return {"url": f"/api/uploads/files/{fname}", "filename": file.filename, "size": len(data)}
+
+
+@auth_public_router.get("/uploads/files/{filename}")
+async def serve_generic_file(filename: str):
+    try:
+        stream = await _photo_bucket.open_download_stream_by_name(filename)
+        ct = (getattr(stream, "metadata", None) or {}).get("content_type") or "application/octet-stream"
+
+        async def gen():
+            try:
+                while True:
+                    chunk = await stream.readchunk()
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+
+        return StreamingResponse(
+            gen(),
+            media_type=ct,
+            headers={"Content-Disposition": f'inline; filename="{filename}"'}
+        )
+    except Exception:
+        raise HTTPException(404, "File not found")
+
+
 # ---------------------- INVOICES ----------------------
 
 def num_to_words_indian(number: float) -> str:
@@ -6154,6 +7981,26 @@ async def _next_tax_invoice_no() -> str:
     return f"CC > ARL > {seq:03d}"
 
 
+async def _next_quotation_no(job_sub_type: Optional[str] = None) -> str:
+    from datetime import datetime
+    year = datetime.now().year
+    
+    counter_id = f"quotation_{year}"
+    counter = await db.counters.find_one_and_update(
+        {"_id": counter_id},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=True,
+    )
+    seq = (counter or {}).get("seq", 1)
+    
+    type_str = "QUOT"
+    if job_sub_type and "audit" in job_sub_type.lower():
+        type_str = "AUDIT"
+        
+    return f"STR/{type_str}/{year}/{seq:03d}"
+
+
 @api_router.get("/invoices/paginated", response_model=PaginatedInvoices)
 async def list_invoices_paginated(
     page: int = 1, 
@@ -6182,6 +8029,232 @@ async def list_invoices_paginated(
     total = await db.invoices.count_documents(query)
     items = await db.invoices.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     return {"data": items, "total": total}
+
+
+@api_router.get("/quotations/{quotation_id}/connections")
+async def get_quotation_connections(quotation_id: str):
+    sales_orders = await db.sales_orders.count_documents({"quotation_ref": quotation_id})
+    return {
+        "sales_order": sales_orders,
+        "delivery_note": 0,
+        "sales_invoice": 0
+    }
+
+class PaginatedSalesOrders(BaseModel):
+    data: List[dict]
+    total: int
+
+@api_router.get("/sales-orders/paginated", response_model=PaginatedSalesOrders)
+async def list_sales_orders_paginated(
+    page: int = 1,
+    limit: int = 25,
+    q: Optional[str] = None,
+    q_id: Optional[str] = None,
+    q_title: Optional[str] = None,
+    q_sales_order_to: Optional[str] = None,
+    q_party: Optional[str] = None,
+    q_date: Optional[str] = None,
+    q_order_type: Optional[str] = None,
+    q_assigned_to: Optional[str] = None,
+    q_created_by: Optional[str] = None,
+    q_tags: Optional[str] = None,
+    sortBy: Optional[str] = "created_at",
+    sortDir: Optional[str] = "desc",
+    status: Optional[str] = None,
+    client_id: Optional[str] = None,
+    filterField: Optional[str] = None,
+    filterOp: Optional[str] = None,
+    filterVal: Optional[str] = None
+):
+    skip = (page - 1) * limit
+    query = {}
+    and_clauses = []
+    if status:
+        query["status"] = status
+    if client_id:
+        query["client_id"] = client_id
+    if q:
+        s = q.strip()
+        and_clauses.append({"$or": [
+            {"id": {"$regex": s, "$options": "i"}},
+            {"title": {"$regex": s, "$options": "i"}},
+            {"client_name": {"$regex": s, "$options": "i"}},
+            {"lead": {"$regex": s, "$options": "i"}},
+            {"sales_order_to": {"$regex": s, "$options": "i"}}
+        ]})
+        
+    if filterField and filterVal and filterOp:
+        field_map = {
+            "ID": "id",
+            "Status": "status",
+            "Customer Name": "client_name",
+            "Grand Total": "grand_total"
+        }
+        db_field = field_map.get(filterField, filterField)
+        val = filterVal
+        if db_field == "grand_total":
+            try:
+                val = float(val)
+            except:
+                pass
+        if filterOp == "Equals":
+            query[db_field] = val
+        elif filterOp == "Like":
+            query[db_field] = {"$regex": str(val), "$options": "i"}
+        elif filterOp == ">=":
+            query[db_field] = {"$gte": val}
+        elif filterOp == "<=":
+            query[db_field] = {"$lte": val}
+
+    if q_id:
+        qid = q_id.strip()
+        and_clauses.append({"$or": [
+            {"id": {"$regex": qid, "$options": "i"}}
+        ]})
+    if q_title:
+        qt = q_title.strip()
+        and_clauses.append({"$or": [
+            {"title": {"$regex": qt, "$options": "i"}},
+            {"client_name": {"$regex": qt, "$options": "i"}},
+            {"lead": {"$regex": qt, "$options": "i"}},
+            {"subject": {"$regex": qt, "$options": "i"}},
+            {"id": {"$regex": qt, "$options": "i"}}
+        ]})
+    if q_sales_order_to:
+        and_clauses.append({"$or": [
+            {"sales_order_to": {"$regex": q_sales_order_to.strip(), "$options": "i"}},
+            {"quotation_to": {"$regex": q_sales_order_to.strip(), "$options": "i"}}
+        ]})
+    if q_party:
+        p = q_party.strip()
+        and_clauses.append({"$or": [
+            {"client_name": {"$regex": p, "$options": "i"}},
+            {"lead": {"$regex": p, "$options": "i"}},
+            {"party_name": {"$regex": p, "$options": "i"}}
+        ]})
+    if q_date:
+        d = q_date.strip().replace("/", "-")
+        date_patterns = [d]
+        parts = d.split("-")
+        if len(parts) > 1:
+            date_patterns.append("-".join(reversed(parts)))
+        and_clauses.append({"$or": [
+            {"transaction_date": {"$regex": pat, "$options": "i"}} for pat in set(date_patterns)
+        ] + [
+            {"created_at": {"$regex": pat, "$options": "i"}} for pat in set(date_patterns)
+        ]})
+    if q_order_type:
+        query["order_type"] = {"$regex": q_order_type.strip(), "$options": "i"}
+    if q_assigned_to:
+        query["assigned_to"] = {"$regex": q_assigned_to.strip(), "$options": "i"}
+    if q_created_by:
+        cb = q_created_by.strip()
+        and_clauses.append({"$or": [
+            {"created_by": {"$regex": cb, "$options": "i"}},
+            {"created_by_username": {"$regex": cb, "$options": "i"}}
+        ]})
+    if q_tags:
+        query["tags"] = {"$regex": q_tags.strip(), "$options": "i"}
+
+    if and_clauses:
+        if "$and" in query:
+            query["$and"].extend(and_clauses)
+        else:
+            query["$and"] = and_clauses
+
+    sort_field = sortBy if sortBy else "created_at"
+    sort_order = -1 if sortDir == "desc" else 1
+
+    total = await db.sales_orders.count_documents(query)
+    items = await db.sales_orders.find(query, {"_id": 0}).sort(sort_field, sort_order).skip(skip).limit(limit).to_list(limit)
+    return {"data": items, "total": total}
+
+@api_router.get("/sales-orders/{so_id}")
+async def get_sales_order(so_id: str):
+    doc = await db.sales_orders.find_one({"id": so_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Sales Order not found")
+    return doc
+
+async def _next_sales_order_no() -> str:
+    from datetime import datetime
+    year = datetime.now().year
+    prefix = f"SAL-ORD-{year}-"
+    last = await db.sales_orders.find_one(
+        {"id": {"$regex": f"^{prefix}"}},
+        sort=[("id", -1)]
+    )
+    if not last:
+        return f"{prefix}00001"
+    last_no = int(last["id"].split("-")[-1])
+    return f"{prefix}{last_no + 1:05d}"
+
+@api_router.post("/sales-orders")
+@api_router.post("/sales_orders")
+async def create_sales_order(data: dict, current_user: dict = Depends(auth_module.get_current_user)):
+    so_no = await _next_sales_order_no()
+    
+    doc = {
+        **data,
+        "id": so_no,
+        "created_at": _now(),
+        "updated_at": _now(),
+        "created_by_username": current_user.get("name", "Administrator")
+    }
+    
+    if _parse_bool(doc.get("is_lumpsum")):
+        for itm in doc.get("items") or []:
+            code = itm.get("item_code")
+            amt = float(itm.get("amount") or 0)
+            if code and amt > 0:
+                await db.items.update_one({"item_code": code}, {"$set": {"lumpsum_amount": amt}})
+                
+    await db.sales_orders.insert_one(doc.copy())
+    return doc
+
+@api_router.put("/sales-orders/{so_id}")
+@api_router.put("/sales_orders/{so_id}")
+async def update_sales_order(so_id: str, data: dict, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.sales_orders.find_one({"id": so_id})
+    if not existing:
+        raise HTTPException(404, "Sales Order not found")
+    
+    doc = {
+        **data,
+        "id": so_id,
+        "created_at": existing.get("created_at", _now()),
+        "created_by_username": existing.get("created_by_username", "Administrator"),
+        "updated_at": _now()
+    }
+    doc.pop("_id", None)
+    
+    if _parse_bool(doc.get("is_lumpsum")):
+        for itm in doc.get("items") or []:
+            code = itm.get("item_code")
+            amt = float(itm.get("amount") or 0)
+            if code and amt > 0:
+                await db.items.update_one({"item_code": code}, {"$set": {"lumpsum_amount": amt}})
+                
+    await db.sales_orders.replace_one({"id": so_id}, doc)
+    return doc
+
+@api_router.delete("/sales-orders/{so_id}")
+@api_router.delete("/sales_orders/{so_id}")
+async def delete_sales_order(so_id: str, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.sales_orders.find_one({"id": so_id})
+    if not existing:
+        raise HTTPException(404, "Sales Order not found")
+    await db.sales_orders.delete_one({"id": so_id})
+    return {"message": "Deleted"}
+
+@api_router.get("/sales_orders")
+async def list_sales_orders_all():
+    items = await db.sales_orders.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return items
+
+@api_router.get("/sales_orders/{so_id}")
+async def get_sales_order_alias(so_id: str):
+    return await get_sales_order(so_id)
 
 
 @api_router.get("/invoices", response_model=List[Invoice])
@@ -6875,27 +8948,27 @@ async def _build_invoice_document_pdf(invoice: dict) -> bytes:
         c2 = v_split + (rp_w * 0.60)
         c3 = v_split + (rp_w * 0.86)
         
-        c.setFont("Roboto-Bold", 8.5)
+        c.setFont("Roboto-Bold", 10)
         c.drawCentredString(c1, y_meta_top, "Proforma Invoice No.")
         c.drawCentredString(c2, y_meta_top, "Proforma Date")
         c.drawCentredString(c3, y_meta_top, "Expiry Date")
         
-        c.setFont("Roboto", 8.5)
-        c.drawCentredString(c1, y_meta_top - 4 * mm, invoice.get("invoice_no", ""))
-        c.drawCentredString(c2, y_meta_top - 4 * mm, inv_date_str)
-        c.drawCentredString(c3, y_meta_top - 4 * mm, exp_date_str)
+        c.setFont("Roboto", 10)
+        c.drawCentredString(c1, y_meta_top - 5 * mm, invoice.get("invoice_no", ""))
+        c.drawCentredString(c2, y_meta_top - 5 * mm, inv_date_str)
+        c.drawCentredString(c3, y_meta_top - 5 * mm, exp_date_str)
     else:
         # Two columns, centered in halves
         c1 = v_split + (rp_w / 4)
         c2 = v_split + (rp_w * 3 / 4)
         
-        c.setFont("Roboto-Bold", 8.5)
+        c.setFont("Roboto-Bold", 10)
         c.drawCentredString(c1, y_meta_top, "Invoice No.")
         c.drawCentredString(c2, y_meta_top, "Invoice Date")
         
-        c.setFont("Roboto", 8.5)
-        c.drawCentredString(c1, y_meta_top - 4 * mm, invoice.get("invoice_no", ""))
-        c.drawCentredString(c2, y_meta_top - 4 * mm, inv_date_str)
+        c.setFont("Roboto", 10)
+        c.drawCentredString(c1, y_meta_top - 5 * mm, invoice.get("invoice_no", ""))
+        c.drawCentredString(c2, y_meta_top - 5 * mm, inv_date_str)
 
     # Horizontal divider in right panel below invoice no / date
     y_split_line = y_top - 22 * mm
@@ -6912,30 +8985,26 @@ async def _build_invoice_document_pdf(invoice: dict) -> bytes:
     h2 = header_h - 22 * mm
     y_meta_bottom_top = y_split_line - (h2 / 2 - 2 * mm)
 
-    c.setFont("Roboto", 8.5)
+    c.setFont("Roboto-Bold", 10)
     c.drawCentredString(c1_hsn, y_meta_bottom_top, "HSN CODE")
     c.drawCentredString(c2_pan, y_meta_bottom_top, "PAN NO")
 
-    c.setFont("Roboto", 8.5)
-    c.drawCentredString(c1_hsn, y_meta_bottom_top - 4 * mm, invoice.get("hsn_code", "998332"))
-    c.drawCentredString(c2_pan, y_meta_bottom_top - 4 * mm, cd.get("pan", ""))
+    c.setFont("Roboto", 10)
+    c.drawCentredString(c1_hsn, y_meta_bottom_top - 5 * mm, invoice.get("hsn_code", "998332"))
+    c.drawCentredString(c2_pan, y_meta_bottom_top - 5 * mm, cd.get("pan", ""))
 
     # ── Bill To block ─────────────────────────────────────────────────────
     y_billto = y_header_bottom
-    billto_h = 28 * mm
-    y_billto_bottom = y_billto - billto_h
-
-    c.setLineWidth(1.0)
-    c.rect(margin, y_billto_bottom, printable_width, billto_h, fill=0, stroke=1)
-
     bx = margin + 2 * mm   # left text offset inside bill-to box
 
-    c.setFillColor(colors.black)
-    c.setFont("Roboto", 9)
-    c.drawString(bx, y_billto - 3.5 * mm, "BILL TO")
-
-    c.setFont("Roboto-Bold", 9) # client name full bold
-    c.drawString(bx, y_billto - 8.5 * mm, invoice.get("client_name", "").upper())
+    client_name_str = invoice.get("client_name", "").strip().upper()
+    client_company_str = invoice.get("client_company", "").strip().upper()
+    y_pos = y_billto - 8.5 * mm
+    
+    if client_company_str and client_company_str != client_name_str:
+        y_address_top = y_pos - 1.5 * mm
+    else:
+        y_address_top = y_pos - 1.5 * mm
 
     # Full address — wrapped
     addr_client_style = ParagraphStyle(
@@ -6949,10 +9018,30 @@ async def _build_invoice_document_pdf(invoice: dict) -> bytes:
     client_addr = invoice.get("client_address", "")
     addr_client_para = Paragraph(f"Address:  {client_addr}", addr_client_style)
     _, addr_client_h = addr_client_para.wrap(printable_width - 4 * mm, 14 * mm)
-    addr_client_para.drawOn(c, bx, y_billto - 10 * mm - addr_client_h)
+
+    gstin_row_y = y_address_top - addr_client_h - 4.5 * mm # space adjusted to match GSTIN/Mobile row
+    mob_row_y = gstin_row_y - 4.5 * mm
+
+    # Dynamically calculate the box height
+    y_billto_bottom = mob_row_y - 2.5 * mm
+    billto_h = y_billto - y_billto_bottom
+
+    c.setLineWidth(1.0)
+    c.rect(margin, y_billto_bottom, printable_width, billto_h, fill=0, stroke=1)
+
+    c.setFillColor(colors.black)
+    c.setFont("Roboto", 9)
+    c.drawString(bx, y_billto - 3.5 * mm, "BILL TO")
+
+    c.setFont("Roboto", 8.5)
+    if client_company_str and client_company_str != client_name_str:
+        c.drawString(bx, y_pos, client_company_str)
+    else:
+        c.drawString(bx, y_pos, client_company_str or client_name_str)
+
+    addr_client_para.drawOn(c, bx, y_address_top - addr_client_h)
 
     # GSTIN row
-    gstin_row_y = y_billto - 10 * mm - addr_client_h - 4.5 * mm # space adjusted to match GSTIN/Mobile row
     c.setFont("Roboto", 8.5)
     c.drawString(bx, gstin_row_y, "GSTIN:")
     gstin_w = pdfmetrics.stringWidth("GSTIN: ", "Roboto", 8.5)
@@ -6967,7 +9056,6 @@ async def _build_invoice_document_pdf(invoice: dict) -> bytes:
     c.drawString(bx + 40 * mm + pos_w, gstin_row_y, format_place_of_supply(pos, invoice.get("client_gstin")))
 
     # Mobile / PAN row
-    mob_row_y = gstin_row_y - 4.5 * mm
     c.setFont("Roboto", 8.5)
     c.drawString(bx, mob_row_y, "Mobile:")
     mob_w = pdfmetrics.stringWidth("Mobile: ", "Roboto", 8.5)
@@ -7136,6 +9224,9 @@ async def _build_invoice_document_pdf(invoice: dict) -> bytes:
     for x in col_x:
         c.line(x, y_table_bottom, x, y_total_row)
 
+    # Re-draw the table outer border to restore lines covered by header/total row backgrounds
+    c.rect(margin, y_table_bottom, printable_width, table_h, fill=0, stroke=1)
+
     c.setFillColor(colors.black)
     c.setFont("Roboto-Bold", 9)
     # The Y position for text is relative to y_table_bottom (the bottom of this row)
@@ -7159,7 +9250,7 @@ async def _build_invoice_document_pdf(invoice: dict) -> bytes:
             
         math_rows.extend([
             ("AMOUNT PAYABLE",                         f"₹ {_format_inr(payable_amount, show_decimals=False)}", False, False),
-            ("RECEIVED AMOUNT",                        f"₹ {_format_inr(received_amount)}", False, False),
+            # ("RECEIVED AMOUNT",                        f"₹ {_format_inr(received_amount)}", False, False),
             ("BALANCE AMOUNT",                         f"₹ {_format_inr(balance_amount)}",  False, False),
         ])
 
@@ -7426,13 +9517,1771 @@ async def serve_invoice_pdf(invoice_id: str):
     )
 
 
-# Include the routers
-app.include_router(auth_public_router)
-app.include_router(api_router)
+@api_router.post("/quotations/bulk-action")
+async def bulk_action_quotations(payload: BulkActionPayload):
+    if not payload.ids:
+        return {"success": True, "count": 0}
+        
+    query = {"quotation_no": {"$in": payload.ids}}
+    
+    if payload.action == "delete":
+        res = await db.quotations.delete_many(query)
+        return {"success": True, "count": res.deleted_count}
+        
+    elif payload.action == "submit":
+        res = await db.quotations.update_many(query, {"$set": {"status": "Submitted"}})
+        return {"success": True, "count": res.modified_count}
+        
+    elif payload.action == "cancel":
+        res = await db.quotations.update_many(query, {"$set": {"status": "Cancelled"}})
+        return {"success": True, "count": res.modified_count}
+        
+    elif payload.action == "assign":
+        if not payload.assignee:
+            raise HTTPException(400, "Assignee required")
+        res = await db.quotations.update_many(query, {"$addToSet": {"assigned_to": payload.assignee}})
+        return {"success": True, "count": res.modified_count}
+        
+    elif payload.action == "clear_assignment":
+        res = await db.quotations.update_many(query, {"$set": {"assigned_to": []}})
+        return {"success": True, "count": res.modified_count}
+        
+    elif payload.action == "add_tags":
+        if not payload.tags:
+            raise HTTPException(400, "Tags required")
+        res = await db.quotations.update_many(query, {"$addToSet": {"tags": {"$each": payload.tags}}})
+        return {"success": True, "count": res.modified_count}
+        
+    raise HTTPException(400, "Invalid action")
 
-# Static file mount for uploaded site-visit photos. Served at /api/uploads/site-visits/<fname>
-# (mounted AFTER the api_router so explicit endpoints take precedence)
-app.mount("/api/uploads", StaticFiles(directory=str(UPLOAD_ROOT)), name="uploads")
+@api_router.get("/quotations/paginated", response_model=PaginatedQuotations)
+async def list_quotations_paginated(
+    page: int = 1,
+    limit: int = 25,
+    q: Optional[str] = None,
+    q_id: Optional[str] = None,
+    q_title: Optional[str] = None,
+    q_quotation_to: Optional[str] = None,
+    q_party: Optional[str] = None,
+    q_date: Optional[str] = None,
+    q_order_type: Optional[str] = None,
+    q_assigned_to: Optional[str] = None,
+    q_created_by: Optional[str] = None,
+    q_tags: Optional[str] = None,
+    sortBy: Optional[str] = "created_at",
+    sortDir: Optional[str] = "desc",
+    status: Optional[str] = None,
+    client_id: Optional[str] = None,
+    filterField: Optional[str] = None,
+    filterOp: Optional[str] = None,
+    filterVal: Optional[str] = None
+):
+    skip = (page - 1) * limit
+    query = {}
+    and_clauses = []
+    if status:
+        query["status"] = status
+    if client_id:
+        query["client_id"] = client_id
+    if q:
+        s = q.strip()
+        and_clauses.append({"$or": [
+            {"quotation_no": {"$regex": s, "$options": "i"}},
+            {"id": {"$regex": s, "$options": "i"}},
+            {"title": {"$regex": s, "$options": "i"}},
+            {"client_name": {"$regex": s, "$options": "i"}},
+            {"lead": {"$regex": s, "$options": "i"}},
+            {"client_gstin": {"$regex": s, "$options": "i"}},
+            {"place_of_supply": {"$regex": s, "$options": "i"}}
+        ]})
+        
+    if filterField and filterVal and filterOp:
+        # map frontend field names to db fields
+        field_map = {
+            "ID": "quotation_no",
+            "Status": "status",
+            "Customer Name": "client_name",
+            "Grand Total": "grand_total"
+        }
+        db_field = field_map.get(filterField, filterField)
+        
+        # handle numeric types
+        val = filterVal
+        if db_field == "grand_total":
+            try:
+                val = float(val)
+            except:
+                pass
+                
+        if filterOp == "Equals":
+            query[db_field] = val
+        elif filterOp == "Like":
+            query[db_field] = {"$regex": str(val), "$options": "i"}
+        elif filterOp == ">=":
+            query[db_field] = {"$gte": val}
+        elif filterOp == "<=":
+            query[db_field] = {"$lte": val}
+
+    if q_id:
+        qid = q_id.strip()
+        and_clauses.append({"$or": [
+            {"quotation_no": {"$regex": qid, "$options": "i"}},
+            {"id": {"$regex": qid, "$options": "i"}}
+        ]})
+    if q_title:
+        qt = q_title.strip()
+        and_clauses.append({"$or": [
+            {"title": {"$regex": qt, "$options": "i"}},
+            {"client_name": {"$regex": qt, "$options": "i"}},
+            {"lead": {"$regex": qt, "$options": "i"}},
+            {"subject": {"$regex": qt, "$options": "i"}},
+            {"quotation_no": {"$regex": qt, "$options": "i"}}
+        ]})
+    if q_quotation_to:
+        query["quotation_to"] = {"$regex": q_quotation_to.strip(), "$options": "i"}
+    if q_party:
+        p = q_party.strip()
+        and_clauses.append({"$or": [
+            {"client_name": {"$regex": p, "$options": "i"}},
+            {"lead": {"$regex": p, "$options": "i"}},
+            {"party_name": {"$regex": p, "$options": "i"}}
+        ]})
+    if q_date:
+        d = q_date.strip().replace("/", "-")
+        date_patterns = [d]
+        parts = d.split("-")
+        if len(parts) > 1:
+            date_patterns.append("-".join(reversed(parts)))
+        and_clauses.append({"$or": [
+            {"transaction_date": {"$regex": pat, "$options": "i"}} for pat in set(date_patterns)
+        ] + [
+            {"created_at": {"$regex": pat, "$options": "i"}} for pat in set(date_patterns)
+        ]})
+    if q_order_type:
+        query["order_type"] = {"$regex": q_order_type.strip(), "$options": "i"}
+    if q_assigned_to:
+        query["assigned_to"] = {"$regex": q_assigned_to.strip(), "$options": "i"}
+    if q_created_by:
+        cb = q_created_by.strip()
+        and_clauses.append({"$or": [
+            {"created_by": {"$regex": cb, "$options": "i"}},
+            {"created_by_username": {"$regex": cb, "$options": "i"}}
+        ]})
+    if q_tags:
+        query["tags"] = {"$regex": q_tags.strip(), "$options": "i"}
+
+    if and_clauses:
+        if "$and" in query:
+            query["$and"].extend(and_clauses)
+        else:
+            query["$and"] = and_clauses
+
+    sort_field = sortBy if sortBy else "created_at"
+    sort_order = -1 if sortDir == "desc" else 1
+
+    total = await db.quotations.count_documents(query)
+    items = await db.quotations.find(query, {"_id": 0}).sort(sort_field, sort_order).skip(skip).limit(limit).to_list(limit)
+    return {"data": items, "total": total}
+
+
+@api_router.get("/quotations", response_model=List[Quotation])
+async def get_quotations():
+    docs = await db.quotations.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return docs
+
+
+@api_router.get("/quotations/{quotation_id}", response_model=Quotation)
+async def get_quotation(quotation_id: str):
+    doc = await db.quotations.find_one({"id": quotation_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Quotation not found")
+    return doc
+
+
+@api_router.get("/quotations/{quotation_id}/neighbors")
+async def get_quotation_neighbors(quotation_id: str):
+    current = await db.quotations.find_one({"id": quotation_id}, {"created_at": 1})
+    if not current:
+        raise HTTPException(404, "Quotation not found")
+        
+    prev_q = await db.quotations.find({"created_at": {"$gt": current.get("created_at", "")}}).sort("created_at", 1).limit(1).to_list(1)
+    next_q = await db.quotations.find({"created_at": {"$lt": current.get("created_at", "")}}).sort("created_at", -1).limit(1).to_list(1)
+    
+    return {
+        "prev": prev_q[0]["id"] if prev_q else None,
+        "next": next_q[0]["id"] if next_q else None
+    }
+
+@api_router.post("/quotations", response_model=Quotation)
+async def create_quotation(data: QuotationIn, current_user: dict = Depends(auth_module.get_current_user)):
+    quotation_data = data.model_dump()
+    quotation_data["place_of_supply"] = format_place_of_supply(quotation_data.get("place_of_supply"), quotation_data.get("client_gstin"))
+    
+    if quotation_data.get("valid_till") and quotation_data.get("valid_till") < quotation_data["transaction_date"]:
+        raise HTTPException(400, "Valid till date cannot be before transaction date")
+        
+    quotation_no = await _next_quotation_no(quotation_data.get("job_sub_type"))
+    quotation_id = _new_id()
+    
+    doc = {
+        **quotation_data,
+        "id": quotation_id,
+        "quotation_no": quotation_no,
+        "created_by_user_id": current_user.get("id"),
+        "created_by_username": current_user.get("username"),
+        "created_at": _now()
+    }
+    
+    if _parse_bool(doc.get("is_lumpsum")):
+        for itm in doc.get("items") or []:
+            code = itm.get("item_code")
+            amt = float(itm.get("amount") or 0)
+            if code and amt > 0:
+                await db.items.update_one({"item_code": code}, {"$set": {"lumpsum_amount": amt}})
+                
+    await db.quotations.insert_one(doc.copy())
+    return doc
+
+
+@api_router.put("/quotations/{quotation_id}", response_model=Quotation)
+async def update_quotation(quotation_id: str, data: dict, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.quotations.find_one({"id": quotation_id})
+    if not existing:
+        raise HTTPException(404, "Quotation not found")
+        
+    quotation_data = data.copy()
+    if quotation_data.get("valid_till") and quotation_data.get("transaction_date") and quotation_data.get("valid_till") < quotation_data["transaction_date"]:
+        raise HTTPException(400, "Valid till date cannot be before transaction date")
+        
+    if "place_of_supply" in quotation_data or "client_gstin" in quotation_data:
+        quotation_data["place_of_supply"] = format_place_of_supply(quotation_data.get("place_of_supply", existing.get("place_of_supply")), quotation_data.get("client_gstin", existing.get("client_gstin")))
+    
+    doc = {
+        **existing,
+        **quotation_data,
+        "id": quotation_id,
+        "quotation_no": existing["quotation_no"],
+        "created_by_user_id": existing.get("created_by_user_id"),
+        "created_by_username": existing.get("created_by_username"),
+        "created_at": existing["created_at"],
+        "updated_at": _now()
+    }
+    doc.pop("_id", None)
+    
+    if _parse_bool(doc.get("is_lumpsum")):
+        for itm in doc.get("items") or []:
+            code = itm.get("item_code")
+            amt = float(itm.get("amount") or 0)
+            if code and amt > 0:
+                await db.items.update_one({"item_code": code}, {"$set": {"lumpsum_amount": amt}})
+                
+    await db.quotations.replace_one({"id": quotation_id}, doc)
+    return doc
+
+
+@api_router.delete("/quotations/{quotation_id}")
+async def delete_quotation(quotation_id: str, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.quotations.find_one({"id": quotation_id})
+    if not existing:
+        raise HTTPException(404, "Quotation not found")
+        
+    await db.quotations.delete_one({"id": quotation_id})
+    return {"status": "success", "message": "Quotation deleted successfully."}
+
+
+class QuotationStatusUpdate(BaseModel):
+    status: str
+    order_lost_reason: Optional[str] = ""
+
+
+@api_router.post("/quotations/{quotation_id}/status", response_model=Quotation)
+async def update_quotation_status(quotation_id: str, payload: QuotationStatusUpdate, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.quotations.find_one({"id": quotation_id})
+    if not existing:
+        raise HTTPException(404, "Quotation not found")
+        
+    status = payload.status
+    if status not in ["Draft", "Open", "Ordered", "Lost", "Cancelled", "Expired"]:
+        raise HTTPException(400, "Invalid status value")
+        
+    update_data = {
+        "status": status,
+        "order_lost_reason": payload.order_lost_reason if status == "Lost" else existing.get("order_lost_reason", "")
+    }
+    await db.quotations.update_one({"id": quotation_id}, {"$set": update_data})
+    updated = await db.quotations.find_one({"id": quotation_id}, {"_id": 0})
+    return updated
+
+
+# ---------------------- JOB TYPES ----------------------
+@api_router.get("/job-types/paginated", response_model=PaginatedJobTypes)
+async def get_job_types_paginated(
+    page: int = 1,
+    limit: int = 25,
+    q: Optional[str] = None,
+    filterField: Optional[str] = None,
+    filterOp: Optional[str] = None,
+    filterVal: Optional[str] = None
+):
+    skip = (page - 1) * limit
+    query = {}
+    if q:
+        s = q.strip()
+        query["$or"] = [
+            {"id": {"$regex": s, "$options": "i"}},
+            {"name": {"$regex": s, "$options": "i"}}
+        ]
+        
+    if filterField and filterVal and filterOp:
+        field_map = {
+            "ID": "id",
+            "Job Type Name": "name"
+        }
+        db_field = field_map.get(filterField, filterField)
+        
+        val = filterVal
+        if filterOp == "Equals":
+            query[db_field] = val
+        elif filterOp == "Like":
+            query[db_field] = {"$regex": str(val), "$options": "i"}
+
+    total = await db.job_types.count_documents(query)
+    items = await db.job_types.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    return {"data": items, "total": total}
+
+@api_router.get("/job-types", response_model=List[JobType])
+async def get_job_types():
+    docs = await db.job_types.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return docs
+
+@api_router.get("/job-types/{id}", response_model=JobType)
+async def get_job_type(id: str):
+    doc = await db.job_types.find_one({"id": id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Job Type not found")
+    return doc
+
+@api_router.post("/job-types", response_model=JobType)
+async def create_job_type(data: JobTypeIn, current_user: dict = Depends(auth_module.get_current_user)):
+    job_type_id = _new_id()
+    doc = {
+        **data.model_dump(),
+        "id": job_type_id,
+        "created_by_user_id": current_user.get("id"),
+        "created_by_username": current_user.get("username"),
+        "created_at": _now()
+    }
+    await db.job_types.insert_one(doc.copy())
+    return doc
+
+@api_router.put("/job-types/{id}", response_model=JobType)
+async def update_job_type(id: str, data: JobTypeIn, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.job_types.find_one({"id": id})
+    if not existing:
+        raise HTTPException(404, "Job Type not found")
+    
+    update_data = {
+        **data.model_dump(),
+        "last_edited_by_user_id": current_user.get("id"),
+        "last_edited_by_username": current_user.get("username"),
+        "last_edited_at": _now()
+    }
+    await db.job_types.update_one({"id": id}, {"$set": update_data})
+    return await db.job_types.find_one({"id": id}, {"_id": 0})
+
+@api_router.delete("/job-types/{id}")
+async def delete_job_type(id: str):
+    result = await db.job_types.delete_one({"id": id})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Job Type not found")
+    return {"message": "Deleted successfully"}
+
+# ---------------------- JOB SUB TYPES ----------------------
+@api_router.get("/job-sub-types/paginated", response_model=PaginatedJobSubTypes)
+async def get_job_sub_types_paginated(
+    page: int = 1,
+    limit: int = 25,
+    q: Optional[str] = None,
+    filterField: Optional[str] = None,
+    filterOp: Optional[str] = None,
+    filterVal: Optional[str] = None
+):
+    skip = (page - 1) * limit
+    query = {}
+    if q:
+        s = q.strip()
+        query["$or"] = [
+            {"id": {"$regex": s, "$options": "i"}},
+            {"name": {"$regex": s, "$options": "i"}},
+            {"parent_job_type_name": {"$regex": s, "$options": "i"}}
+        ]
+        
+    if filterField and filterVal and filterOp:
+        field_map = {
+            "ID": "id",
+            "Job Sub Type Name": "name",
+            "Parent Job Type Name": "parent_job_type_name"
+        }
+        db_field = field_map.get(filterField, filterField)
+        
+        val = filterVal
+        if filterOp == "Equals":
+            query[db_field] = val
+        elif filterOp == "Like":
+            query[db_field] = {"$regex": str(val), "$options": "i"}
+
+    total = await db.job_sub_types.count_documents(query)
+    items = await db.job_sub_types.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    return {"data": items, "total": total}
+
+@api_router.get("/job-sub-types", response_model=List[JobSubType])
+async def get_job_sub_types():
+    docs = await db.job_sub_types.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return docs
+
+@api_router.get("/job-sub-types/{id}", response_model=JobSubType)
+async def get_job_sub_type(id: str):
+    doc = await db.job_sub_types.find_one({"id": id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Job Sub Type not found")
+    return doc
+
+@api_router.post("/job-sub-types", response_model=JobSubType)
+async def create_job_sub_type(data: JobSubTypeIn, current_user: dict = Depends(auth_module.get_current_user)):
+    job_sub_type_id = _new_id()
+    doc = {
+        **data.model_dump(),
+        "id": job_sub_type_id,
+        "created_by_user_id": current_user.get("id"),
+        "created_by_username": current_user.get("username"),
+        "created_at": _now()
+    }
+    await db.job_sub_types.insert_one(doc.copy())
+    return doc
+
+@api_router.put("/job-sub-types/{id}", response_model=JobSubType)
+async def update_job_sub_type(id: str, data: JobSubTypeIn, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.job_sub_types.find_one({"id": id})
+    if not existing:
+        raise HTTPException(404, "Job Sub Type not found")
+        
+    if existing.get("image") and data.image != existing.get("image"):
+        try:
+            old_val = existing["image"]
+            if old_val.startswith("/api/uploads/"):
+                old_fname = old_val.rsplit("/", 1)[-1]
+                for sub in ["job-sub-types", "general", "item-images", "test-images", "auditjobs"]:
+                    old_fp = ROOT_DIR / "uploads" / sub / old_fname
+                    if old_fp.exists():
+                        old_fp.unlink()
+                        break
+        except Exception:
+            pass
+    
+    
+    update_data = {
+        **data.model_dump(),
+        "last_edited_by_user_id": current_user.get("id"),
+        "last_edited_by_username": current_user.get("username"),
+        "last_edited_at": _now()
+    }
+    await db.job_sub_types.update_one({"id": id}, {"$set": update_data})
+    return await db.job_sub_types.find_one({"id": id}, {"_id": 0})
+
+@api_router.delete("/job-sub-types/{id}")
+async def delete_job_sub_type(id: str):
+    result = await db.job_sub_types.delete_one({"id": id})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Job Sub Type not found")
+    return {"message": "Deleted successfully"}
+
+# ---------------------- TAX CATEGORIES ----------------------
+@api_router.get("/tax-categories/paginated", response_model=PaginatedTaxCategories)
+async def get_tax_categories_paginated(
+    page: int = 1,
+    limit: int = 25,
+    q: Optional[str] = None,
+    filterField: Optional[str] = None,
+    filterOp: Optional[str] = None,
+    filterVal: Optional[str] = None
+):
+    skip = (page - 1) * limit
+    query = {}
+    if q:
+        s = q.strip()
+        query["$or"] = [
+            {"id": {"$regex": s, "$options": "i"}},
+            {"title": {"$regex": s, "$options": "i"}}
+        ]
+    if filterField and filterOp and filterVal:
+        if filterOp == "eq": query[filterField] = filterVal
+        elif filterOp == "neq": query[filterField] = {"$ne": filterVal}
+        elif filterOp == "like": query[filterField] = {"$regex": filterVal, "$options": "i"}
+
+    total = await db.tax_categories.count_documents(query)
+    cursor = db.tax_categories.find(query).sort("created_at", -1).skip(skip).limit(limit)
+    data = [TaxCategory(**doc) async for doc in cursor]
+    return PaginatedTaxCategories(data=data, total=total)
+
+@api_router.get("/tax-categories", response_model=List[TaxCategory])
+async def get_all_tax_categories():
+    cursor = db.tax_categories.find({}).sort("title", 1)
+    return [TaxCategory(**doc) async for doc in cursor]
+
+@api_router.get("/tax-categories/{id}", response_model=TaxCategory)
+async def get_tax_category(id: str):
+    doc = await db.tax_categories.find_one({"id": id})
+    if not doc: raise HTTPException(404, "Tax Category not found")
+    return TaxCategory(**doc)
+
+@api_router.post("/tax-categories", response_model=TaxCategory)
+async def create_tax_category(data: TaxCategoryIn, current_user: dict = Depends(auth_module.get_current_user)):
+    cat_id = data.title.strip().replace(" ", "-").lower() + "-" + str(int(time.time()))[:6]
+    doc = {
+        **data.model_dump(),
+        "id": cat_id,
+        "created_by_user_id": current_user.get("id"),
+        "created_by_username": current_user.get("username"),
+        "created_at": _now()
+    }
+    await db.tax_categories.insert_one(doc.copy())
+    return doc
+
+@api_router.put("/tax-categories/{id}", response_model=TaxCategory)
+async def update_tax_category(id: str, data: TaxCategoryIn, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.tax_categories.find_one({"id": id})
+    if not existing: raise HTTPException(404, "Tax Category not found")
+    update_data = {
+        **data.model_dump(),
+        "last_edited_by_user_id": current_user.get("id"),
+        "last_edited_by_username": current_user.get("username"),
+        "last_edited_at": _now()
+    }
+    await db.tax_categories.update_one({"id": id}, {"$set": update_data})
+    return await db.tax_categories.find_one({"id": id}, {"_id": 0})
+
+@api_router.delete("/tax-categories/{id}")
+async def delete_tax_category(id: str):
+    result = await db.tax_categories.delete_one({"id": id})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Tax Category not found")
+    return {"message": "Deleted successfully"}
+
+# ---------------------- SALES TAX TEMPLATES ----------------------
+@api_router.get("/sales-tax-templates/paginated", response_model=PaginatedSalesTaxTemplates)
+async def get_sales_tax_templates_paginated(
+    page: int = 1,
+    limit: int = 25,
+    q: Optional[str] = None,
+    filterField: Optional[str] = None,
+    filterOp: Optional[str] = None,
+    filterVal: Optional[str] = None
+):
+    skip = (page - 1) * limit
+    query = {}
+    if q:
+        s = q.strip()
+        query["$or"] = [
+            {"id": {"$regex": s, "$options": "i"}},
+            {"title": {"$regex": s, "$options": "i"}}
+        ]
+    if filterField and filterOp and filterVal:
+        if filterOp == "eq": query[filterField] = filterVal
+        elif filterOp == "neq": query[filterField] = {"$ne": filterVal}
+        elif filterOp == "like": query[filterField] = {"$regex": filterVal, "$options": "i"}
+
+    total = await db.sales_tax_templates.count_documents(query)
+    cursor = db.sales_tax_templates.find(query).sort("created_at", -1).skip(skip).limit(limit)
+    data = [SalesTaxTemplate(**doc) async for doc in cursor]
+    return PaginatedSalesTaxTemplates(data=data, total=total)
+
+@api_router.get("/sales-tax-templates", response_model=List[SalesTaxTemplate])
+async def get_all_sales_tax_templates():
+    cursor = db.sales_tax_templates.find({}).sort("title", 1)
+    return [SalesTaxTemplate(**doc) async for doc in cursor]
+
+@api_router.get("/sales-tax-templates/{id}", response_model=SalesTaxTemplate)
+async def get_sales_tax_template(id: str):
+    doc = await db.sales_tax_templates.find_one({"id": id})
+    if not doc: raise HTTPException(404, "Sales Tax Template not found")
+    return SalesTaxTemplate(**doc)
+
+@api_router.post("/sales-tax-templates", response_model=SalesTaxTemplate)
+async def create_sales_tax_template(data: SalesTaxTemplateIn, current_user: dict = Depends(auth_module.get_current_user)):
+    tpl_id = data.title.strip().replace(" ", "-").lower() + "-" + str(int(time.time()))[:6]
+    doc = {
+        **data.model_dump(),
+        "id": tpl_id,
+        "created_by_user_id": current_user.get("id"),
+        "created_by_username": current_user.get("username"),
+        "created_at": _now()
+    }
+    await db.sales_tax_templates.insert_one(doc.copy())
+    return doc
+
+@api_router.put("/sales-tax-templates/{id}", response_model=SalesTaxTemplate)
+async def update_sales_tax_template(id: str, data: SalesTaxTemplateIn, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.sales_tax_templates.find_one({"id": id})
+    if not existing: raise HTTPException(404, "Sales Tax Template not found")
+    update_data = {
+        **data.model_dump(),
+        "last_edited_by_user_id": current_user.get("id"),
+        "last_edited_by_username": current_user.get("username"),
+        "last_edited_at": _now()
+    }
+    await db.sales_tax_templates.update_one({"id": id}, {"$set": update_data})
+    return await db.sales_tax_templates.find_one({"id": id}, {"_id": 0})
+
+@api_router.delete("/sales-tax-templates/{id}")
+async def delete_sales_tax_template(id: str):
+    result = await db.sales_tax_templates.delete_one({"id": id})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Sales Tax Template not found")
+    return {"message": "Deleted successfully"}
+
+
+# ---------------------- PAYMENT TERMS MASTER ----------------------
+@api_router.get("/payment-terms/paginated", response_model=PaginatedPaymentTerms)
+async def get_payment_terms_paginated(
+    page: int = 1,
+    limit: int = 25,
+    q: Optional[str] = None,
+    filterField: Optional[str] = None,
+    filterOp: Optional[str] = None,
+    filterVal: Optional[str] = None
+):
+    skip = (page - 1) * limit
+    query = {}
+    if q:
+        s = q.strip()
+        query["$or"] = [
+            {"id": {"$regex": s, "$options": "i"}},
+            {"payment_term_name": {"$regex": s, "$options": "i"}},
+            {"description": {"$regex": s, "$options": "i"}}
+        ]
+    if filterField and filterOp and filterVal:
+        if filterOp == "eq": query[filterField] = filterVal
+        elif filterOp == "neq": query[filterField] = {"$ne": filterVal}
+        elif filterOp == "like": query[filterField] = {"$regex": filterVal, "$options": "i"}
+
+    total = await db.payment_terms.count_documents(query)
+    cursor = db.payment_terms.find(query).sort("created_at", -1).skip(skip).limit(limit)
+    data = [PaymentTermMaster(**doc) async for doc in cursor]
+    return PaginatedPaymentTerms(data=data, total=total)
+
+@api_router.get("/payment-terms", response_model=List[PaymentTermMaster])
+async def get_all_payment_terms():
+    cursor = db.payment_terms.find({}).sort("payment_term_name", 1)
+    return [PaymentTermMaster(**doc) async for doc in cursor]
+
+@api_router.get("/payment-terms/{id}", response_model=PaymentTermMaster)
+async def get_payment_term(id: str):
+    doc = await db.payment_terms.find_one({"id": id})
+    if not doc: raise HTTPException(404, "Payment Term not found")
+    return PaymentTermMaster(**doc)
+
+@api_router.post("/payment-terms", response_model=PaymentTermMaster)
+async def create_payment_term(data: PaymentTermIn, current_user: dict = Depends(auth_module.get_current_user)):
+    pt_name = (data.payment_term_name or data.payment_term or "").strip()
+    if not pt_name:
+        raise HTTPException(400, "Payment Term Name is required")
+    pt_id = pt_name.replace(" ", "-").lower() + "-" + str(int(time.time()))[:6]
+    doc = {
+        **data.model_dump(),
+        "id": pt_id,
+        "payment_term_name": pt_name,
+        "payment_term": pt_name,
+        "created_by_user_id": current_user.get("id"),
+        "created_by_username": current_user.get("username"),
+        "created_at": _now()
+    }
+    await db.payment_terms.insert_one(doc.copy())
+    return doc
+
+@api_router.put("/payment-terms/{id}", response_model=PaymentTermMaster)
+async def update_payment_term(id: str, data: PaymentTermIn, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.payment_terms.find_one({"id": id})
+    if not existing: raise HTTPException(404, "Payment Term not found")
+    pt_name = (data.payment_term_name or data.payment_term or "").strip()
+    if not pt_name:
+        pt_name = existing.get("payment_term_name") or existing.get("payment_term") or id
+    update_data = {
+        **data.model_dump(),
+        "payment_term_name": pt_name,
+        "payment_term": pt_name,
+        "last_edited_by_user_id": current_user.get("id"),
+        "last_edited_by_username": current_user.get("username"),
+        "last_edited_at": _now()
+    }
+    await db.payment_terms.update_one({"id": id}, {"$set": update_data})
+    return await db.payment_terms.find_one({"id": id}, {"_id": 0})
+
+@api_router.delete("/payment-terms/{id}")
+async def delete_payment_term(id: str):
+    result = await db.payment_terms.delete_one({"id": id})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Payment Term not found")
+    return {"message": "Deleted successfully"}
+
+
+# ---------------------- PAYMENT TERMS TEMPLATES ----------------------
+@api_router.get("/payment-terms-templates/paginated", response_model=PaginatedPaymentTermsTemplates)
+async def get_payment_terms_templates_paginated(
+    page: int = 1,
+    limit: int = 25,
+    q: Optional[str] = None,
+    filterField: Optional[str] = None,
+    filterOp: Optional[str] = None,
+    filterVal: Optional[str] = None
+):
+    skip = (page - 1) * limit
+    query = {}
+    if q:
+        s = q.strip()
+        query["$or"] = [
+            {"id": {"$regex": s, "$options": "i"}},
+            {"template_name": {"$regex": s, "$options": "i"}}
+        ]
+    if filterField and filterOp and filterVal:
+        if filterOp == "eq": query[filterField] = filterVal
+        elif filterOp == "neq": query[filterField] = {"$ne": filterVal}
+        elif filterOp == "like": query[filterField] = {"$regex": filterVal, "$options": "i"}
+
+    total = await db.payment_terms_templates.count_documents(query)
+    cursor = db.payment_terms_templates.find(query).sort("created_at", -1).skip(skip).limit(limit)
+    data = [PaymentTermsTemplate(**doc) async for doc in cursor]
+    return PaginatedPaymentTermsTemplates(data=data, total=total)
+
+@api_router.get("/payment-terms-templates", response_model=List[PaymentTermsTemplate])
+async def get_all_payment_terms_templates():
+    cursor = db.payment_terms_templates.find({}).sort("template_name", 1)
+    return [PaymentTermsTemplate(**doc) async for doc in cursor]
+
+@api_router.get("/payment-terms-templates/{id}", response_model=PaymentTermsTemplate)
+async def get_payment_terms_template(id: str):
+    doc = await db.payment_terms_templates.find_one({"id": id})
+    if not doc: raise HTTPException(404, "Payment Terms Template not found")
+    return PaymentTermsTemplate(**doc)
+
+@api_router.post("/payment-terms-templates", response_model=PaymentTermsTemplate)
+async def create_payment_terms_template(data: PaymentTermsTemplateIn, current_user: dict = Depends(auth_module.get_current_user)):
+    tpl_id = data.template_name.strip().replace(" ", "-").lower() + "-" + str(int(time.time()))[:6]
+    doc = {
+        **data.model_dump(),
+        "id": tpl_id,
+        "created_by_user_id": current_user.get("id"),
+        "created_by_username": current_user.get("username"),
+        "created_at": _now()
+    }
+    await db.payment_terms_templates.insert_one(doc.copy())
+    return doc
+
+@api_router.put("/payment-terms-templates/{id}", response_model=PaymentTermsTemplate)
+async def update_payment_terms_template(id: str, data: PaymentTermsTemplateIn, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.payment_terms_templates.find_one({"id": id})
+    if not existing: raise HTTPException(404, "Payment Terms Template not found")
+    update_data = {
+        **data.model_dump(),
+        "last_edited_by_user_id": current_user.get("id"),
+        "last_edited_by_username": current_user.get("username"),
+        "last_edited_at": _now()
+    }
+    await db.payment_terms_templates.update_one({"id": id}, {"$set": update_data})
+    return await db.payment_terms_templates.find_one({"id": id}, {"_id": 0})
+
+@api_router.delete("/payment-terms-templates/{id}")
+async def delete_payment_terms_template(id: str):
+    result = await db.payment_terms_templates.delete_one({"id": id})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Payment Terms Template not found")
+    return {"message": "Deleted successfully"}
+
+
+# ---------------------- TERMS AND CONDITIONS ----------------------
+@api_router.get("/terms-and-conditions/paginated", response_model=PaginatedTermsAndConditions)
+async def get_terms_and_conditions_paginated(
+    page: int = 1,
+    limit: int = 25,
+    q: Optional[str] = None,
+    filterField: Optional[str] = None,
+    filterOp: Optional[str] = None,
+    filterVal: Optional[str] = None
+):
+    skip = (page - 1) * limit
+    query = {}
+    if q:
+        s = q.strip()
+        query["$or"] = [
+            {"id": {"$regex": s, "$options": "i"}},
+            {"title": {"$regex": s, "$options": "i"}}
+        ]
+    
+    if filterField and filterOp and filterVal:
+        if filterOp == "=":
+            query[filterField] = filterVal
+        elif filterOp == "like":
+            query[filterField] = {"$regex": filterVal, "$options": "i"}
+
+    cursor = db.terms_and_conditions.find(query).sort("created_at", -1).skip(skip).limit(limit)
+    data = await cursor.to_list(length=limit)
+    total = await db.terms_and_conditions.count_documents(query)
+    for doc in data:
+        doc.pop("_id", None)
+    return {"data": data, "total": total}
+
+@api_router.get("/terms-and-conditions", response_model=List[TermsAndConditions])
+async def get_all_terms_and_conditions():
+    cursor = db.terms_and_conditions.find({}).sort("title", 1)
+    data = await cursor.to_list(length=1000)
+    for doc in data:
+        doc.pop("_id", None)
+    return data
+
+@api_router.get("/terms-and-conditions/{id}", response_model=TermsAndConditions)
+async def get_terms_and_conditions(id: str):
+    doc = await db.terms_and_conditions.find_one({"id": id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Terms and Conditions not found")
+    return doc
+
+@api_router.post("/terms-and-conditions", response_model=TermsAndConditions)
+async def create_terms_and_conditions(data: TermsAndConditionsIn, current_user: dict = Depends(auth_module.get_current_user)):
+    new_doc = {
+        **data.model_dump(),
+        "id": data.title,
+        "created_by_user_id": current_user.get("id"),
+        "created_by_username": current_user.get("username"),
+        "created_at": _now()
+    }
+    await db.terms_and_conditions.insert_one(new_doc.copy())
+    return new_doc
+
+@api_router.put("/terms-and-conditions/{id}", response_model=TermsAndConditions)
+async def update_terms_and_conditions(id: str, data: TermsAndConditionsIn, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.terms_and_conditions.find_one({"id": id})
+    if not existing: raise HTTPException(404, "Terms and Conditions not found")
+    update_data = {
+        **data.model_dump(),
+        "last_edited_by_user_id": current_user.get("id"),
+        "last_edited_by_username": current_user.get("username"),
+        "last_edited_at": _now()
+    }
+    await db.terms_and_conditions.update_one({"id": id}, {"$set": update_data})
+    return await db.terms_and_conditions.find_one({"id": id}, {"_id": 0})
+
+@api_router.delete("/terms-and-conditions/{id}")
+async def delete_terms_and_conditions(id: str):
+    result = await db.terms_and_conditions.delete_one({"id": id})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Terms and Conditions not found")
+    return {"message": "Deleted successfully"}
+
+
+# ---------------------- LETTER HEADS ----------------------
+@api_router.get("/letter-heads/paginated", response_model=PaginatedLetterHeads)
+async def get_paginated_letter_heads(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    search: Optional[str] = None
+):
+    query = {}
+    if search:
+        query = {"name": {"$regex": search, "$options": "i"}}
+    
+    total = await db.letter_heads.count_documents(query)
+    skip = (page - 1) * limit
+    cursor = db.letter_heads.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit)
+    data = await cursor.to_list(length=limit)
+    return {"data": data, "total": total}
+
+@api_router.get("/letter-heads", response_model=List[LetterHead])
+async def get_letter_heads():
+    cursor = db.letter_heads.find({}, {"_id": 0}).sort("created_at", -1)
+    return await cursor.to_list(length=None)
+
+@api_router.get("/letter-heads/{id}", response_model=LetterHead)
+async def get_letter_head(id: str):
+    lh = await db.letter_heads.find_one({"id": id}, {"_id": 0})
+    if not lh: raise HTTPException(404, "Letter Head not found")
+    return lh
+
+@api_router.post("/letter-heads", response_model=LetterHead)
+async def create_letter_head(data: LetterHeadIn, current_user: dict = Depends(auth_module.get_current_user)):
+    new_lh = {
+        **data.model_dump(),
+        "id": _new_id(),
+        "created_by_user_id": current_user.get("id"),
+        "created_by_username": current_user.get("username"),
+        "created_at": _now()
+    }
+    await db.letter_heads.insert_one(new_lh)
+    return await db.letter_heads.find_one({"id": new_lh["id"]}, {"_id": 0})
+
+@api_router.put("/letter-heads/{id}", response_model=LetterHead)
+async def update_letter_head(id: str, data: LetterHeadIn, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.letter_heads.find_one({"id": id})
+    if not existing: raise HTTPException(404, "Letter Head not found")
+    update_data = {
+        **data.model_dump(),
+        "last_edited_by_user_id": current_user.get("id"),
+        "last_edited_by_username": current_user.get("username"),
+        "last_edited_at": _now()
+    }
+    await db.letter_heads.update_one({"id": id}, {"$set": update_data})
+    return await db.letter_heads.find_one({"id": id}, {"_id": 0})
+
+@api_router.delete("/letter-heads/{id}")
+async def delete_letter_head(id: str):
+    result = await db.letter_heads.delete_one({"id": id})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Letter Head not found")
+    return {"message": "Deleted successfully"}
+
+
+# ---------------------- PRINT HEADINGS ----------------------
+@api_router.get("/print-headings/paginated", response_model=PaginatedPrintHeadings)
+async def get_paginated_print_headings(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    search: Optional[str] = None
+):
+    query = {}
+    if search:
+        query = {"print_heading": {"$regex": search, "$options": "i"}}
+    
+    total = await db.print_headings.count_documents(query)
+    skip = (page - 1) * limit
+    cursor = db.print_headings.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit)
+    data = await cursor.to_list(length=limit)
+    return {"data": data, "total": total}
+
+@api_router.get("/print-headings", response_model=List[PrintHeading])
+async def get_print_headings():
+    cursor = db.print_headings.find({}, {"_id": 0}).sort("created_at", -1)
+    return await cursor.to_list(length=None)
+
+@api_router.get("/print-headings/{id}", response_model=PrintHeading)
+async def get_print_heading(id: str):
+    ph = await db.print_headings.find_one({"id": id}, {"_id": 0})
+    if not ph: raise HTTPException(404, "Print Heading not found")
+    return ph
+
+@api_router.post("/print-headings", response_model=PrintHeading)
+async def create_print_heading(data: PrintHeadingIn, current_user: dict = Depends(auth_module.get_current_user)):
+    new_ph = {
+        **data.model_dump(),
+        "id": _new_id(),
+        "created_by_user_id": current_user.get("id"),
+        "created_by_username": current_user.get("username"),
+        "created_at": _now()
+    }
+    await db.print_headings.insert_one(new_ph)
+    return await db.print_headings.find_one({"id": new_ph["id"]}, {"_id": 0})
+
+@api_router.put("/print-headings/{id}", response_model=PrintHeading)
+async def update_print_heading(id: str, data: PrintHeadingIn, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.print_headings.find_one({"id": id})
+    if not existing: raise HTTPException(404, "Print Heading not found")
+    update_data = {
+        **data.model_dump(),
+        "last_edited_by_user_id": current_user.get("id"),
+        "last_edited_by_username": current_user.get("username"),
+        "last_edited_at": _now()
+    }
+    await db.print_headings.update_one({"id": id}, {"$set": update_data})
+    return await db.print_headings.find_one({"id": id}, {"_id": 0})
+
+@api_router.delete("/print-headings/{id}")
+async def delete_print_heading(id: str):
+    result = await db.print_headings.delete_one({"id": id})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Print Heading not found")
+    return {"message": "Deleted successfully"}
+
+
+# ---------------------- OPPORTUNITIES ----------------------
+@api_router.get("/opportunity-types", response_model=List[OpportunityType])
+async def get_opportunity_types():
+    cursor = db.opportunity_types.find({}, {"_id": 0})
+    return await cursor.to_list(length=None)
+
+@api_router.post("/opportunity-types", response_model=OpportunityType)
+async def create_opportunity_type(data: OpportunityTypeIn):
+    new_type = {**data.model_dump(), "id": _new_id()}
+    await db.opportunity_types.insert_one(new_type)
+    return await db.opportunity_types.find_one({"id": new_type["id"]}, {"_id": 0})
+
+@api_router.delete("/opportunity-types/{id}")
+async def delete_opportunity_type(id: str):
+    result = await db.opportunity_types.delete_one({"id": id})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Opportunity Type not found")
+    return {"message": "Deleted successfully"}
+
+@api_router.get("/opportunities", response_model=List[Opportunity])
+async def get_opportunities():
+    cursor = db.opportunities.find({}, {"_id": 0}).sort("created_at", -1)
+    return await cursor.to_list(length=None)
+
+@api_router.post("/opportunities", response_model=Opportunity)
+async def create_opportunity(data: OpportunityIn):
+    new_opp = {
+        **data.model_dump(),
+        "id": _new_id(),
+        "created_at": _now()
+    }
+    await db.opportunities.insert_one(new_opp)
+    return await db.opportunities.find_one({"id": new_opp["id"]}, {"_id": 0})
+
+# ---------------------- LEADS ----------------------
+@api_router.get("/leads/paginated", response_model=PaginatedLeads)
+async def get_leads_paginated(
+    page: int = 1,
+    limit: int = 25,
+    q: Optional[str] = None,
+    filterField: Optional[str] = None,
+    filterOp: Optional[str] = None,
+    filterVal: Optional[str] = None
+):
+    skip = (page - 1) * limit
+    query = {}
+    if q:
+        s = q.strip()
+        query["$or"] = [
+            {"id": {"$regex": s, "$options": "i"}},
+            {"lead_name": {"$regex": s, "$options": "i"}},
+            {"company_name": {"$regex": s, "$options": "i"}},
+            {"name": {"$regex": s, "$options": "i"}}
+        ]
+    total = await db.leads.count_documents(query)
+    cursor = db.leads.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit)
+    data = await cursor.to_list(length=limit)
+    return PaginatedLeads(data=data, total=total)
+
+@api_router.get("/leads", response_model=List[Lead])
+async def get_leads():
+    cursor = db.leads.find({}, {"_id": 0}).sort("created_at", -1)
+    return await cursor.to_list(length=None)
+
+@api_router.get("/leads/{id}", response_model=Lead)
+async def get_lead(id: str):
+    t = await db.leads.find_one({"id": id}, {"_id": 0})
+    if not t: raise HTTPException(404, "Lead not found")
+    return t
+
+@api_router.post("/leads", response_model=Lead)
+async def create_lead(data: LeadIn, current_user: dict = Depends(auth_module.get_current_user)):
+    lead_dict = data.model_dump()
+    if not lead_dict.get("name"):
+        lead_dict["name"] = lead_dict.get("lead_name", "")
+    new_t = {
+        **lead_dict,
+        "id": _new_id(),
+        "created_by_user_id": current_user.get("id"),
+        "created_by_username": current_user.get("username"),
+        "created_at": _now()
+    }
+    await db.leads.insert_one(new_t)
+    return await db.leads.find_one({"id": new_t["id"]}, {"_id": 0})
+
+@api_router.put("/leads/{id}", response_model=Lead)
+async def update_lead(id: str, data: LeadIn, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.leads.find_one({"id": id})
+    if not existing: raise HTTPException(404, "Lead not found")
+    lead_dict = data.model_dump()
+    if not lead_dict.get("name"):
+        lead_dict["name"] = lead_dict.get("lead_name", existing.get("lead_name", ""))
+    update_data = {
+        **lead_dict,
+        "last_edited_by_user_id": current_user.get("id"),
+        "last_edited_by_username": current_user.get("username"),
+        "last_edited_at": _now()
+    }
+    await db.leads.update_one({"id": id}, {"$set": update_data})
+    return await db.leads.find_one({"id": id}, {"_id": 0})
+
+@api_router.delete("/leads/{id}")
+async def delete_lead(id: str):
+    result = await db.leads.delete_one({"id": id})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Lead not found")
+    return {"message": "Deleted successfully"}
+
+
+# ---------------------- SCOPE OF WORK ----------------------
+@api_router.get("/scope-of-works/paginated", response_model=PaginatedScopeOfWorks)
+async def get_scope_of_works_paginated(
+    page: int = 1,
+    limit: int = 25,
+    q: Optional[str] = None,
+    filterField: Optional[str] = None,
+    filterOp: Optional[str] = None,
+    filterVal: Optional[str] = None
+):
+    skip = (page - 1) * limit
+    query = {}
+    if q:
+        s = q.strip()
+        query["$or"] = [
+            {"id": {"$regex": s, "$options": "i"}},
+            {"job_type_name": {"$regex": s, "$options": "i"}},
+            {"job_sub_type_name": {"$regex": s, "$options": "i"}},
+            {"name": {"$regex": s, "$options": "i"}}
+        ]
+        
+    if filterField and filterVal and filterOp:
+        field_map = {
+            "ID": "name",
+            "Job Type": "job_type_name",
+            "Job Sub Type": "job_sub_type_name"
+        }
+        db_field = field_map.get(filterField, filterField)
+        
+        val = filterVal
+        if filterOp == "Equals":
+            query[db_field] = val
+        elif filterOp == "Like":
+            query[db_field] = {"$regex": str(val), "$options": "i"}
+
+    total = await db.scope_of_works.count_documents(query)
+    items = await db.scope_of_works.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    return {"data": items, "total": total}
+
+@api_router.get("/scope-of-works", response_model=List[ScopeOfWork])
+async def get_scope_of_works():
+    docs = await db.scope_of_works.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return docs
+
+@api_router.get("/scope-of-works/{id}", response_model=ScopeOfWork)
+async def get_scope_of_work(id: str):
+    doc = await db.scope_of_works.find_one({"id": id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Scope of Work not found")
+    return doc
+
+# ------------------- ITEMS -------------------
+
+@api_router.get("/items", response_model=List[Item])
+async def get_items():
+    cursor = db.items.find({}).sort("created_at", -1)
+    return [Item(**doc) async for doc in cursor]
+
+@api_router.post("/items", response_model=Item)
+async def create_item(data: ItemIn, current_user=Depends(auth_module.get_current_user)):
+    existing = await db.items.find_one({"item_code": data.item_code})
+    if existing:
+        raise HTTPException(400, "Item with this code already exists")
+    
+    doc = data.model_dump()
+    doc["id"] = secrets.token_hex(12)
+    doc["created_at"] = datetime.now(timezone.utc).isoformat()
+    doc["created_by_user_id"] = current_user.get("id")
+    doc["created_by_username"] = current_user.get("username")
+    
+    await db.items.insert_one(doc)
+    return Item(**doc)
+
+@api_router.get("/items/paginated", response_model=PaginatedItems)
+async def get_items_paginated(
+    page: int = 1,
+    limit: int = 25,
+    q: str = "",
+    filterField: str = "",
+    filterOp: str = "",
+    filterVal: str = "",
+):
+    query = {}
+    if q:
+        query["$or"] = [
+            {"item_code": {"$regex": q, "$options": "i"}},
+            {"item_name": {"$regex": q, "$options": "i"}},
+            {"item_group": {"$regex": q, "$options": "i"}}
+        ]
+    
+    if filterField and filterVal:
+        if filterOp == "Equals":
+            query[filterField] = filterVal
+        elif filterOp == "Like":
+            query[filterField] = {"$regex": filterVal, "$options": "i"}
+
+    skip = (page - 1) * limit
+    cursor = db.items.find(query).sort("created_at", -1).skip(skip).limit(limit)
+    docs = await cursor.to_list(limit)
+    total = await db.items.count_documents(query)
+    
+    return {"data": [Item(**d) for d in docs], "total": total}
+
+@api_router.get("/items/{id}", response_model=Item)
+async def get_item(id: str):
+    doc = await db.items.find_one({"id": id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Item not found")
+    return doc
+
+@api_router.put("/items/{id}", response_model=Item)
+async def update_item(id: str, data: ItemIn, current_user=Depends(auth_module.get_current_user)):
+    existing = await db.items.find_one({"id": id})
+    if not existing:
+        raise HTTPException(404, "Item not found")
+        
+    doc = existing.copy()
+    doc.update(data.model_dump())
+    doc["last_edited_by_user_id"] = current_user.get("id")
+    doc["last_edited_by_username"] = current_user.get("username")
+    doc["last_edited_at"] = datetime.now(timezone.utc).isoformat()
+    
+    await db.items.replace_one({"id": id}, doc)
+    return Item(**doc)
+
+@api_router.delete("/items/{id}")
+async def delete_item(id: str, current_user=Depends(auth_module.get_current_user)):
+    res = await db.items.delete_one({"id": id})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Item not found")
+    return {"ok": True}
+
+# ------------------- SCOPE OF WORKS -------------------
+
+@api_router.post("/scope-of-works", response_model=ScopeOfWork)
+async def create_scope_of_work(data: ScopeOfWorkIn, current_user: dict = Depends(auth_module.get_current_user)):
+    sow_id = _new_id()
+    name = f"{data.job_type_name}-{data.job_sub_type_name}" if data.job_sub_type_name else data.job_type_name
+    doc = {
+        **data.model_dump(),
+        "id": sow_id,
+        "name": name,
+        "created_by_user_id": current_user.get("id"),
+        "created_by_username": current_user.get("username"),
+        "created_at": _now()
+    }
+    await db.scope_of_works.insert_one(doc.copy())
+    return doc
+
+@api_router.put("/scope-of-works/{id}", response_model=ScopeOfWork)
+async def update_scope_of_work(id: str, data: ScopeOfWorkIn, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.scope_of_works.find_one({"id": id})
+    if not existing:
+        raise HTTPException(404, "Scope of Work not found")
+    
+    name = f"{data.job_type_name}-{data.job_sub_type_name}" if data.job_sub_type_name else data.job_type_name
+    update_data = {
+        **data.model_dump(),
+        "name": name,
+        "last_edited_by_user_id": current_user.get("id"),
+        "last_edited_by_username": current_user.get("username"),
+        "last_edited_at": _now()
+    }
+    await db.scope_of_works.update_one({"id": id}, {"$set": update_data})
+    return await db.scope_of_works.find_one({"id": id}, {"_id": 0})
+
+@api_router.delete("/scope-of-works/{id}")
+async def delete_scope_of_work(id: str):
+    result = await db.scope_of_works.delete_one({"id": id})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Scope of Work not found")
+    return {"message": "Deleted successfully"}
+# --- ADDRESS ENDPOINTS ---
+
+@api_router.get("/addresses", response_model=PaginatedAddresses)
+async def get_addresses(
+    page: int = 1, 
+    limit: int = 50, 
+    search: str = "",
+    link_document_type: str = "",
+    link_name: str = "",
+    address_type: str = "",
+    filterField: str = "",
+    filterOp: str = "",
+    filterVal: str = "",
+    current_user: dict = Depends(auth_module.get_current_user)
+):
+    skip = (page - 1) * limit
+    query = {}
+    if search:
+        query["$or"] = [
+            {"address_line1": {"$regex": search, "$options": "i"}},
+            {"city": {"$regex": search, "$options": "i"}},
+            {"link_name": {"$regex": search, "$options": "i"}}
+        ]
+    if link_document_type:
+        query["link_document_type"] = link_document_type
+    if link_name:
+        query["link_name"] = link_name
+    if address_type:
+        query["address_type"] = address_type
+        
+    if filterField and filterOp and filterVal:
+        db_field = filterField.lower().replace(" ", "_")
+        if filterField == "Address Type":
+            db_field = "address_type"
+        elif filterField == "ID":
+            db_field = "id"
+        elif filterField == "City/Town":
+            db_field = "city"
+            
+        if filterOp == "Equals":
+            query[db_field] = filterVal
+        elif filterOp == "Like":
+            query[db_field] = {"$regex": filterVal, "$options": "i"}
+        elif filterOp == ">=":
+            query[db_field] = {"$gte": filterVal}
+        elif filterOp == "<=":
+            query[db_field] = {"$lte": filterVal}
+        
+    cursor = db.addresses.find(query).sort("created_at", -1).skip(skip).limit(limit)
+    addresses = await cursor.to_list(length=limit)
+    total = await db.addresses.count_documents(query)
+    return PaginatedAddresses(data=addresses, total=total)
+
+@api_router.post("/addresses", response_model=Address)
+async def create_address(data: AddressIn, current_user: dict = Depends(auth_module.get_current_user)):
+    new_id = f"ADDR-{uuid.uuid4().hex[:8].upper()}"
+    address_doc = {
+        **data.model_dump(),
+        "id": new_id,
+        "created_at": _now(),
+        "last_edited_by_user_id": current_user.get("id"),
+        "last_edited_by_username": current_user.get("username"),
+        "last_edited_at": _now()
+    }
+    await db.addresses.insert_one(address_doc)
+    return await db.addresses.find_one({"id": new_id}, {"_id": 0})
+
+@api_router.get("/addresses/{id}", response_model=Address)
+async def get_address(id: str, current_user: dict = Depends(auth_module.get_current_user)):
+    doc = await db.addresses.find_one({"id": id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Address not found")
+    return doc
+
+@api_router.put("/addresses/{id}", response_model=Address)
+async def update_address(id: str, data: AddressIn, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.addresses.find_one({"id": id})
+    if not existing:
+        raise HTTPException(404, "Address not found")
+    
+    update_data = {
+        **data.model_dump(),
+        "last_edited_by_user_id": current_user.get("id"),
+        "last_edited_by_username": current_user.get("username"),
+        "last_edited_at": _now()
+    }
+    await db.addresses.update_one({"id": id}, {"$set": update_data})
+    return await db.addresses.find_one({"id": id}, {"_id": 0})
+
+@api_router.delete("/addresses/{id}")
+async def delete_address(id: str):
+    result = await db.addresses.delete_one({"id": id})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Address not found")
+    return {"message": "Deleted successfully"}
+
+
+# --- SITE ADDRESS ENDPOINTS ---
+
+@api_router.get("/site-addresses", response_model=PaginatedSiteAddresses)
+async def get_site_addresses(
+    page: int = 1,
+    limit: int = 50,
+    search: str = "",
+    current_user: dict = Depends(auth_module.get_current_user)
+):
+    skip = (page - 1) * limit
+    query = {}
+    if search:
+        import re
+        s = re.escape(search)
+        query = {"$or": [
+            {"title": {"$regex": s, "$options": "i"}},
+            {"address_line1": {"$regex": s, "$options": "i"}},
+            {"city": {"$regex": s, "$options": "i"}}
+        ]}
+
+    cursor = db.site_addresses.find(query).sort("created_at", -1).skip(skip).limit(limit)
+    addresses = await cursor.to_list(length=limit)
+    total = await db.site_addresses.count_documents(query)
+    return PaginatedSiteAddresses(data=addresses, total=total)
+
+@api_router.post("/site-addresses", response_model=SiteAddress)
+async def create_site_address(data: SiteAddressIn, current_user: dict = Depends(auth_module.get_current_user)):
+    new_id = f"SADDR-{uuid.uuid4().hex[:8].upper()}"
+    address_doc = {
+        **data.model_dump(),
+        "id": new_id,
+        "created_at": _now(),
+        "created_by_user_id": current_user.get("id"),
+        "created_by_username": current_user.get("username"),
+        "last_edited_by_user_id": current_user.get("id"),
+        "last_edited_by_username": current_user.get("username"),
+        "last_edited_at": _now()
+    }
+    await db.site_addresses.insert_one(address_doc)
+    return await db.site_addresses.find_one({"id": new_id}, {"_id": 0})
+
+@api_router.get("/site-addresses/{id}", response_model=SiteAddress)
+async def get_site_address(id: str, current_user: dict = Depends(auth_module.get_current_user)):
+    doc = await db.site_addresses.find_one({"id": id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Site Address not found")
+    return doc
+
+@api_router.put("/site-addresses/{id}", response_model=SiteAddress)
+async def update_site_address(id: str, data: SiteAddressIn, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.site_addresses.find_one({"id": id})
+    if not existing:
+        raise HTTPException(404, "Site Address not found")
+    
+    update_data = {
+        **data.model_dump(),
+        "last_edited_by_user_id": current_user.get("id"),
+        "last_edited_by_username": current_user.get("username"),
+        "last_edited_at": _now()
+    }
+    await db.site_addresses.update_one({"id": id}, {"$set": update_data})
+    return await db.site_addresses.find_one({"id": id}, {"_id": 0})
+
+@api_router.delete("/site-addresses/{id}")
+async def delete_site_address(id: str):
+    result = await db.site_addresses.delete_one({"id": id})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Site Address not found")
+    return {"message": "Deleted successfully"}
+
+
+# --- CONTACT ENDPOINTS ---
+
+@api_router.get("/contacts", response_model=PaginatedContacts)
+async def get_contacts(
+    page: int = 1, 
+    limit: int = 50, 
+    search: str = "",
+    link_document_type: str = "",
+    link_name: str = "",
+    filterField: str = "",
+    filterOp: str = "",
+    filterVal: str = "",
+    current_user: dict = Depends(auth_module.get_current_user)
+):
+    skip = (page - 1) * limit
+    query = {}
+    if search:
+        query["$or"] = [
+            {"first_name": {"$regex": search, "$options": "i"}},
+            {"last_name": {"$regex": search, "$options": "i"}},
+            {"emails.email_id": {"$regex": search, "$options": "i"}},
+            {"numbers.number": {"$regex": search, "$options": "i"}},
+            {"company_name": {"$regex": search, "$options": "i"}}
+        ]
+        
+    if link_document_type or link_name:
+        link_query = {}
+        if link_document_type:
+            link_query["link_document_type"] = link_document_type
+        if link_name:
+            link_query["link_name"] = link_name
+        query["links"] = {"$elemMatch": link_query}
+        
+    if filterField and filterOp and filterVal:
+        db_field = filterField.lower().replace(" ", "_")
+        if filterField == "ID":
+            db_field = "id"
+        elif filterField == "Full Name":
+            db_field = "first_name" # rough approximation
+            
+        if filterOp == "Equals":
+            query[db_field] = filterVal
+        elif filterOp == "Like":
+            query[db_field] = {"$regex": filterVal, "$options": "i"}
+        elif filterOp == ">=":
+            query[db_field] = {"$gte": filterVal}
+        elif filterOp == "<=":
+            query[db_field] = {"$lte": filterVal}
+        
+    cursor = db.contacts.find(query).sort("created_at", -1).skip(skip).limit(limit)
+    contacts = await cursor.to_list(length=limit)
+    total = await db.contacts.count_documents(query)
+    return PaginatedContacts(data=contacts, total=total)
+
+@api_router.post("/contacts", response_model=Contact)
+async def create_contact(data: ContactIn, current_user: dict = Depends(auth_module.get_current_user)):
+    new_id = f"CONT-{uuid.uuid4().hex[:8].upper()}"
+    contact_doc = {
+        **data.model_dump(),
+        "id": new_id,
+        "created_at": _now(),
+        "last_edited_by_user_id": current_user.get("id"),
+        "last_edited_by_username": current_user.get("username"),
+        "last_edited_at": _now()
+    }
+    await db.contacts.insert_one(contact_doc)
+    return await db.contacts.find_one({"id": new_id}, {"_id": 0})
+
+@api_router.get("/contacts/{id}", response_model=Contact)
+async def get_contact(id: str, current_user: dict = Depends(auth_module.get_current_user)):
+    doc = await db.contacts.find_one({"id": id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Contact not found")
+    return doc
+
+@api_router.put("/contacts/{id}", response_model=Contact)
+async def update_contact(id: str, data: ContactIn, current_user: dict = Depends(auth_module.get_current_user)):
+    existing = await db.contacts.find_one({"id": id})
+    if not existing:
+        raise HTTPException(404, "Contact not found")
+    
+    update_data = {
+        **data.model_dump(),
+        "last_edited_by_user_id": current_user.get("id"),
+        "last_edited_by_username": current_user.get("username"),
+        "last_edited_at": _now()
+    }
+    await db.contacts.update_one({"id": id}, {"$set": update_data})
+    return await db.contacts.find_one({"id": id}, {"_id": 0})
+
+@api_router.delete("/contacts/{id}")
+async def delete_contact(id: str):
+    result = await db.contacts.delete_one({"id": id})
+    if result.deleted_count == 0:
+        raise HTTPException(404, "Contact not found")
+    return {"message": "Deleted successfully"}
+
+# Include the routers
+
+# --------------------------------------------------------------------------- #
+# TEST TEMPLATES endpoints
+# --------------------------------------------------------------------------- #
+
+@api_router.get("/test-templates/paginated", response_model=PaginatedTestTemplates)
+async def get_test_templates_paginated(
+    skip: int = 0,
+    limit: int = 20,
+    search: Optional[str] = None,
+    sortField: Optional[str] = "created_at",
+    sortOrder: Optional[str] = "desc"
+):
+    query = {}
+    if search:
+        query = {"test_name": {"$regex": search, "$options": "i"}}
+    
+    sort_dir = -1 if sortOrder == "desc" else 1
+    cursor = db.test_templates.find(query).sort(sortField, sort_dir).skip(skip).limit(limit)
+    items = await cursor.to_list(length=limit)
+    total = await db.test_templates.count_documents(query)
+    
+    for item in items:
+        item["id"] = str(item.pop("_id"))
+    
+    return {"data": items, "total": total}
+
+@api_router.get("/test-templates", response_model=List[TestTemplate])
+async def get_test_templates(job_type: Optional[str] = None, job_sub_type: Optional[str] = None):
+    query = {}
+    if job_type:
+        query["job_type"] = job_type
+    if job_sub_type is not None:
+        if job_sub_type == "":
+            query["$or"] = [{"job_sub_type": ""}, {"job_sub_type": {"$exists": False}}]
+        else:
+            query["job_sub_type"] = job_sub_type
+        
+    cursor = db.test_templates.find(query)
+    items = await cursor.to_list(length=None)
+    for item in items:
+        item["id"] = str(item.pop("_id"))
+    return items
+
+@api_router.get("/test-templates/{id}", response_model=TestTemplate)
+async def get_test_template(id: str):
+    from bson import ObjectId
+    item = await db.test_templates.find_one({"_id": ObjectId(id)})
+    if not item:
+        raise HTTPException(status_code=404, detail="TestTemplate not found")
+    item["id"] = str(item.pop("_id"))
+    return item
+
+@api_router.post("/test-templates", response_model=TestTemplate)
+async def create_test_template(
+    template_in: TestTemplateIn, 
+    current_user: dict = Depends(auth_module.get_current_user)
+):
+    doc = template_in.model_dump()
+    doc["created_at"] = datetime.now(timezone.utc).isoformat()
+    doc["created_by_user_id"] = current_user["id"]
+    doc["created_by_username"] = current_user.get("username", "")
+    doc["last_edited_at"] = doc["created_at"]
+    doc["last_edited_by_user_id"] = current_user["id"]
+    doc["last_edited_by_username"] = current_user.get("username", "")
+    
+    result = await db.test_templates.insert_one(doc)
+    doc["id"] = str(result.inserted_id)
+    return doc
+
+@api_router.put("/test-templates/{id}", response_model=TestTemplate)
+async def update_test_template(
+    id: str, 
+    template_in: TestTemplateIn,
+    current_user: dict = Depends(auth_module.get_current_user)
+):
+    from bson import ObjectId
+    update_data = template_in.model_dump()
+    update_data["last_edited_at"] = datetime.now(timezone.utc).isoformat()
+    update_data["last_edited_by_user_id"] = current_user["id"]
+    update_data["last_edited_by_username"] = current_user.get("username", "")
+    
+    result = await db.test_templates.update_one(
+        {"_id": ObjectId(id)},
+        {"$set": update_data}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="TestTemplate not found")
+        
+    doc = await db.test_templates.find_one({"_id": ObjectId(id)})
+    doc["id"] = str(doc.pop("_id"))
+    return doc
+
+@api_router.delete("/test-templates/{id}")
+async def delete_test_template(id: str):
+    from bson import ObjectId
+    result = await db.test_templates.delete_one({"_id": ObjectId(id)})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="TestTemplate not found")
+    return {"ok": True}
+
+# --------------------------------------------------------------------------- #
+# TEST IMAGES endpoints (Base64 storage)
+# --------------------------------------------------------------------------- #
+
+TEST_IMAGE_UPLOAD_DIR = UPLOAD_ROOT / "test-images"
+AUDIT_JOB_UPLOAD_DIR = UPLOAD_ROOT / "auditjobs"
+AUDIT_JOB_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+TEST_IMAGE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+ITEM_IMAGE_UPLOAD_DIR = UPLOAD_ROOT / "item-images"
+ITEM_IMAGE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+class Base64ImageUpload(BaseModel):
+    base64: str
+    filename: str
+
+@api_router.post("/test-images/upload")
+async def upload_test_image_base64(data: Base64ImageUpload):
+    import uuid
+    import time
+    
+    # Store the base64 string directly into a .b64 file
+    ext = ".b64"
+    if "." in data.filename:
+        fname = data.filename.rsplit(".", 1)[0]
+    else:
+        fname = data.filename
+        
+    import re
+    fname = re.sub(r'[^a-zA-Z0-9_-]', '_', fname)
+    final_name = f"{fname}_{int(time.time())}_{uuid.uuid4().hex[:6]}{ext}"
+    
+    fpath = TEST_IMAGE_UPLOAD_DIR / final_name
+    
+    with open(fpath, "w", encoding="utf-8") as f:
+        f.write(data.base64)
+        
+    try:
+        await _photo_bucket.upload_from_stream(
+            final_name,
+            io.BytesIO(data.base64.encode("utf-8")),
+            metadata={"content_type": "text/plain", "original_name": data.filename}
+        )
+    except Exception as e:
+        print(f"[upload] GridFS storage failed for {final_name}: {e}")
+        
+    return {"url": f"/api/uploads/test-images/{final_name}", "filename": final_name}
+
+@api_router.post("/item-images/upload")
+async def upload_item_image_base64(data: Base64ImageUpload):
+    import uuid
+    import time
+    
+    # Store the base64 string directly into a .b64 file
+    ext = ".b64"
+    if "." in data.filename:
+        fname = data.filename.rsplit(".", 1)[0]
+    else:
+        fname = data.filename
+        
+    import re
+    fname = re.sub(r'[^a-zA-Z0-9_-]', '_', fname)
+    final_name = f"{fname}_{int(time.time())}_{uuid.uuid4().hex[:6]}{ext}"
+    
+    fpath = ITEM_IMAGE_UPLOAD_DIR / final_name
+    
+    with open(fpath, "w", encoding="utf-8") as f:
+        f.write(data.base64)
+        
+    try:
+        await _photo_bucket.upload_from_stream(
+            final_name,
+            io.BytesIO(data.base64.encode("utf-8")),
+            metadata={"content_type": "text/plain", "original_name": data.filename}
+        )
+    except Exception as e:
+        print(f"[upload] GridFS storage failed for {final_name}: {e}")
+        
+    return {"url": f"/api/uploads/item-images/{final_name}", "filename": final_name}
+
+@auth_public_router.get("/uploads/test-images/{filename}")
+async def get_test_image(filename: str):
+    fpath = TEST_IMAGE_UPLOAD_DIR / filename
+    if not fpath.exists():
+        raise HTTPException(404, "Image not found")
+        
+    if fpath.suffix.lower() in [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]:
+        from fastapi.responses import FileResponse
+        return FileResponse(fpath)
+        
+    with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
+        b64_content = f.read()
+        
+    if "," in b64_content and b64_content.startswith("data:"):
+        header, b64_str = b64_content.split(",", 1)
+        media_type = header.split(";", 1)[0].replace("data:", "") or "image/jpeg"
+    else:
+        b64_str = b64_content
+        media_type = "image/jpeg"
+        
+    import base64
+    from fastapi.responses import Response
+    try:
+        img_bytes = base64.b64decode(b64_str)
+        return Response(content=img_bytes, media_type=media_type)
+    except Exception:
+        return {"base64": b64_content, "filename": filename}
+
+@auth_public_router.get("/uploads/item-images/{filename}")
+async def get_item_image(filename: str):
+    fpath = ITEM_IMAGE_UPLOAD_DIR / filename
+    if not fpath.exists():
+        raise HTTPException(404, "Image not found")
+        
+    if fpath.suffix.lower() in [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]:
+        from fastapi.responses import FileResponse
+        return FileResponse(fpath)
+        
+    with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
+        b64_content = f.read()
+        
+    if "," in b64_content and b64_content.startswith("data:"):
+        header, b64_str = b64_content.split(",", 1)
+        media_type = header.split(";", 1)[0].replace("data:", "") or "image/jpeg"
+    else:
+        b64_str = b64_content
+        media_type = "image/jpeg"
+        
+    import base64
+    from fastapi.responses import Response
+    try:
+        img_bytes = base64.b64decode(b64_str)
+        return Response(content=img_bytes, media_type=media_type)
+    except Exception:
+        return {"base64": b64_content, "filename": filename}
 
 app.add_middleware(
     CORSMiddleware,
@@ -7494,6 +11343,12 @@ async def on_startup():
                     await db.offers.insert_one(od.copy())
     except Exception as e:
         logger.error(f"Seed error: {e}")
+    # Seed taxes
+    try:
+        await _seed_tax_categories_if_missing()
+        await _seed_sales_tax_templates_if_missing()
+    except Exception as e:
+        logger.error(f"Taxes seed error: {e}")
 
     # Seed default document types if missing
     try:
@@ -7553,6 +11408,23 @@ async def on_startup():
     except Exception as e:
         logger.error(f"Invoice counters seed failed: {e}")
 
+    # Auto-migrate legacy accounting tasks
+    try:
+        accounting_tasks = await db.tasks.find({"category": "accounting"}).to_list(None)
+        for t in accounting_tasks:
+            set_fields = {}
+            if t.get("description") and not t.get("notes"):
+                set_fields["notes"] = t["description"]
+            if t.get("due_date") and not t.get("follow_up_date"):
+                set_fields["follow_up_date"] = t["due_date"]
+            if t.get("status") == "in progress":
+                set_fields["status"] = "follow up required"
+            if set_fields:
+                await db.tasks.update_one({"_id": t["_id"]}, {"$set": set_fields})
+        logger.info("Checked/migrated legacy accounting tasks")
+    except Exception as e:
+        logger.error(f"Accounting tasks migration failed: {e}")
+
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
@@ -7565,3 +11437,73 @@ async def shutdown_db_client():
     except Exception:
         pass
     client.close()
+
+
+@api_router.post("/auditjobs/upload")
+async def upload_auditjob_image_base64(data: Base64ImageUpload):
+    import uuid
+    import time
+    
+    ext = ".b64"
+    if "." in data.filename:
+        fname = data.filename.rsplit(".", 1)[0]
+    else:
+        fname = data.filename
+        
+    import re
+    fname = re.sub(r'[^a-zA-Z0-9_-]', '_', fname)
+    final_name = f"{fname}_{int(time.time())}_{uuid.uuid4().hex[:6]}{ext}"
+    
+    fpath = AUDIT_JOB_UPLOAD_DIR / final_name
+    
+    with open(fpath, "w", encoding="utf-8") as f:
+        f.write(data.base64)
+        
+    return {"url": f"/api/uploads/auditjobs/{final_name}", "filename": final_name}
+
+
+@auth_public_router.get("/uploads/auditjobs/{filename}")
+async def get_auditjob_image(filename: str):
+    fpath = AUDIT_JOB_UPLOAD_DIR / filename
+    if not fpath.exists():
+        raise HTTPException(404, "Image not found")
+        
+    if fpath.suffix.lower() in [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]:
+        from fastapi.responses import FileResponse
+        return FileResponse(fpath)
+        
+    with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
+        b64_content = f.read()
+        
+    if "," in b64_content and b64_content.startswith("data:"):
+        header, b64_str = b64_content.split(",", 1)
+        media_type = header.split(";", 1)[0].replace("data:", "") or "image/jpeg"
+    else:
+        b64_str = b64_content
+        media_type = "image/jpeg"
+        
+    import base64
+    from fastapi.responses import Response
+    return Response(content=base64.b64decode(b64_str), media_type=media_type)
+
+app.include_router(auth_public_router)
+app.include_router(api_router)
+
+# Static file mount for uploaded site-visit photos. Served at /api/uploads/site-visits/<fname>
+# (mounted AFTER the api_router so explicit endpoints take precedence)
+app.mount("/api/uploads", StaticFiles(directory=str(UPLOAD_ROOT)), name="uploads")
+
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi import Request
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    import logging
+    logging.error(f"Validation error for {request.url}: {exc.errors()}")
+    with open("validation_errors.log", "a") as f:
+        f.write(f"URL: {request.url}\nErrors: {exc.errors()}\nBody: {exc.body}\n\n")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": exc.body},
+    )
