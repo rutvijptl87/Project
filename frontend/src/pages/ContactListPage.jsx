@@ -208,8 +208,8 @@ const ContactListPage = () => {
           </div>
 
           {/* Table */}
-          <div className="bg-white overflow-hidden mt-2">
-            <table className="w-full text-left text-[13px] whitespace-nowrap">
+          <div className="bg-white overflow-x-auto mt-2 border border-gray-100 rounded-lg">
+            <table className="w-full text-left text-[13px] whitespace-nowrap min-w-[700px]">
               <thead className="bg-[#111827] text-white">
                 <tr>
                   <th className="px-4 py-3 w-8"><input type="checkbox" className="rounded-sm border-gray-300" checked={sortedContacts.length > 0 && selectedItems.length === sortedContacts.length} onChange={(e) => setSelectedItems(e.target.checked ? sortedContacts.map(i => i.id) : [])} /></th>

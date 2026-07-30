@@ -160,19 +160,19 @@ const ScopeOfWorkListPage = () => {
 
 
     return (
-    <div className="min-h-screen bg-white flex flex-col font-sans">
-      <div className="flex flex-wrap items-center justify-between px-6 py-4 bg-white border-b border-gray-100 sticky top-16 z-10 gap-4">
+    <div className="min-h-screen bg-white flex flex-col font-sans max-w-[1600px] 2xl:max-w-[1920px] mx-auto w-full">
+      <div className="flex flex-wrap items-center justify-between px-3 sm:px-6 py-3 sm:py-4 bg-white border-b border-gray-100 sticky top-16 z-10 gap-2 sm:gap-4">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold text-gray-900">Scope of Work</h1>
+          <h1 className="text-lg sm:text-xl font-bold text-gray-900">Scope of Work</h1>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             
             <button onClick={() => load()} className="p-1.5 text-gray-600 bg-gray-100/80 hover:bg-gray-200/80 rounded-md transition-colors">
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''}/>
             </button>
             
-            <Link to="/scope-of-works/new" className="flex items-center gap-1 px-4 py-1.5 text-[13px] font-medium text-white bg-gray-900 hover:bg-black rounded-md shadow-sm ml-1 transition-colors">
+            <Link to="/scope-of-works/new" className="flex items-center gap-1 px-3 sm:px-4 py-1.5 text-xs sm:text-[13px] font-medium text-white bg-gray-900 hover:bg-black rounded-md shadow-sm transition-colors whitespace-nowrap">
               <Plus size={14}/> Add Scope of Work
             </Link>
           </div>
@@ -182,40 +182,33 @@ const ScopeOfWorkListPage = () => {
       <div className="flex flex-1 overflow-hidden">
 
         {/* Main Content */}
-        <div className="flex-1 flex flex-col p-6 overflow-y-auto bg-white">
+        <div className="flex-1 flex flex-col p-3 sm:p-6 overflow-y-auto bg-white">
           {/* Top Filter Bar */}
           <div className="flex flex-col mb-4">
             <div className="flex flex-wrap items-center gap-2">
-              <input type="text" placeholder="ID / Job Type" value={search} onChange={e => setSearch(e.target.value)} className="w-48 text-[13px] bg-gray-50 border-0 rounded-full px-3 py-1.5 text-gray-800 placeholder-gray-400 focus:bg-white focus:ring-1 focus:ring-blue-500 transition-colors" />
-              
-              <div className="flex-1"></div>
-              
-              
-
-              
-
+              <input type="text" placeholder="ID / Job Type" value={search} onChange={e => setSearch(e.target.value)} className="w-full sm:w-64 text-xs sm:text-[13px] bg-gray-50 border-0 rounded-full px-3 py-1.5 text-gray-800 placeholder-gray-400 focus:bg-white focus:ring-1 focus:ring-blue-500 transition-colors" />
             </div>
           </div>
 
           {/* Table */}
-          <div className="bg-white overflow-hidden mt-2 border border-gray-100 rounded-lg">
-            <table className="w-full text-left text-[13px] whitespace-nowrap">
+          <div className="bg-white overflow-x-auto min-w-full rounded-lg border border-gray-100 mt-2 shadow-sm">
+            <table className="w-full text-left text-xs sm:text-[13px] whitespace-nowrap">
               <thead className="bg-[#111827] text-white">
                 <tr>
-                  <th className="px-4 py-3 w-8"><input type="checkbox" className="rounded-sm border-gray-300" checked={sortedItems.length > 0 && selectedItems.length === sortedItems.length} onChange={(e) => setSelectedItems(e.target.checked ? sortedItems.map(i => i.id) : [])} /></th>
-                  <th className="px-4 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('id')}>
+                  <th className="px-2 sm:px-4 py-3 w-8"><input type="checkbox" className="rounded-sm border-gray-300" checked={sortedItems.length > 0 && selectedItems.length === sortedItems.length} onChange={(e) => setSelectedItems(e.target.checked ? sortedItems.map(i => i.id) : [])} /></th>
+                  <th className="px-2 sm:px-4 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('id')}>
                     <div className="flex items-center gap-1">ID {sortBy === 'id' ? <ArrowUpDown size={12} className="text-gray-300"/> : <ArrowUpDown size={12} className="opacity-20"/>}</div>
                   </th>
-                  <th className="px-4 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('job_type')}>
+                  <th className="px-2 sm:px-4 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('job_type')}>
                     <div className="flex items-center gap-1">Job Type {sortBy === 'job_type' ? <ArrowUpDown size={12} className="text-gray-300"/> : <ArrowUpDown size={12} className="opacity-20"/>}</div>
                   </th>
-                  <th className="px-4 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('job_sub_type')}>
+                  <th className="px-2 sm:px-4 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors hidden sm:table-cell" onClick={() => toggleSort('job_sub_type')}>
                     <div className="flex items-center gap-1">Job Sub Type {sortBy === 'job_sub_type' ? <ArrowUpDown size={12} className="text-gray-300"/> : <ArrowUpDown size={12} className="opacity-20"/>}</div>
                   </th>
-                  <th className="px-4 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('scope_of_work_details')}>
+                  <th className="px-2 sm:px-4 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('scope_of_work_details')}>
                     <div className="flex items-center gap-1">Scope of Work Details {sortBy === 'scope_of_work_details' ? <ArrowUpDown size={12} className="text-gray-300"/> : <ArrowUpDown size={12} className="opacity-20"/>}</div>
                   </th>
-                  <th className="px-4 py-3 font-medium text-right">
+                  <th className="px-2 sm:px-4 py-3 font-medium text-right">
                     <div className="flex items-center justify-end gap-1 text-gray-500">
                       {selectedItems.length > 0 ? (
                         <button onClick={handleBulkDelete} className="p-1 text-red-500 hover:bg-red-50 rounded transition-colors flex items-center justify-center">
@@ -240,14 +233,14 @@ const ScopeOfWorkListPage = () => {
                 ) : (
                   sortedItems.map((item, idx) => (
                     <tr key={idx} className="hover:bg-gray-50 transition-colors group cursor-pointer" onClick={() => navigate(`/scope-of-works/${item.id}`)}>
-                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}><input type="checkbox" className="rounded-sm border-gray-300" checked={selectedItems.includes(item.id)} onChange={(e) => { e.stopPropagation(); setSelectedItems(prev => e.target.checked ? [...prev, item.id] : prev.filter(id => id !== item.id)); }} /></td>
-                      <td className="px-4 py-3 text-gray-900 font-medium">{item.name}</td>
-                      <td className="px-4 py-3 text-gray-700">{item.job_type_name}</td>
-                      <td className="px-4 py-3 text-gray-700">{item.job_sub_type_name}</td>
-                      <td className="px-4 py-3 text-gray-500 truncate max-w-[200px]">{stripHtml(item.details)}</td>
-                      <td className="px-4 py-3 text-gray-500 flex justify-end">
-                        <div className="flex items-center gap-3 text-[12px] opacity-70 hover:opacity-100 transition-opacity">
-                          <span>{item.created_at ? item.created_at.split('T')[0] : ''}</span>
+                      <td className="px-2 sm:px-4 py-2.5 sm:py-3" onClick={e => e.stopPropagation()}><input type="checkbox" className="rounded-sm border-gray-300" checked={selectedItems.includes(item.id)} onChange={(e) => { e.stopPropagation(); setSelectedItems(prev => e.target.checked ? [...prev, item.id] : prev.filter(id => id !== item.id)); }} /></td>
+                      <td className="px-2 sm:px-4 py-2.5 sm:py-3 text-gray-900 font-medium">{item.name}</td>
+                      <td className="px-2 sm:px-4 py-2.5 sm:py-3 text-gray-700">{item.job_type_name}</td>
+                      <td className="px-2 sm:px-4 py-2.5 sm:py-3 text-gray-700 hidden sm:table-cell">{item.job_sub_type_name}</td>
+                      <td className="px-2 sm:px-4 py-2.5 sm:py-3 text-gray-500 truncate max-w-[140px] sm:max-w-[200px]">{stripHtml(item.details)}</td>
+                      <td className="px-2 sm:px-4 py-2.5 sm:py-3 text-gray-500 flex justify-end">
+                        <div className="flex items-center gap-2 sm:gap-3 text-xs opacity-70 hover:opacity-100 transition-opacity">
+                          <span className="hidden sm:inline">{item.created_at ? item.created_at.split('T')[0] : ''}</span>
                           <button 
                             className="flex items-center justify-center p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
                             onClick={(e) => { e.stopPropagation(); handleDelete(item); }}

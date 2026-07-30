@@ -148,7 +148,7 @@ const ContactFormPage = () => {
 
   return (
     <div className="min-h-screen bg-gray-50/50 flex flex-col font-sans pb-20">
-      <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-200 sticky top-16 z-10">
+      <div className="flex flex-wrap items-center justify-between px-3 sm:px-6 py-3 bg-white border-b border-gray-200 sticky top-16 z-10 gap-3 w-full">
         <div className="flex items-center gap-4">
           <button onClick={() => navigate('/contacts')} className="p-1.5 hover:bg-gray-100 rounded-md text-gray-500 transition-colors">
             <ArrowLeft size={18} />

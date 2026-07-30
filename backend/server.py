@@ -1190,6 +1190,14 @@ class Document(BaseModel):
     created_at: str
 
 
+class PaginatedDocuments(BaseModel):
+    data: List[Document]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+
+
 
 
 # ---------------------- HELPERS ----------------------
@@ -5648,6 +5656,49 @@ async def list_documents(
     for r in rows:
         await _enrich_document(r)
     return rows
+
+
+@api_router.get("/documents/paginated", response_model=PaginatedDocuments)
+async def list_documents_paginated(
+    page: int = 1,
+    limit: int = 25,
+    type_id: Optional[str] = None,
+    client_id: Optional[str] = None,
+    architect_id: Optional[str] = None,
+    archived: Optional[bool] = False,
+    search: Optional[str] = None,
+    sort_by: Optional[str] = "document_date",
+    sort_dir: Optional[str] = "desc",
+):
+    q: dict = {"archived": True} if archived else {"archived": {"$ne": True}}
+    if type_id: q["doc_type_id"] = type_id
+    if client_id: q["client_id"] = client_id
+    if architect_id: q["architect_id"] = architect_id
+    if search:
+        rx = {"$regex": search, "$options": "i"}
+        q["$or"] = [
+            {"doc_number": rx}, {"doc_type_name": rx}, {"client_name": rx}, {"architect_name": rx},
+            {"plot_place": rx}, {"contact_person": rx}, {"mobile": rx}, {"remark": rx},
+        ]
+
+    total = await db.documents.count_documents(q)
+    skip = (page - 1) * limit
+    sort_order = -1 if sort_dir == "desc" else 1
+    sort_field = sort_by if sort_by else "document_date"
+
+    rows = await db.documents.find(q, {"_id": 0}).sort(sort_field, sort_order).skip(skip).limit(limit).to_list(limit)
+    for r in rows:
+        await _enrich_document(r)
+
+    import math
+    total_pages = math.ceil(total / limit) if limit > 0 else 1
+    return {
+        "data": rows,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": total_pages,
+    }
 
 
 @api_router.get("/documents/{doc_id}", response_model=Document)

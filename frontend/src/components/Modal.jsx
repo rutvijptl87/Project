@@ -6,8 +6,6 @@ import { X } from 'lucide-react';
 const modalStack = [];
 
 const Modal = ({ open, onClose, title, children, maxWidth = '560px', overflow = 'auto', testId = 'modal' }) => {
-  // Each opened modal gets a stable id and a depth tracked via state, so nested
-  // modals render above their parents (z-index scales with depth).
   const [stackId] = useState(() => Symbol('modal'));
   const [depth, setDepth] = useState(0);
 
@@ -18,7 +16,6 @@ const Modal = ({ open, onClose, title, children, maxWidth = '560px', overflow = 
 
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
-      // Only the topmost modal in the stack reacts to Escape.
       if (modalStack[modalStack.length - 1] !== stackId) return;
       e.stopPropagation();
       onClose?.();
@@ -32,29 +29,29 @@ const Modal = ({ open, onClose, title, children, maxWidth = '560px', overflow = 
   }, [open, onClose, stackId]);
 
   if (!open) return null;
-  // Only the topmost open modal closes when its dark backdrop is clicked —
-  // clicks on the parent's now-hidden backdrop should not bubble through.
   const handleOverlayClick = () => {
     if (modalStack[modalStack.length - 1] === stackId) onClose?.();
   };
-  // 50 is the base; +10 per modal level so each nested modal stacks above the previous.
   const z = 50 + depth * 10;
-  // Render into document.body so the modal isn't a DOM descendant of any parent <form>.
-  // This avoids invalid nested-form behaviour where the child form's submit bubbles up.
   return createPortal(
     <div
       className="modal-overlay"
       onClick={handleOverlayClick}
-      style={{ zIndex: z }}
+      style={{ zIndex: z, padding: 'clamp(0.5rem, 4vw, 1.5rem)' }}
     >
-      <div className="modal-content" style={{ maxWidth, overflowY: overflow }} onClick={(e) => e.stopPropagation()} data-testid={testId}>
-        <div className="flex items-start justify-between p-5 border-b" style={{ borderColor: 'var(--cc-border)' }}>
-          <h2 className="font-head text-xl font-bold" style={{ color: 'var(--cc-dark-green)' }}>{title}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-md hover:bg-gray-100 transition-colors" data-testid={`${testId}-close`}>
+      <div
+        className="modal-content"
+        style={{ maxWidth, overflowY: overflow, width: '100%' }}
+        onClick={(e) => e.stopPropagation()}
+        data-testid={testId}
+      >
+        <div className="flex items-start justify-between px-4 sm:px-5 py-3 sm:py-4 border-b" style={{ borderColor: 'var(--cc-border)' }}>
+          <h2 className="font-head text-lg sm:text-xl font-bold leading-snug pr-2" style={{ color: 'var(--cc-dark-green)' }}>{title}</h2>
+          <button onClick={onClose} className="p-2 rounded-md hover:bg-gray-100 transition-colors shrink-0" data-testid={`${testId}-close`}>
             <X size={18} />
           </button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="p-4 sm:p-5">{children}</div>
       </div>
     </div>,
     document.body,
@@ -62,3 +59,4 @@ const Modal = ({ open, onClose, title, children, maxWidth = '560px', overflow = 
 };
 
 export default Modal;
+

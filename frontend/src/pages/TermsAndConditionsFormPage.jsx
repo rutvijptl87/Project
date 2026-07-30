@@ -54,14 +54,14 @@ const TermsAndConditionsFormPage = () => {
   };
 
   return (
-    <div className="min-h-screen frappe-page flex flex-col font-sans pb-20">
-      <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-100 sticky top-16 z-10">
-        <div className="flex items-center gap-4">
+    <div className="min-h-screen frappe-page flex flex-col font-sans pb-20 max-w-[1600px] 2xl:max-w-[1920px] mx-auto w-full">
+      <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 bg-white border-b border-gray-100 sticky top-16 z-10 flex-wrap gap-2">
+        <div className="flex items-center gap-2 sm:gap-4">
           <button onClick={() => navigate('/terms-and-conditions')} className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-md transition-colors">
             <Menu size={20} />
           </button>
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-bold text-gray-900">{isEdit ? form.title : 'New Terms and Conditions'}</h1>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <h1 className="text-base sm:text-lg font-bold text-gray-900">{isEdit ? form.title : 'New Terms and Conditions'}</h1>
             {!isEdit ? <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-orange-50 text-orange-600 border border-orange-100/50">Not Saved</span> : <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-orange-50 text-orange-600 border border-orange-100/50" style={{backgroundColor: "#dbeafe", color: "#1d4ed8"}}>Saved</span>}
           </div>
         </div>
@@ -72,8 +72,8 @@ const TermsAndConditionsFormPage = () => {
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto w-full px-6 py-6">
-        <div className="bg-white rounded-lg border border-gray-100 shadow-sm mb-6 overflow-hidden">
+      <div className="max-w-5xl 2xl:max-w-[1400px] mx-auto w-full px-3 sm:px-6 py-4 sm:py-6">
+        <div className="bg-white rounded-lg border border-gray-100 shadow-sm mb-6 overflow-hidden p-4 sm:p-6">
           
           <div className="p-6">
             <div className="mb-6 max-w-xl">

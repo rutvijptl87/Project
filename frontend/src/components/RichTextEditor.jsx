@@ -1,5 +1,6 @@
 import React, { useRef, useMemo, useEffect, useState } from 'react';
 import JoditEditor from 'jodit-react';
+import 'jodit/es2021/jodit.min.css';
 
 const RichTextEditor = ({ value, onChange, disabled, placeholder }) => {
   const editor = useRef(null);
@@ -23,6 +24,7 @@ const RichTextEditor = ({ value, onChange, disabled, placeholder }) => {
     askBeforePasteFromWord: false,
     height: 300,
     toolbarSticky: false,
+    showStatusbar: false,
     uploader: {
         insertImageAsBase64URI: true
     },
@@ -34,6 +36,9 @@ const RichTextEditor = ({ value, onChange, disabled, placeholder }) => {
       <style>{`
         .hide-jodit-placeholder .jodit-wysiwyg::before,
         .hide-jodit-placeholder .jodit-placeholder {
+            display: none !important;
+        }
+        .jodit-status-bar {
             display: none !important;
         }
       `}</style>

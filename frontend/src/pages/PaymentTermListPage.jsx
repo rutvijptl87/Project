@@ -117,166 +117,163 @@ const PaymentTermListPage = () => {
   const totalPages = Math.ceil(total / limit);
 
   return (
-    <div className="flex h-screen bg-[#f8fafc] font-sans text-[#1e293b]">
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        
-        {/* Top Header */}
-        <header className="bg-white border-b border-gray-200 px-6 py-3 flex.items-center justify-between shadow-sm z-10 flex">
-          <div className="flex items-center gap-4">
-            <button 
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
-              className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
-            >
-              <Menu size={18} />
-            </button>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-semibold text-gray-900 tracking-tight">Payment Terms</h1>
-              <span className="text-xs font-medium bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{total}</span>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate('/payment-terms-templates')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 rounded-md text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors shadow-sm"
-            >
-              <Layers size={14} className="text-blue-600" />
-              Payment Terms Templates
-            </button>
-            <Link 
-              to="/payment-terms/new" 
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#1d4ed8] hover:bg-blue-700 text-white rounded-md text-xs font-medium transition-all shadow-sm"
-            >
-              <Plus size={14} />
-              Add Payment Term
-            </Link>
-          </div>
-        </header>
-
-        {/* Toolbar & Filter Bar */}
-        <div className="bg-white border-b border-gray-200 px-6 py-2.5 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 flex-1 max-w-md">
-            <input
-              type="text"
-              placeholder="Search Payment Terms..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full text-xs bg-gray-50 border border-gray-200 rounded-md px-3 py-1.5 text-gray-800 placeholder-gray-400 focus:outline-none focus:bg-white focus:border-blue-500 transition-colors"
-            />
-          </div>
-
+    <div className="min-h-screen bg-white flex flex-col font-sans max-w-[1600px] 2xl:max-w-[1920px] mx-auto w-full">
+      {/* Top Header */}
+      <header className="bg-white border-b border-gray-200 px-3 sm:px-6 py-3 flex items-center justify-between shadow-sm sticky top-16 z-10 flex-wrap gap-2">
+        <div className="flex items-center gap-2 sm:gap-4">
+          <button 
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
+            className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+          >
+            <Menu size={18} />
+          </button>
           <div className="flex items-center gap-2">
-            <button 
-              onClick={load} 
-              className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
-              title="Refresh"
-            >
-              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-            </button>
-
-            {/* Filter Toggle */}
-            <div className="relative">
-              <button
-                onClick={() => setShowFilterMenu(!showFilterMenu)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
-                  frappeFilterVal 
-                    ? 'bg-blue-50 border-blue-200 text-blue-700' 
-                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <Filter size={13} />
-                Filter
-              </button>
-
-              {showFilterMenu && (
-                <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 p-3 z-30">
-                  <div className="text-xs font-semibold text-gray-700 mb-2">Filter Payment Terms</div>
-                  <div className="space-y-2">
-                    <select
-                      value={frappeFilterField}
-                      onChange={(e) => setFrappeFilterField(e.target.value)}
-                      className="w-full text-xs bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-gray-700"
-                    >
-                      <option value="payment_term_name">Payment Term Name</option>
-                      <option value="due_date_based_on">Due Date Based On</option>
-                      <option value="discount_type">Discount Type</option>
-                    </select>
-                    <select
-                      value={frappeFilterOp}
-                      onChange={(e) => setFrappeFilterOp(e.target.value)}
-                      className="w-full text-xs bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-gray-700"
-                    >
-                      <option value="like">Contains</option>
-                      <option value="eq">Equals</option>
-                      <option value="neq">Not Equals</option>
-                    </select>
-                    <input
-                      type="text"
-                      placeholder="Value..."
-                      value={frappeFilterVal}
-                      onChange={(e) => setFrappeFilterVal(e.target.value)}
-                      className="w-full text-xs bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-gray-700"
-                    />
-                    <div className="flex justify-end gap-2 pt-2">
-                      <button
-                        onClick={() => {
-                          setFrappeFilterVal('');
-                          setShowFilterMenu(false);
-                        }}
-                        className="px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded"
-                      >
-                        Clear
-                      </button>
-                      <button
-                        onClick={() => setShowFilterMenu(false)}
-                        className="px-2.5 py-1 text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 rounded"
-                      >
-                        Apply
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Sort Toggle */}
-            <button
-              onClick={() => toggleSort('payment_term_name')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-md text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              <ArrowUpDown size={13} />
-              Sort: {sortBy === 'payment_term_name' ? 'Name' : 'Date'} ({sortDir})
-            </button>
+            <h1 className="text-lg sm:text-xl font-semibold text-gray-900 tracking-tight">Payment Terms</h1>
+            <span className="text-xs font-medium bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{total}</span>
           </div>
         </div>
+        
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <button
+            onClick={() => navigate('/payment-terms-templates')}
+            className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-white border border-gray-300 rounded-md text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors shadow-sm whitespace-nowrap"
+          >
+            <Layers size={14} className="text-blue-600" />
+            <span className="hidden sm:inline">Payment Terms</span> Templates
+          </button>
+          <Link 
+            to="/payment-terms/new" 
+            className="inline-flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 bg-[#1d4ed8] hover:bg-blue-700 text-white rounded-md text-xs font-medium transition-all shadow-sm whitespace-nowrap"
+          >
+            <Plus size={14} />
+            Add Payment Term
+          </Link>
+        </div>
+      </header>
 
-        {/* Table Content */}
-        <div className="flex-1 overflow-auto p-6">
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-[#f8fafc] border-b border-gray-200 text-gray-600 font-medium text-xs">
-                  <th className="py-3 px-4 w-12 text-center">No.</th>
-                  <th 
-                    className="py-3 px-4 cursor-pointer hover:bg-gray-100 transition-colors"
-                    onClick={() => toggleSort('payment_term_name')}
+      {/* Toolbar & Filter Bar */}
+      <div className="bg-white border-b border-gray-200 px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 w-full sm:w-auto sm:flex-1 sm:max-w-md">
+          <input
+            type="text"
+            placeholder="Search Payment Terms..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full text-xs bg-gray-50 border border-gray-200 rounded-md px-3 py-1.5 text-gray-800 placeholder-gray-400 focus:outline-none focus:bg-white focus:border-blue-500 transition-colors"
+          />
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <button 
+            onClick={load} 
+            className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+            title="Refresh"
+          >
+            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+          </button>
+
+          {/* Filter Toggle */}
+          <div className="relative">
+            <button
+              onClick={() => setShowFilterMenu(!showFilterMenu)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                frappeFilterVal 
+                  ? 'bg-blue-50 border-blue-200 text-blue-700' 
+                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <Filter size={13} />
+              Filter
+            </button>
+
+            {showFilterMenu && (
+              <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 p-3 z-30">
+                <div className="text-xs font-semibold text-gray-700 mb-2">Filter Payment Terms</div>
+                <div className="space-y-2">
+                  <select
+                    value={frappeFilterField}
+                    onChange={(e) => setFrappeFilterField(e.target.value)}
+                    className="w-full text-xs bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-gray-700"
                   >
-                    Payment Term Name
-                  </th>
-                  <th 
-                    className="py-3 px-4 text-right cursor-pointer hover:bg-gray-100 transition-colors"
-                    onClick={() => toggleSort('invoice_portion')}
+                    <option value="payment_term_name">Payment Term Name</option>
+                    <option value="due_date_based_on">Due Date Based On</option>
+                    <option value="discount_type">Discount Type</option>
+                  </select>
+                  <select
+                    value={frappeFilterOp}
+                    onChange={(e) => setFrappeFilterOp(e.target.value)}
+                    className="w-full text-xs bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-gray-700"
                   >
-                    Invoice Portion (%)
-                  </th>
-                  <th className="py-3 px-4">Due Date Based On</th>
-                  <th className="py-3 px-4">Mode of Payment</th>
-                  <th className="py-3 px-4 text-right">Credit Days / Months</th>
-                  <th className="py-3 px-4 text-right">Discount</th>
-                  <th className="py-3 px-4 w-16 text-center">Action</th>
-                </tr>
-              </thead>
+                    <option value="like">Contains</option>
+                    <option value="eq">Equals</option>
+                    <option value="neq">Not Equals</option>
+                  </select>
+                  <input
+                    type="text"
+                    placeholder="Value..."
+                    value={frappeFilterVal}
+                    onChange={(e) => setFrappeFilterVal(e.target.value)}
+                    className="w-full text-xs bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-gray-700"
+                  />
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      onClick={() => {
+                        setFrappeFilterVal('');
+                        setShowFilterMenu(false);
+                      }}
+                      className="px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      onClick={() => setShowFilterMenu(false)}
+                      className="px-2.5 py-1 text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 rounded"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Sort Toggle */}
+          <button
+            onClick={() => toggleSort('payment_term_name')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-md text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <ArrowUpDown size={13} />
+            Sort: {sortBy === 'payment_term_name' ? 'Name' : 'Date'} ({sortDir})
+          </button>
+        </div>
+      </div>
+
+      {/* Table Content */}
+      <div className="flex-1 overflow-auto p-3 sm:p-6">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-x-auto min-w-full">
+          <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
+            <thead>
+              <tr className="bg-[#f8fafc] border-b border-gray-200 text-gray-600 font-medium text-xs">
+                <th className="py-3 px-2 sm:px-4 w-12 text-center">No.</th>
+                <th 
+                  className="py-3 px-2 sm:px-4 cursor-pointer hover:bg-gray-100 transition-colors"
+                  onClick={() => toggleSort('payment_term_name')}
+                >
+                  Payment Term Name
+                </th>
+                <th 
+                  className="py-3 px-2 sm:px-4 text-right cursor-pointer hover:bg-gray-100 transition-colors"
+                  onClick={() => toggleSort('invoice_portion')}
+                >
+                  Invoice Portion (%)
+                </th>
+                <th className="py-3 px-2 sm:px-4 hidden sm:table-cell">Due Date Based On</th>
+                <th className="py-3 px-2 sm:px-4 hidden md:table-cell">Mode of Payment</th>
+                <th className="py-3 px-2 sm:px-4 text-right hidden lg:table-cell">Credit Days / Months</th>
+                <th className="py-3 px-2 sm:px-4 text-right hidden sm:table-cell">Discount</th>
+                <th className="py-3 px-2 sm:px-4 w-16 text-center">Action</th>
+              </tr>
+            </thead>
               <tbody className="divide-y divide-gray-100 text-xs text-gray-700">
                 {loading ? (
                   <tr>
@@ -381,7 +378,6 @@ const PaymentTermListPage = () => {
           )}
         </div>
       </div>
-    </div>
   );
 };
 

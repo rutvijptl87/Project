@@ -144,15 +144,15 @@ const PaymentTermFormPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] flex flex-col font-sans pb-20 text-[#1e293b]">
+    <div className="min-h-screen bg-[#f8fafc] flex flex-col font-sans pb-20 text-[#1e293b] max-w-[1600px] 2xl:max-w-[1920px] mx-auto w-full">
       {/* Top Header */}
-      <header className="flex items-center justify-between px-6 py-3.5 bg-white border-b border-gray-200 sticky top-16 z-10 shadow-sm">
-        <div className="flex items-center gap-4">
+      <header className="flex items-center justify-between px-3 sm:px-6 py-3.5 bg-white border-b border-gray-200 sticky top-16 z-10 shadow-sm flex-wrap gap-2">
+        <div className="flex items-center gap-2 sm:gap-4">
           <button onClick={() => navigate('/payment-terms')} className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-md transition-colors" title="Back to List">
             <ArrowLeft size={18} />
           </button>
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-bold text-gray-900 tracking-tight">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <h1 className="text-base sm:text-lg font-bold text-gray-900 tracking-tight">
               {isEdit ? form.payment_term_name : 'New Payment Term'}
             </h1>
             {!isEdit ? (
@@ -176,7 +176,7 @@ const PaymentTermFormPage = () => {
           <button 
             onClick={handleSave} 
             disabled={saving} 
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-[#1d4ed8] hover:bg-blue-700 text-white rounded-md text-xs font-medium transition-colors shadow-sm disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 bg-[#1d4ed8] hover:bg-blue-700 text-white rounded-md text-xs font-medium transition-colors shadow-sm disabled:opacity-50"
           >
             <Save size={14} />
             {saving ? 'Saving...' : 'Save'}
@@ -185,10 +185,10 @@ const PaymentTermFormPage = () => {
       </header>
 
       {/* Form Content Area */}
-      <div className="max-w-4xl mx-auto w-full px-6 py-6 space-y-6">
+      <div className="max-w-4xl 2xl:max-w-[1400px] mx-auto w-full px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         
         {/* Section 1: Basic Information */}
-        <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+        <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 shadow-sm">
           <h3 className="text-sm font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-100 flex items-center justify-between">
             <span>Payment Term Details</span>
             <span className="text-xs font-normal text-gray-400">Master settings for payment scheduling</span>

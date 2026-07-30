@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { CustomFrappeSelect } from '../components/CustomFrappeSelect';
 import NewAddressModal from '../components/NewAddressModal';
@@ -28,19 +29,66 @@ import { toast } from 'react-toastify';
 import { formatINR } from '../lib/format';
 import { formatDistanceToNow } from 'date-fns';
 
+// Scaled Print Preview — fits the 794px template into any container width using CSS transform
+const TEMPLATE_WIDTH = 794;
+const ScaledPrintPreview = ({ children }) => {
+  const containerRef = useRef(null);
+  const innerRef = useRef(null);
+  const [scale, setScale] = useState(1);
+  const [scaledHeight, setScaledHeight] = useState('auto');
+
+  const updateScale = useCallback(() => {
+    if (containerRef.current && innerRef.current) {
+      const available = containerRef.current.clientWidth;
+      const newScale = Math.min(1, available / TEMPLATE_WIDTH);
+      setScale(newScale);
+      // After scaling, compute the rendered height of the inner content
+      const naturalHeight = innerRef.current.scrollHeight;
+      setScaledHeight(naturalHeight * newScale);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Small delay to let the content render before measuring
+    const timer = setTimeout(updateScale, 100);
+    const ro = new ResizeObserver(updateScale);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => { clearTimeout(timer); ro.disconnect(); };
+  }, [updateScale]);
+
+  return (
+    <div ref={containerRef} className="w-full" style={{ height: scaledHeight !== 'auto' ? `${scaledHeight}px` : 'auto', position: 'relative' }}>
+      <div
+        ref={innerRef}
+        style={{
+          transform: `scale(${scale})`,
+          transformOrigin: 'top left',
+          width: `${TEMPLATE_WIDTH}px`,
+          position: 'absolute',
+          top: 0,
+          left: 0,
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+};
+
+
 // Reusable Frappe-style Modal
 const Modal = ({ title, isOpen, onClose, children }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-md mx-4 overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50 p-3 sm:p-4">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col mx-auto">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 shrink-0">
           <h2 className="text-base font-semibold text-gray-800">{title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
             <X size={18} />
           </button>
         </div>
-        <div className="p-4 flex-1">
+        <div className="p-4 flex-1 overflow-y-auto">
           {children}
         </div>
       </div>
@@ -48,18 +96,19 @@ const Modal = ({ title, isOpen, onClose, children }) => {
   );
 };
 
+
 // Reusable Frappe-like components for Light Theme
 const Section = ({ title, children, defaultExpanded = true, collapsible = false, columns = 2 }) => {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
-  const gridColsClass = columns === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2';
+  const gridColsClass = columns === 3 ? 'sm:grid-cols-2 md:grid-cols-3' : 'sm:grid-cols-2';
   return (
-    <div className="mb-8 border-b border-gray-200 pb-6">
+    <div className="mb-6 sm:mb-8 border-b border-gray-200 pb-4 sm:pb-6 w-full">
       {title && (
         <div 
-          className={`flex items-center gap-2 mb-4 select-none text-gray-800 ${collapsible ? 'cursor-pointer' : ''}`}
+          className={`flex items-center gap-2 mb-3 sm:mb-4 select-none text-gray-800 ${collapsible ? 'cursor-pointer' : ''}`}
           onClick={() => collapsible && setIsExpanded(!isExpanded)}
         >
-          <h3 className="text-base font-semibold">{title}</h3>
+          <h3 className="text-sm sm:text-base font-semibold">{title}</h3>
           {collapsible && (
             <span className="text-gray-400">
               {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -68,7 +117,7 @@ const Section = ({ title, children, defaultExpanded = true, collapsible = false,
         </div>
       )}
       {isExpanded && (
-        <div className={`grid grid-cols-1 ${gridColsClass} gap-x-12 gap-y-0`}>
+        <div className={`grid grid-cols-1 ${gridColsClass} gap-x-4 sm:gap-x-8 lg:gap-x-12 gap-y-0`}>
           {children}
         </div>
       )}
@@ -79,7 +128,7 @@ const Section = ({ title, children, defaultExpanded = true, collapsible = false,
 const FullSection = ({ title, children, defaultExpanded = true, collapsible = false }) => {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   return (
-    <div className="mb-8 border-b border-gray-200 pb-6">
+    <div className="mb-8 border-b border-gray-200 pb-6 w-full">
       {title && (
         <div 
           className={`flex items-center gap-2 mb-4 select-none text-gray-800 ${collapsible ? 'cursor-pointer' : ''}`}
@@ -193,7 +242,45 @@ const formatTimeAgo = (dateStr) => {
 const CustomFrappeItemSelect = ({ label, value, onChange, options, disabled, onCreateNew }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  
+  const buttonRef = useRef(null);
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 320 });
+
+  const updateCoords = () => {
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const popoverWidth = Math.min(Math.max(rect.width, 320), window.innerWidth - 32);
+      let left = rect.left;
+      if (left + popoverWidth > window.innerWidth - 16) {
+        left = Math.max(16, window.innerWidth - popoverWidth - 16);
+      }
+      setCoords({
+        top: rect.bottom + 4,
+        left: left,
+        width: popoverWidth
+      });
+    }
+  };
+
+  const handleToggle = () => {
+    if (disabled) return;
+    if (!isOpen) {
+      updateCoords();
+    }
+    setIsOpen(!isOpen);
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      const handleScrollOrResize = () => updateCoords();
+      window.addEventListener('resize', handleScrollOrResize);
+      window.addEventListener('scroll', handleScrollOrResize, true);
+      return () => {
+        window.removeEventListener('resize', handleScrollOrResize);
+        window.removeEventListener('scroll', handleScrollOrResize, true);
+      };
+    }
+  }, [isOpen]);
+
   const filteredOptions = options.filter(opt => 
     opt.item_code.toLowerCase().includes(searchQuery.toLowerCase()) || 
     (opt.description && opt.description.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -202,20 +289,29 @@ const CustomFrappeItemSelect = ({ label, value, onChange, options, disabled, onC
   const selectedOpt = options.find(o => o.item_code === value);
 
   return (
-    <div className="relative w-full">
+    <div className="relative w-full" ref={buttonRef}>
       <div 
         className={`w-full bg-transparent border-0 focus:ring-0 p-1 font-medium disabled:bg-transparent cursor-pointer min-h-[28px] flex items-center overflow-hidden ${!value ? 'text-gray-400' : 'text-gray-900'}`}
-        onClick={() => !disabled && setIsOpen(!isOpen)}
+        onClick={handleToggle}
       >
         <span className="truncate block w-full">
           {selectedOpt ? selectedOpt.item_code : (value || 'Select Item...')}
         </span>
       </div>
       
-      {isOpen && !disabled && (
+      {isOpen && !disabled && createPortal(
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)}></div>
-          <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 overflow-hidden py-1 w-[400px] max-h-[350px] flex flex-col">
+          <div className="fixed inset-0 z-[9998]" onClick={() => setIsOpen(false)}></div>
+          <div 
+            style={{ 
+              position: 'fixed', 
+              top: `${coords.top}px`, 
+              left: `${coords.left}px`, 
+              width: `${coords.width}px`,
+              zIndex: 9999 
+            }} 
+            className="bg-white border border-gray-200 rounded-md shadow-2xl overflow-hidden py-1 max-h-[350px] flex flex-col"
+          >
             <div className="px-3 py-2 border-b border-gray-100">
               <input 
                 type="text" 
@@ -248,11 +344,13 @@ const CustomFrappeItemSelect = ({ label, value, onChange, options, disabled, onC
               </button>
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );
 };
+
 
 const INDIAN_STATES = [
   "01-Jammu and Kashmir", "02-Himachal Pradesh", "03-Punjab", "04-Chandigarh", "05-Uttarakhand", "06-Haryana", "07-Delhi",
@@ -1204,17 +1302,18 @@ const QuotationCreatePage = () => {
   const isReadOnly = form.status === 'Ordered' || form.status === 'Lost' || form.status === 'Cancelled' || isPreviewMode;
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-800 pb-20 font-sans">
+    <div className="min-h-screen bg-gray-50 text-gray-800 pb-20 font-sans w-full">
       {/* Sticky Header */}
-      <div className="sticky top-16 z-10 bg-white border-b border-gray-200 px-4 sm:px-6 py-3 flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-4">
-          <button onClick={() => navigate('/quotations')} className="p-1.5 hover:bg-gray-100 rounded transition-colors text-gray-500">
+      <div className="sticky top-16 z-10 bg-white border-b border-gray-200 px-3 sm:px-6 py-2.5 sm:py-3 shadow-sm w-full flex flex-wrap items-center gap-y-2">
+        {/* Row 1: Back button + Title — full width on mobile */}
+        <div className="flex items-center gap-2 sm:gap-4 w-full sm:flex-1 sm:w-auto min-w-0">
+          <button onClick={() => navigate('/quotations')} className="p-1.5 hover:bg-gray-100 rounded transition-colors text-gray-500 shrink-0">
             <ArrowLeft size={18} />
           </button>
-          <div>
-            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-3">
-              {isEdit ? form.quotation_no || 'Quotation' : 'New Quotation'}
-              <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${
+          <div className="min-w-0">
+            <h1 className="text-sm sm:text-xl font-bold text-gray-900 flex items-center gap-2 sm:gap-3">
+              <span className="truncate max-w-[160px] sm:max-w-none">{isEdit ? form.quotation_no || 'Quotation' : 'New Quotation'}</span>
+              <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider shrink-0 ${
                 form.status === 'Draft' ? 'bg-gray-100 text-gray-800' :
                 form.status === 'Open' ? 'bg-blue-100 text-blue-800' :
                 form.status === 'Ordered' ? 'bg-emerald-100 text-emerald-800' :
@@ -1225,7 +1324,10 @@ const QuotationCreatePage = () => {
             </h1>
           </div>
         </div>
-        <div className="flex items-center gap-1.5" ref={headerRef}>
+
+        {/* Row 2 on mobile / inline on desktop: Action buttons */}
+        <div className="flex items-center gap-1.5 flex-wrap w-full sm:w-auto" ref={headerRef}>
+
           {form.status === 'Draft' && (
             <>
 
@@ -1234,7 +1336,7 @@ const QuotationCreatePage = () => {
                   Get Items From <ChevronDown size={14} className="opacity-70"/>
                 </button>
                 {showGetItemsMenu && (
-                  <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 shadow-lg rounded-md py-1 z-50">
+                  <div className="absolute left-0 sm:left-auto sm:right-0 top-full mt-1 w-48 bg-white border border-gray-200 shadow-lg rounded-md py-1 z-50">
                     <button onClick={() => { setShowOpportunityModal(true); setShowGetItemsMenu(false); }} className="w-full text-left px-4 py-1.5 text-[13px] text-gray-700 hover:bg-gray-50">Opportunity</button>
                   </div>
                 )}
@@ -1249,7 +1351,7 @@ const QuotationCreatePage = () => {
                   Create <ChevronDown size={14} className="opacity-70"/>
                 </button>
                 {showCreateMenu && (
-                  <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-gray-200 shadow-lg rounded-md py-1 z-50">
+                  <div className="absolute left-0 sm:left-auto sm:right-0 top-full mt-1 w-40 bg-white border border-gray-200 shadow-lg rounded-md py-1 z-50">
                     <button onClick={() => navigate(`/sales-orders/new?quotation_id=${id}`)} className="w-full text-left px-4 py-1.5 text-[13px] text-gray-700 hover:bg-gray-50">Sales Order</button>
                     <button onClick={() => navigate(`/sales-invoices/new?quotation_id=${id}`)} className="w-full text-left px-4 py-1.5 text-[13px] text-gray-700 hover:bg-gray-50">Sales Invoice</button>
                   </div>
@@ -1278,7 +1380,8 @@ const QuotationCreatePage = () => {
           <div className="relative ml-1">
             <button onClick={() => setShowMenu(!showMenu)} className="p-1.5 bg-gray-50 border border-gray-200 rounded-md hover:bg-gray-100 text-gray-500 transition-colors"><MoreHorizontal size={16}/></button>
             {showMenu && (
-              <div className="absolute right-0 top-full mt-1 w-56 bg-white text-gray-700 shadow-xl rounded-lg py-1 z-50 border border-gray-200 text-[13px]">
+              <div className="absolute left-0 sm:left-auto sm:right-0 top-full mt-1 w-56 bg-white text-gray-700 shadow-xl rounded-lg py-1 z-50 border border-gray-200 text-[13px]">
+
                 <button onClick={handleDownloadPDF} className="w-full flex items-center justify-between px-4 py-1.5 hover:bg-gray-50 transition-colors"><span>Print</span></button>
                 <button onClick={handleDuplicate} className="w-full flex items-center justify-between px-4 py-1.5 hover:bg-gray-50 transition-colors border-t border-gray-100"><span>Duplicate</span><span className="opacity-50 text-[11px] border border-gray-200 rounded px-1">⇧+D</span></button>
                 <button onClick={() => window.location.reload()} className="w-full flex items-center justify-between px-4 py-1.5 hover:bg-gray-50 transition-colors"><span>Reload</span></button>
@@ -1350,7 +1453,7 @@ const QuotationCreatePage = () => {
           )}
         </div>
       </div>
-      <div className="max-w-7xl mx-auto p-4 sm:p-6 mt-2 flex flex-col md:flex-row gap-8 items-start">
+      <div className="w-full max-w-[1920px] mx-auto px-3 sm:px-6 py-4 sm:py-6 mt-2 flex flex-col md:flex-row gap-6 lg:gap-8 items-start">
         
         {/* Left Sidebar */}
         {false && isEdit && (
@@ -1648,7 +1751,7 @@ const QuotationCreatePage = () => {
         )}
 
         {/* Main Content */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 w-full">
           {/* Draft Banner */}
           {isEdit && form.status === 'Draft' && !isPreviewMode && (
             <div className="bg-blue-50 border border-blue-100 rounded-md p-3 mb-6 flex items-center justify-between">
@@ -1929,8 +2032,8 @@ const QuotationCreatePage = () => {
                   </div>
                   
                   <div className="mb-2 text-xs font-medium text-gray-600">Items</div>
-                  <div className="border border-gray-200 rounded mb-3 overflow-visible">
-                    <table className="w-full text-left text-[13px] whitespace-nowrap border-collapse">
+                  <div className="border border-gray-200 rounded mb-3 overflow-x-auto">
+                    <table className="w-full text-left text-[13px] whitespace-nowrap border-collapse min-w-[600px]">
                       <thead className="bg-[#111827] text-white">
                         <tr>
                           <th className="p-2 w-8 text-center border-r border-gray-200">
@@ -2249,7 +2352,7 @@ const QuotationCreatePage = () => {
 
                   {form.contact_person ? <Field label="Mobile No" value={form.contact_mobile} onChange={v => updateForm('contact_mobile', v)} disabled={isReadOnly} /> : <div />}
                   {form.contact_person ? <Field label="Email" value={form.contact_email} onChange={v => updateForm('contact_email', v)} disabled={isReadOnly} /> : <div />}
-                  <Field label="Place of Supply (Code or State)" value={form.place_of_supply || ''} onChange={v => updateForm('place_of_supply', v)} options={INDIAN_STATES} as="select" disabled={isReadOnly} />
+                  <CustomFrappeSelect label="Place of Supply (Code or State)" value={form.place_of_supply || ''} onChange={v => updateForm('place_of_supply', v)} options={INDIAN_STATES} disabled={isReadOnly} />
                 </Section>
 
                 <Section title="Site Address Details" collapsible={true}>
@@ -2544,14 +2647,14 @@ const QuotationCreatePage = () => {
       
       {/* Preview Modal */}
       {isPreviewMode && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-75 p-4 sm:p-6 overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-75 p-2 sm:p-6 overflow-hidden">
           <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl h-full flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
-              <h2 className="text-lg font-semibold text-gray-900">Preview</h2>
-              <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between px-3 sm:px-6 py-3 border-b border-gray-100 shrink-0">
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900">Preview</h2>
+              <div className="flex items-center gap-2 sm:gap-3">
                 <button
                   onClick={() => setIsPreviewMode(false)}
-                  className="frappe-btn frappe-btn-default"
+                  className="frappe-btn frappe-btn-default text-xs sm:text-sm px-2.5 sm:px-4"
                 >
                   Back to Edit
                 </button>
@@ -2562,42 +2665,47 @@ const QuotationCreatePage = () => {
                        setIsPreviewMode(false);
                     }}
                     disabled={saving}
-                    className="frappe-btn frappe-btn-primary"
+                    className="frappe-btn frappe-btn-primary text-xs sm:text-sm px-2.5 sm:px-4"
                   >
                     Submit
                   </button>
                 )}
               </div>
             </div>
-            <div className="p-8 overflow-y-auto bg-gray-50 flex-1">
-              <div className="w-full bg-white shadow-sm border border-gray-200 rounded-lg p-8 mx-auto" style={{ maxWidth: '1000px' }}>
-        <QuotationPrintTemplate
-          form={{...form, grand_total: calculations.grandTotal, total_taxes_and_charges: calculations.totalTaxAmount, amount_in_words: calculations.inWords}}
-          letterHead={activeLetterHead}
-          printHeading={form.select_print_heading}
-          termsHTML={form.terms}
-          client={activeClient}
-          items={form.items}
-          siteAddresses={siteAddresses}
-          jobSubTypes={jobSubTypes}
-        />
+            <div className="overflow-y-auto bg-gray-100 flex-1 p-3 sm:p-6">
+              <div className="bg-white shadow-sm border border-gray-200 rounded-lg p-3 sm:p-6 mx-auto w-full" style={{ maxWidth: '900px' }}>
+                <ScaledPrintPreview>
+                  <QuotationPrintTemplate
+                    form={{...form, grand_total: calculations.grandTotal, total_taxes_and_charges: calculations.totalTaxAmount, amount_in_words: calculations.inWords}}
+                    letterHead={activeLetterHead}
+                    printHeading={form.select_print_heading}
+                    termsHTML={form.terms}
+                    client={activeClient}
+                    items={form.items}
+                    siteAddresses={siteAddresses}
+                    jobSubTypes={jobSubTypes}
+                  />
+                </ScaledPrintPreview>
               </div>
             </div>
           </div>
         </div>
       )}
 
+
+
       {/* New Item Modal */}
       {showNewItemModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-[500px] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50 p-3 sm:p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-[500px] max-h-[90vh] overflow-hidden flex flex-col mx-auto">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
               <h2 className="text-lg font-semibold text-gray-900">New Item</h2>
-              <button onClick={() => setShowNewItemModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setShowNewItemModal(false)} className="text-gray-400 hover:text-gray-600 p-1">
                 <X size={20} />
               </button>
             </div>
             <div className="p-5 flex-1 overflow-y-auto">
+
               <div className="space-y-4">
                 <div>
                   <label className="text-[12px] text-gray-600 mb-1 font-medium block">Item Code <span className="text-red-500">*</span></label>
@@ -2657,21 +2765,26 @@ const QuotationCreatePage = () => {
       
       {/* Test Row Edit Modal */}
       {showTestRowModal !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50">
-          <div className="bg-white shadow-xl w-full max-w-4xl h-[90vh] overflow-hidden flex flex-col rounded-lg">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50/50">
-              <h2 className="text-lg font-bold text-gray-900">Editing Row #{showTestRowModal + 1}</h2>
-              <div className="flex items-center gap-2">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50 p-2 sm:p-4">
+          <div className="bg-white shadow-xl w-full max-w-4xl max-h-[90vh] h-[90vh] overflow-hidden flex flex-col rounded-lg mx-auto">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between px-3 sm:px-5 py-3 border-b border-gray-100 bg-gray-50/50 gap-2 shrink-0">
+              <div className="flex items-center justify-between w-full sm:w-auto">
+                <h2 className="text-base sm:text-lg font-bold text-gray-900">Editing Row #{showTestRowModal + 1}</h2>
+                <button onClick={() => setShowTestRowModal(null)} className="text-gray-400 hover:text-gray-600 sm:hidden p-1">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full sm:w-auto py-0.5">
                 <button 
                   onClick={() => {
                     const newTests = form.test_details.filter((_, i) => i !== showTestRowModal);
                     updateForm('test_details', newTests);
                     setShowTestRowModal(null);
                   }} 
-                  className="bg-red-500 hover:bg-red-600 text-white p-1.5 rounded"
+                  className="bg-red-500 hover:bg-red-600 text-white p-1.5 rounded flex-shrink-0"
                   title="Delete Row"
                 >
-                  <Trash2 size={16} />
+                  <Trash2 size={15} />
                 </button>
                 <button 
                   onClick={() => {
@@ -2680,7 +2793,7 @@ const QuotationCreatePage = () => {
                     updateForm('test_details', newTests);
                     setShowTestRowModal(showTestRowModal + 1);
                   }}
-                  className="frappe-btn frappe-btn-default"
+                  className="frappe-btn frappe-btn-default text-xs px-2.5 py-1 whitespace-nowrap flex-shrink-0"
                 >
                   Insert Below
                 </button>
@@ -2691,7 +2804,7 @@ const QuotationCreatePage = () => {
                     updateForm('test_details', newTests);
                     setShowTestRowModal(showTestRowModal);
                   }}
-                  className="frappe-btn frappe-btn-default"
+                  className="frappe-btn frappe-btn-default text-xs px-2.5 py-1 whitespace-nowrap flex-shrink-0"
                 >
                   Insert Above
                 </button>
@@ -2703,36 +2816,32 @@ const QuotationCreatePage = () => {
                     updateForm('test_details', newTests);
                     setShowTestRowModal(showTestRowModal + 1);
                   }}
-                  className="frappe-btn frappe-btn-default"
+                  className="frappe-btn frappe-btn-default text-xs px-2.5 py-1 whitespace-nowrap flex-shrink-0 flex items-center gap-1"
                 >
-                  <Copy size={14} /> Duplicate
+                  <Copy size={13} /> Duplicate
                 </button>
-                <button 
-                  className="frappe-btn frappe-btn-default"
-                >
-                  Move
-                </button>
-                <div className="flex bg-gray-100 rounded ml-1">
+                <div className="flex bg-gray-100 rounded ml-1 flex-shrink-0">
                   <button 
                     disabled={showTestRowModal === 0}
                     onClick={() => setShowTestRowModal(showTestRowModal - 1)}
                     className="p-1.5 text-gray-600 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed rounded-l border-r border-gray-200"
                   >
-                    <ChevronUp size={16} />
+                    <ChevronUp size={15} />
                   </button>
                   <button 
                     disabled={showTestRowModal === (form.test_details?.length || 1) - 1}
                     onClick={() => setShowTestRowModal(showTestRowModal + 1)}
                     className="p-1.5 text-gray-600 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed rounded-r"
                   >
-                    <ChevronDown size={16} />
+                    <ChevronDown size={15} />
                   </button>
                 </div>
-                <button onClick={() => setShowTestRowModal(null)} className="text-gray-400 hover:text-gray-600 ml-2">
+                <button onClick={() => setShowTestRowModal(null)} className="text-gray-400 hover:text-gray-600 ml-2 hidden sm:block">
                   <X size={20} />
                 </button>
               </div>
             </div>
+
             
             <div className="p-6 flex-1 overflow-y-auto bg-gray-50/30">
               <div className="max-w-2xl mb-8">
@@ -2808,21 +2917,26 @@ const QuotationCreatePage = () => {
       {/* Edit Row Modal */}
       {/* Taxes Row Edit Modal */}
       {showTaxesRowModal !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50">
-          <div className="bg-white shadow-xl w-full max-w-4xl h-[85vh] overflow-hidden flex flex-col rounded-lg">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50/50">
-              <h2 className="text-lg font-bold text-gray-900">Editing Row #{showTaxesRowModal + 1}</h2>
-              <div className="flex items-center gap-2">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50 p-2 sm:p-4">
+          <div className="bg-white shadow-xl w-full max-w-4xl max-h-[90vh] h-[85vh] overflow-hidden flex flex-col rounded-lg mx-auto">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between px-3 sm:px-5 py-3 border-b border-gray-100 bg-gray-50/50 gap-2 shrink-0">
+              <div className="flex items-center justify-between w-full sm:w-auto">
+                <h2 className="text-base sm:text-lg font-bold text-gray-900">Editing Row #{showTaxesRowModal + 1}</h2>
+                <button onClick={() => setShowTaxesRowModal(null)} className="text-gray-400 hover:text-gray-600 sm:hidden p-1">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full sm:w-auto py-0.5">
                 <button 
                   onClick={() => {
                     const newTaxes = form.taxes.filter((_, i) => i !== showTaxesRowModal);
                     updateForm('taxes', newTaxes);
                     setShowTaxesRowModal(null);
                   }} 
-                  className="bg-red-500 hover:bg-red-600 text-white p-1.5 rounded"
+                  className="bg-red-500 hover:bg-red-600 text-white p-1.5 rounded flex-shrink-0"
                   title="Delete Row"
                 >
-                  <Trash2 size={16} />
+                  <Trash2 size={15} />
                 </button>
                 <button 
                   onClick={() => {
@@ -2831,7 +2945,7 @@ const QuotationCreatePage = () => {
                     updateForm('taxes', newTaxes);
                     setShowTaxesRowModal(showTaxesRowModal + 1);
                   }}
-                  className="frappe-btn frappe-btn-default"
+                  className="frappe-btn frappe-btn-default text-xs px-2.5 py-1 whitespace-nowrap flex-shrink-0"
                 >
                   Insert Below
                 </button>
@@ -2842,7 +2956,7 @@ const QuotationCreatePage = () => {
                     updateForm('taxes', newTaxes);
                     setShowTaxesRowModal(showTaxesRowModal);
                   }}
-                  className="frappe-btn frappe-btn-default"
+                  className="frappe-btn frappe-btn-default text-xs px-2.5 py-1 whitespace-nowrap flex-shrink-0"
                 >
                   Insert Above
                 </button>
@@ -2854,36 +2968,32 @@ const QuotationCreatePage = () => {
                     updateForm('taxes', newTaxes);
                     setShowTaxesRowModal(showTaxesRowModal + 1);
                   }}
-                  className="frappe-btn frappe-btn-default"
+                  className="frappe-btn frappe-btn-default text-xs px-2.5 py-1 whitespace-nowrap flex-shrink-0 flex items-center gap-1"
                 >
-                  <Copy size={14} /> Duplicate
+                  <Copy size={13} /> Duplicate
                 </button>
-                <button 
-                  className="frappe-btn frappe-btn-default"
-                >
-                  Move
-                </button>
-                <div className="flex bg-gray-100 rounded ml-1">
+                <div className="flex bg-gray-100 rounded ml-1 flex-shrink-0">
                   <button 
                     disabled={showTaxesRowModal === 0}
                     onClick={() => setShowTaxesRowModal(showTaxesRowModal - 1)}
                     className="p-1.5 text-gray-600 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed rounded-l border-r border-gray-200"
                   >
-                    <ChevronUp size={16} />
+                    <ChevronUp size={15} />
                   </button>
                   <button 
                     disabled={showTaxesRowModal === (form.taxes?.length || 1) - 1}
                     onClick={() => setShowTaxesRowModal(showTaxesRowModal + 1)}
                     className="p-1.5 text-gray-600 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed rounded-r"
                   >
-                    <ChevronDown size={16} />
+                    <ChevronDown size={15} />
                   </button>
                 </div>
-                <button onClick={() => setShowTaxesRowModal(null)} className="text-gray-400 hover:text-gray-600 ml-2">
+                <button onClick={() => setShowTaxesRowModal(null)} className="text-gray-400 hover:text-gray-600 ml-2 hidden sm:block">
                   <X size={20} />
                 </button>
               </div>
             </div>
+
             <div className="p-6 flex-1 overflow-y-auto bg-gray-50/30">
               <div className="grid grid-cols-2 gap-8 mb-6">
                 <div>
@@ -2969,21 +3079,26 @@ const QuotationCreatePage = () => {
 
       {/* Payment Term Row Edit Modal */}
       {showPaymentRowModal !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50">
-          <div className="bg-white shadow-xl w-full max-w-4xl h-[85vh] overflow-hidden flex flex-col rounded-lg">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50/50">
-              <h2 className="text-lg font-bold text-gray-900">Editing Row #{showPaymentRowModal + 1}</h2>
-              <div className="flex items-center gap-2">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50 p-2 sm:p-4">
+          <div className="bg-white shadow-xl w-full max-w-4xl max-h-[90vh] h-[85vh] overflow-hidden flex flex-col rounded-lg mx-auto">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between px-3 sm:px-5 py-3 border-b border-gray-100 bg-gray-50/50 gap-2 shrink-0">
+              <div className="flex items-center justify-between w-full sm:w-auto">
+                <h2 className="text-base sm:text-lg font-bold text-gray-900">Editing Row #{showPaymentRowModal + 1}</h2>
+                <button onClick={() => setShowPaymentRowModal(null)} className="text-gray-400 hover:text-gray-600 sm:hidden p-1">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full sm:w-auto py-0.5">
                 <button 
                   onClick={() => {
                     const newSch = form.payment_schedule.filter((_, i) => i !== showPaymentRowModal);
                     updateForm('payment_schedule', newSch);
                     setShowPaymentRowModal(null);
                   }} 
-                  className="bg-red-500 hover:bg-red-600 text-white p-1.5 rounded"
+                  className="bg-red-500 hover:bg-red-600 text-white p-1.5 rounded flex-shrink-0"
                   title="Delete Row"
                 >
-                  <Trash2 size={16} />
+                  <Trash2 size={15} />
                 </button>
                 <button 
                   onClick={() => {
@@ -2992,7 +3107,7 @@ const QuotationCreatePage = () => {
                     updateForm('payment_schedule', newSch);
                     setShowPaymentRowModal(showPaymentRowModal + 1);
                   }}
-                  className="frappe-btn frappe-btn-default"
+                  className="frappe-btn frappe-btn-default text-xs px-2.5 py-1 whitespace-nowrap flex-shrink-0"
                 >
                   Insert Below
                 </button>
@@ -3003,7 +3118,7 @@ const QuotationCreatePage = () => {
                     updateForm('payment_schedule', newSch);
                     setShowPaymentRowModal(showPaymentRowModal);
                   }}
-                  className="frappe-btn frappe-btn-default"
+                  className="frappe-btn frappe-btn-default text-xs px-2.5 py-1 whitespace-nowrap flex-shrink-0"
                 >
                   Insert Above
                 </button>
@@ -3015,36 +3130,32 @@ const QuotationCreatePage = () => {
                     updateForm('payment_schedule', newSch);
                     setShowPaymentRowModal(showPaymentRowModal + 1);
                   }}
-                  className="frappe-btn frappe-btn-default"
+                  className="frappe-btn frappe-btn-default text-xs px-2.5 py-1 whitespace-nowrap flex-shrink-0 flex items-center gap-1"
                 >
-                  <Copy size={14} /> Duplicate
+                  <Copy size={13} /> Duplicate
                 </button>
-                <button 
-                  className="frappe-btn frappe-btn-default"
-                >
-                  Move
-                </button>
-                <div className="flex bg-gray-100 rounded ml-1">
+                <div className="flex bg-gray-100 rounded ml-1 flex-shrink-0">
                   <button 
                     disabled={showPaymentRowModal === 0}
                     onClick={() => setShowPaymentRowModal(showPaymentRowModal - 1)}
                     className="p-1.5 text-gray-600 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed rounded-l border-r border-gray-200"
                   >
-                    <ChevronUp size={16} />
+                    <ChevronUp size={15} />
                   </button>
                   <button 
                     disabled={showPaymentRowModal === (form.payment_schedule?.length || 1) - 1}
                     onClick={() => setShowPaymentRowModal(showPaymentRowModal + 1)}
                     className="p-1.5 text-gray-600 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed rounded-r"
                   >
-                    <ChevronDown size={16} />
+                    <ChevronDown size={15} />
                   </button>
                 </div>
-                <button onClick={() => setShowPaymentRowModal(null)} className="text-gray-400 hover:text-gray-600 ml-2">
+                <button onClick={() => setShowPaymentRowModal(null)} className="text-gray-400 hover:text-gray-600 ml-2 hidden sm:block">
                   <X size={20} />
                 </button>
               </div>
             </div>
+
             <div className="p-6 flex-1 overflow-y-auto bg-gray-50/30">
               <div className="grid grid-cols-2 gap-8 mb-6">
                 <div>
@@ -3129,21 +3240,26 @@ const QuotationCreatePage = () => {
       )}
 
       {showEditRowModal !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl h-[85vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50/50">
-              <h2 className="text-lg font-bold text-gray-900">Editing Row #{showEditRowModal + 1}</h2>
-              <div className="flex items-center gap-2">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-50 p-2 sm:p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] h-[85vh] overflow-hidden flex flex-col mx-auto">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between px-3 sm:px-5 py-3 border-b border-gray-100 bg-gray-50/50 gap-2 shrink-0">
+              <div className="flex items-center justify-between w-full sm:w-auto">
+                <h2 className="text-base sm:text-lg font-bold text-gray-900">Editing Row #{showEditRowModal + 1}</h2>
+                <button onClick={() => setShowEditRowModal(null)} className="text-gray-400 hover:text-gray-600 sm:hidden p-1">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full sm:w-auto py-0.5">
                 <button 
                   onClick={() => {
                     const newItems = form.items.filter((_, i) => i !== showEditRowModal);
                     setForm({ ...form, items: newItems });
                     setShowEditRowModal(null);
                   }} 
-                  className="bg-red-500 hover:bg-red-600 text-white p-1.5 rounded"
+                  className="bg-red-500 hover:bg-red-600 text-white p-1.5 rounded flex-shrink-0"
                   title="Delete Row"
                 >
-                  <Trash2 size={16} />
+                  <Trash2 size={15} />
                 </button>
                 <button 
                   onClick={() => {
@@ -3152,7 +3268,7 @@ const QuotationCreatePage = () => {
                     setForm({ ...form, items: newItems });
                     setShowEditRowModal(showEditRowModal + 1);
                   }}
-                  className="frappe-btn frappe-btn-default"
+                  className="frappe-btn frappe-btn-default text-xs px-2.5 py-1 whitespace-nowrap flex-shrink-0"
                 >
                   Insert Below
                 </button>
@@ -3163,7 +3279,7 @@ const QuotationCreatePage = () => {
                     setForm({ ...form, items: newItems });
                     setShowEditRowModal(showEditRowModal);
                   }}
-                  className="frappe-btn frappe-btn-default"
+                  className="frappe-btn frappe-btn-default text-xs px-2.5 py-1 whitespace-nowrap flex-shrink-0"
                 >
                   Insert Above
                 </button>
@@ -3175,36 +3291,32 @@ const QuotationCreatePage = () => {
                     setForm({ ...form, items: newItems });
                     setShowEditRowModal(showEditRowModal + 1);
                   }}
-                  className="frappe-btn frappe-btn-default"
+                  className="frappe-btn frappe-btn-default text-xs px-2.5 py-1 whitespace-nowrap flex-shrink-0 flex items-center gap-1"
                 >
-                  <Copy size={14} /> Duplicate
+                  <Copy size={13} /> Duplicate
                 </button>
-                <button 
-                  className="frappe-btn frappe-btn-default"
-                >
-                  Move
-                </button>
-                <div className="flex bg-gray-100 rounded ml-1">
+                <div className="flex bg-gray-100 rounded ml-1 flex-shrink-0">
                   <button 
                     disabled={showEditRowModal === 0}
                     onClick={() => setShowEditRowModal(showEditRowModal - 1)}
                     className="p-1.5 text-gray-600 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed rounded-l border-r border-gray-200"
                   >
-                    <ChevronUp size={16} />
+                    <ChevronUp size={15} />
                   </button>
                   <button 
                     disabled={showEditRowModal === form.items.length - 1}
                     onClick={() => setShowEditRowModal(showEditRowModal + 1)}
                     className="p-1.5 text-gray-600 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed rounded-r"
                   >
-                    <ChevronDown size={16} />
+                    <ChevronDown size={15} />
                   </button>
                 </div>
-                <button onClick={() => setShowEditRowModal(null)} className="text-gray-400 hover:text-gray-600 ml-2">
+                <button onClick={() => setShowEditRowModal(null)} className="text-gray-400 hover:text-gray-600 ml-2 hidden sm:block">
                   <X size={20} />
                 </button>
               </div>
             </div>
+
             <div className="p-6 flex-1 overflow-y-auto bg-gray-50/30">
               <div className="grid grid-cols-2 gap-8 mb-8">
                 <div>

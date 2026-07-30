@@ -66,8 +66,8 @@ const PrintHeadingListPage = () => {
 
   return (
 
-    <div className="min-h-screen bg-gray-50/30 flex flex-col font-sans">
-      <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-100">
+    <div className="min-h-screen bg-gray-50/30 flex flex-col font-sans w-full overflow-x-hidden">
+      <div className="flex flex-wrap items-center justify-between px-3 sm:px-6 py-3 sm:py-4 bg-white border-b border-gray-100 sticky top-16 z-10 gap-3 w-full">
         <div className="flex items-center gap-3">
           <button className="p-1 text-gray-400 hover:text-gray-600 rounded-md hover:bg-gray-50 transition-colors">
             <Settings size={20} />

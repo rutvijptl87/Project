@@ -275,14 +275,14 @@ const PaymentTermsTemplateFormPage = () => {
   const isHundred = Math.abs(totalPortion - 100) < 0.001;
 
   return (
-    <div className="min-h-screen frappe-page flex flex-col font-sans pb-20">
-      <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-100 sticky top-16 z-10">
-        <div className="flex items-center gap-4">
+    <div className="min-h-screen frappe-page flex flex-col font-sans pb-20 max-w-[1600px] 2xl:max-w-[1920px] mx-auto w-full">
+      <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 bg-white border-b border-gray-100 sticky top-16 z-10 flex-wrap gap-2">
+        <div className="flex items-center gap-2 sm:gap-4">
           <button onClick={() => navigate('/payment-terms-templates')} className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-md transition-colors">
             <ArrowLeft size={20} />
           </button>
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-bold text-gray-900">{isEdit ? form.template_name : 'New Payment Terms Template'}</h1>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <h1 className="text-base sm:text-lg font-bold text-gray-900">{isEdit ? form.template_name : 'New Payment Terms Template'}</h1>
             {!isEdit ? (
               <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-orange-50 text-orange-600 border border-orange-100/50">Not Saved</span>
             ) : (
@@ -291,15 +291,15 @@ const PaymentTermsTemplateFormPage = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={handleSave} disabled={saving} className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-[#1d4ed8] hover:bg-blue-700 text-white rounded-md text-xs font-medium transition-colors shadow-sm disabled:opacity-50">
+          <button onClick={handleSave} disabled={saving} className="inline-flex items-center gap-1.5 px-3.5 sm:px-4 py-1.5 bg-[#1d4ed8] hover:bg-blue-700 text-white rounded-md text-xs font-medium transition-colors shadow-sm disabled:opacity-50">
             <Save size={14} />
             {saving ? 'Saving...' : 'Save'}
           </button>
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto w-full px-6 py-6">
-        <div className="bg-white rounded-lg border border-gray-100 p-6 shadow-sm">
+      <div className="max-w-5xl 2xl:max-w-[1400px] mx-auto w-full px-3 sm:px-6 py-4 sm:py-6">
+        <div className="bg-white rounded-lg border border-gray-100 p-4 sm:p-6 shadow-sm">
           
           <div className="mb-6">
             <Field label="Template Name" value={form.template_name} onChange={v => updateForm('template_name', v)} required placeholder="e.g., Standard Payment Schedule, 50-50 Split" />
@@ -316,7 +316,7 @@ const PaymentTermsTemplateFormPage = () => {
           </div>
 
           <div className="mb-4">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <div className="text-[13px] font-medium text-gray-700 tracking-tight">Payment Terms</div>
               {form.terms.length > 0 && (
                 <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${isHundred ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
@@ -326,7 +326,7 @@ const PaymentTermsTemplateFormPage = () => {
               )}
             </div>
 
-            <div className="border border-gray-200 rounded-lg overflow-visible mb-4 shadow-2xs">
+            <div className="border border-gray-200 rounded-lg overflow-x-auto min-w-full mb-4 shadow-2xs">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-[#f9fafb] border-b border-gray-200 text-gray-600 font-medium text-[12px]">

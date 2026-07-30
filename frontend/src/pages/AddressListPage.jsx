@@ -214,8 +214,8 @@ const AddressListPage = () => {
           </div>
 
           {/* Table */}
-          <div className="bg-white overflow-hidden mt-2">
-            <table className="w-full text-left text-[13px] whitespace-nowrap">
+          <div className="bg-white overflow-x-auto mt-2 border border-gray-100 rounded-lg">
+            <table className="w-full text-left text-[13px] whitespace-nowrap min-w-[600px]">
               <thead className="bg-[#111827] text-white">
                 <tr>
                   <th className="px-4 py-3 w-8"><input type="checkbox" className="rounded-sm border-gray-300" checked={sortedAddresses.length > 0 && selectedItems.length === sortedAddresses.length} onChange={(e) => setSelectedItems(e.target.checked ? sortedAddresses.map(i => i.id) : [])} /></th>

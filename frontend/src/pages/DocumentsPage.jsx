@@ -5,6 +5,8 @@ import { useUndo } from '../lib/undo';
 import { downloadFile } from '../lib/download';
 import Modal from '../components/Modal';
 import InlinePicker from '../components/InlinePicker';
+import CustomSelect from '../components/CustomSelect';
+import CustomDatePicker from '../components/CustomDatePicker';
 import { logger } from '../lib/logger';
 import Pagination from '../components/Pagination';
 import { Plus, Search, FileText, Pencil, Trash2, Archive, ArchiveRestore, FileSignature, CheckCircle2, RotateCcw, ArrowUp, ArrowDown, Link2, PauseCircle, XCircle, ArrowRightLeft , X } from 'lucide-react';
@@ -347,86 +349,94 @@ const DocumentsPage = () => {
     : '';
 
   return (
-    <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="documents-page">
-      <div className="flex items-end justify-between mb-6 flex-wrap gap-4">
+    <div className="max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8" data-testid="documents-page">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-4 sm:mb-6 gap-3">
         <div>
-          <h1 className="font-head text-3xl md:text-4xl font-extrabold" style={{ color: 'var(--cc-dark-green)' }}>Documents</h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--cc-text-muted)' }}>
+          <h1 className="font-head text-2xl sm:text-3xl md:text-4xl font-extrabold" style={{ color: 'var(--cc-dark-green)' }}>Documents</h1>
+          <p className="text-xs sm:text-sm mt-1" style={{ color: 'var(--cc-text-muted)' }}>
             Generate certificates, letters, quotations and reports with auto-numbered series ({docs.length} total).
           </p>
         </div>
-        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto [&_.btn]:w-full sm:[&_.btn]:w-auto">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setShowArchived((v) => !v)}
-            className="btn btn-outline"
+            className="btn btn-outline flex-1 sm:flex-none"
             data-testid="btn-toggle-archived-documents"
           >
-            <Archive size={14}/> {showArchived ? 'Viewing Archived — Show Active' : 'Show Archived'}
+            <Archive size={14}/> <span className="hidden xs:inline sm:inline">{showArchived ? 'Show Active' : 'Show Archived'}</span><span className="xs:hidden sm:hidden">{showArchived ? 'Active' : 'Archived'}</span>
           </button>
-          <button onClick={openNew} className="btn btn-primary" data-testid="btn-new-document">
+          <button onClick={openNew} className="btn btn-primary flex-1 sm:flex-none" data-testid="btn-new-document">
             <Plus size={15}/> New Document
           </button>
         </div>
       </div>
 
       <form onSubmit={(e) => { e.preventDefault(); load(); }} className="mb-4 space-y-2" data-testid="documents-search-form">
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-2 w-full">
-          <div className="relative col-span-2 md:col-span-2">
-            <Search size={14} className="absolute left-3 top-3 text-gray-400"/>
-            <input className="input pl-9 w-full" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by number, client, plot, contact…" data-testid="documents-search-input" />
+        {/* Row 1: Search + dropdowns + button */}
+        <div className="flex flex-col gap-2 md:grid md:grid-cols-[1fr_1fr_1fr_1fr_auto] md:items-center">
+          {/* Search — full width on mobile, first col on desktop */}
+          <div className="relative md:col-span-1">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"/>
+            <input className="input pl-9 w-full" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by number, client, plot…" data-testid="documents-search-input" />
           </div>
-          <select className="select w-full col-span-1 truncate" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} data-testid="documents-type-filter">
-            <option value="">All types</option>
-            {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </select>
-          <select className="select w-full col-span-1 truncate" value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} data-testid="documents-client-filter">
-            <option value="">All clients</option>
-            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <select className="select w-full col-span-1 truncate" value={architectFilter} onChange={(e) => setArchitectFilter(e.target.value)} data-testid="documents-architect-filter">
-            <option value="">All architects</option>
-            {architects.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-          <button className="btn btn-outline w-full col-span-1" type="submit" data-testid="documents-search-btn">Search</button>
+          {/* Three selects: 2-col on mobile/sm, each own col on md+ */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 md:contents">
+            <CustomSelect
+              value={typeFilter}
+              onChange={(v) => setTypeFilter(v)}
+              options={types.map((t) => ({ value: String(t.id), label: t.name }))}
+              placeholder="All types"
+              data-testid="documents-type-filter"
+            />
+            <CustomSelect
+              value={clientFilter}
+              onChange={(v) => setClientFilter(v)}
+              options={clients.map((c) => ({ value: String(c.id), label: c.name }))}
+              placeholder="All clients"
+              data-testid="documents-client-filter"
+            />
+            <CustomSelect
+              value={architectFilter}
+              onChange={(v) => setArchitectFilter(v)}
+              options={architects.map((a) => ({ value: String(a.id), label: a.name }))}
+              placeholder="All architects"
+              className="col-span-2 sm:col-span-1"
+              data-testid="documents-architect-filter"
+            />
+          </div>
+          <button className="btn btn-outline w-full md:w-auto whitespace-nowrap" type="submit" data-testid="documents-search-btn">
+            <Search size={14} /> Search
+          </button>
         </div>
-        <div className="flex flex-col sm:flex-row gap-2 sm:items-center text-sm w-full">
-          <span className="text-xs uppercase tracking-widest" style={{ color: 'var(--cc-text-muted)' }}>Date range</span>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
-            <input
-              type="date"
-              className="input w-full sm:w-[150px]"
-              style={{ padding: '6px 8px' }}
+
+        {/* Row 2: Date range + active filter info */}
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-xs uppercase tracking-widest shrink-0" style={{ color: 'var(--cc-text-muted)' }}>Date</span>
+          <div className="grid grid-cols-2 sm:flex sm:flex-row gap-2 items-center flex-1 sm:flex-none">
+            <CustomDatePicker
               value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
+              onChange={(v) => setDateFrom(v)}
+              placeholder="From date"
               data-testid="documents-date-from"
             />
-            <span className="hidden sm:inline" style={{ color: 'var(--cc-text-muted)' }}>to</span>
-            <input
-              type="date"
-              className="input w-full sm:w-[150px]"
-              style={{ padding: '6px 8px' }}
+            <CustomDatePicker
               value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
+              onChange={(v) => setDateTo(v)}
+              placeholder="To date"
               data-testid="documents-date-to"
             />
           </div>
           {activeFiltersCount > 0 && (
             <>
-              <span className="ml-2 text-xs" style={{ color: 'var(--cc-accent)' }}>
-                {activeFiltersCount} filter{activeFiltersCount === 1 ? '' : 's'} active · showing {visible.length} of {docs.length}
+              <span className="text-xs shrink-0" style={{ color: 'var(--cc-accent)' }}>
+                {activeFiltersCount} filter{activeFiltersCount === 1 ? '' : 's'} · {visible.length}/{docs.length}
               </span>
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="btn btn-outline btn-sm"
-                data-testid="documents-clear-filters"
-              >
-                Clear filters
-              </button>
+              <button type="button" onClick={clearFilters} className="btn btn-outline btn-sm" data-testid="documents-clear-filters">Clear</button>
             </>
           )}
         </div>
       </form>
+
 
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
@@ -502,7 +512,7 @@ const DocumentsPage = () => {
                     </div>
                   </td>
                   <td>
-                    <div className="flex gap-1 justify-end flex-wrap">
+                    <div className="flex gap-1 justify-end flex-nowrap">
                       {isQuotation && st !== 'pending' && (
                         <button onClick={() => unconfirm(d)} className="btn btn-outline btn-sm" title="Mark as Pending" data-testid={`btn-reset-${d.id}`}>
                           <RotateCcw size={13}/>
@@ -527,7 +537,7 @@ const DocumentsPage = () => {
             </tbody>
           </table>
         </div>
-        <div className="mt-4 border-t border-gray-100 bg-white">
+        <div className="mt-2 sm:mt-4 border-t border-gray-100 bg-white">
           <Pagination page={page} setPage={setPage} limit={limit} total={total} />
         </div>
       </div>
@@ -537,79 +547,73 @@ const DocumentsPage = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label">Document Type *</label>
-              <select className="select" value={form.doc_type_id} onChange={(e) => update('doc_type_id', e.target.value)} data-testid="document-form-type">
-                <option value="">-- Select type --</option>
-                {types.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.prefix})</option>)}
-              </select>
+              <CustomSelect
+                value={form.doc_type_id}
+                onChange={(v) => update('doc_type_id', v)}
+                options={types.map((t) => ({ value: String(t.id), label: `${t.name} (${t.prefix})` }))}
+                placeholder="-- Select type --"
+                data-testid="document-form-type"
+              />
               {!editing && previewNextNumber && (
                 <div className="text-xs mt-1 font-mono-data" style={{ color: 'var(--cc-text-muted)' }}>
-                  Next number: <span style={{ color: 'var(--cc-accent)' }}>{previewNextNumber}</span>
+                  Next: <span style={{ color: 'var(--cc-accent)' }}>{previewNextNumber}</span>
                 </div>
               )}
             </div>
             <div>
               <label className="label">Date</label>
-              <input type="date" className="input" value={form.document_date} onChange={(e) => update('document_date', e.target.value)} data-testid="document-form-date" />
+              <CustomDatePicker
+                value={form.document_date}
+                onChange={(v) => update('document_date', v)}
+                placeholder="Select date"
+                data-testid="document-form-date"
+              />
             </div>
           </div>
 
           <div>
             <label className="label">Client Name</label>
-            <InlinePicker
-              entityType="client"
-              value={form.client_id}
-              onChange={(v) => update('client_id', v)}
-              items={clients}
-              onItemsChange={setClients}
-              testIdPrefix="document-form-client-"
-            />
+            <InlinePicker entityType="client" value={form.client_id} onChange={(v) => update('client_id', v)} items={clients} onItemsChange={setClients} testIdPrefix="document-form-client-" />
           </div>
 
           <div>
             <label className="label">Architect</label>
-            <InlinePicker
-              entityType="architect"
-              value={form.architect_id}
-              onChange={(v) => update('architect_id', v)}
-              items={architects}
-              onItemsChange={setArchitects}
-              testIdPrefix="document-form-architect-"
-            />
+            <InlinePicker entityType="architect" value={form.architect_id} onChange={(v) => update('architect_id', v)} items={architects} onItemsChange={setArchitects} testIdPrefix="document-form-architect-" />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label">Plot No / Place</label>
-              <input className="input" value={form.plot_place} onChange={(e) => update('plot_place', e.target.value)} placeholder="e.g. 5874/44D Chandigarh" data-testid="document-form-plot" />
+              <input className="input w-full" value={form.plot_place} onChange={(e) => update('plot_place', e.target.value)} placeholder="e.g. 5874/44D Chandigarh" data-testid="document-form-plot" />
             </div>
             <div>
               <label className="label">Location</label>
-              <input className="input" value={form.phase} onChange={(e) => update('phase', e.target.value)} placeholder="e.g. Andheri West, Mumbai" data-testid="document-form-location" />
+              <input className="input w-full" value={form.phase} onChange={(e) => update('phase', e.target.value)} placeholder="e.g. Andheri West, Mumbai" data-testid="document-form-location" />
             </div>
           </div>
 
           <div>
             <label className="label">Path of Folder</label>
-            <input className="input font-mono-data" value={form.remark} onChange={(e) => update('remark', e.target.value)} placeholder="e.g. D:/Projects/2026/ACCP-003" data-testid="document-form-folder-path" />
+            <input className="input font-mono-data w-full" value={form.remark} onChange={(e) => update('remark', e.target.value)} placeholder="e.g. D:/Projects/2026/ACCP-003" data-testid="document-form-folder-path" />
           </div>
 
           <div>
             <label className="label">Any Other Comments</label>
-            <textarea className="textarea" rows={3} value={form.other_comments} onChange={(e) => update('other_comments', e.target.value)} placeholder="Free-form notes (printed on PDF)" data-testid="document-form-comments" />
+            <textarea className="textarea w-full" rows={3} value={form.other_comments} onChange={(e) => update('other_comments', e.target.value)} placeholder="Free-form notes (printed on PDF)" data-testid="document-form-comments" />
           </div>
 
           {editing && (
             <div>
               <label className="label">Document Number (manual override)</label>
-              <input className="input font-mono-data" value={form.doc_number} onChange={(e) => update('doc_number', e.target.value)} data-testid="document-form-number" />
+              <input className="input font-mono-data w-full" value={form.doc_number} onChange={(e) => update('doc_number', e.target.value)} data-testid="document-form-number" />
             </div>
           )}
 
           {error && <div className="text-sm text-red-600" data-testid="document-form-error">{error}</div>}
 
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={() => setModalOpen(false)} className="btn btn-outline">Cancel</button>
-            <button type="submit" disabled={saving} className="btn btn-primary" data-testid="document-form-save">{saving ? 'Saving…' : (editing ? 'Save Changes' : 'Create Document')}</button>
+          <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setModalOpen(false)} className="btn btn-outline w-full sm:w-auto">Cancel</button>
+            <button type="submit" disabled={saving} className="btn btn-primary w-full sm:w-auto" data-testid="document-form-save">{saving ? 'Saving…' : (editing ? 'Save Changes' : 'Create Document')}</button>
           </div>
         </form>
       </Modal>
@@ -729,19 +733,17 @@ const DocumentsPage = () => {
               </div>
             </div>
 
-            <div className="flex justify-between gap-2 pt-2">
+            <div className="flex flex-col sm:flex-row justify-between gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => performConfirm(null)}
                 disabled={confirmBusy}
-                className="btn btn-outline"
+                className="btn btn-outline w-full sm:w-auto"
                 data-testid="confirm-without-link"
               >
                 Confirm without linking
               </button>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setConfirmModal(null)} className="btn btn-outline">Cancel</button>
-              </div>
+              <button type="button" onClick={() => setConfirmModal(null)} className="btn btn-outline w-full sm:w-auto">Cancel</button>
             </div>
             {confirmBusy && <div className="text-xs text-center" style={{ color: 'var(--cc-text-muted)' }}>Saving…</div>}
           </div>
