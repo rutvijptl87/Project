@@ -898,6 +898,12 @@ class SiteVisit(BaseModel):
     last_edited_at: Optional[str] = ""
     created_at: str
 
+
+class PaginatedSiteVisits(BaseModel):
+    data: List[SiteVisit]
+    total: int
+
+
 class CompanyDetailsIn(BaseModel):
     name: str
     address: str
@@ -2838,6 +2844,12 @@ class Audit(BaseModel):
     created_at: str
 
 
+class PaginatedAudits(BaseModel):
+    data: List[Audit]
+    total: int
+
+
+
 async def _next_audit_code() -> str:
     doc = await db.counters.find_one_and_update(
         {"_id": "audit_code"},
@@ -3047,6 +3059,53 @@ async def set_audit_offer_series(payload: dict = Body(...)):
         "next_code": candidate,
     }
 
+
+
+@api_router.get("/audits/paginated", response_model=PaginatedAudits)
+async def list_audits_paginated(
+    page: int = 1,
+    limit: int = 25,
+    search: Optional[str] = None,
+    archived: bool = False,
+    sort_by: Optional[str] = "created_at",
+    sort_dir: Optional[str] = "desc",
+):
+    _deny_engineer()
+    query = {"archived": bool(archived)}
+    if search:
+        s = search.strip()
+        client_ids = [c["id"] for c in await db.clients.find({"name": {"$regex": s, "$options": "i"}}, {"id": 1}).to_list(None)]
+        or_conds = [
+            {"audit_code": {"$regex": s, "$options": "i"}},
+            {"audit_offer": {"$regex": s, "$options": "i"}},
+            {"report_id": {"$regex": s, "$options": "i"}},
+            {"client_name": {"$regex": s, "$options": "i"}},
+            {"client_name_override": {"$regex": s, "$options": "i"}},
+            {"address": {"$regex": s, "$options": "i"}},
+        ]
+        if client_ids:
+            or_conds.append({"client_id": {"$in": client_ids}})
+        query["$or"] = or_conds
+
+    allowed_sorts = {
+        "audit_offer": "audit_offer",
+        "report_id": "report_id",
+        "client_name": "client_name",
+        "total_amount": "total_amount",
+        "received_amount": "received_amount",
+        "outstanding_amount": "outstanding_amount",
+        "status": "status",
+        "created_at": "created_at",
+    }
+    sort_field = allowed_sorts.get(sort_by, "created_at")
+    sort_direction = -1 if sort_dir == "desc" else 1
+
+    total = await db.audits.count_documents(query)
+    skip = (page - 1) * limit
+    items = await db.audits.find(query, {"_id": 0}).sort(sort_field, sort_direction).skip(skip).limit(limit).to_list(limit)
+    for a in items:
+        await _enrich_audit(a)
+    return {"data": items, "total": total}
 
 
 @api_router.get("/audits", response_model=List[Audit])
@@ -6354,6 +6413,44 @@ async def export_site_visits_excel(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
+
+
+@api_router.get("/site-visits/paginated", response_model=PaginatedSiteVisits)
+async def list_site_visits_paginated(
+    page: int = 1,
+    limit: int = 25,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    mine: Optional[bool] = False,
+    project_id: Optional[str] = None,
+):
+    q: dict = {}
+    if project_id:
+        q["project_id"] = project_id
+    if mine:
+        user = get_current_user_safe()
+        if user:
+            q["created_by_user_id"] = user["id"]
+    if status:
+        q["status"] = status.lower()
+    if search:
+        rx = {"$regex": search.strip(), "$options": "i"}
+        q["$or"] = [
+            {"visit_code": rx},
+            {"inspection_title": rx},
+            {"job_no": rx},
+            {"customer": rx},
+            {"plot_no": rx},
+            {"project_code": rx},
+        ]
+    total = await db.site_visits.count_documents(q)
+    skip = (page - 1) * limit
+    rows = await db.site_visits.find(
+        q, {"_id": 0, "photos": 0, "engineer_signature": 0, "site_person_signature": 0}
+    ).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    for r in rows:
+        await _enrich_site_visit(r)
+    return {"data": rows, "total": total}
 
 
 @api_router.get("/site-visits", response_model=List[SiteVisit])

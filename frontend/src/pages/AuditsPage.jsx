@@ -194,11 +194,12 @@ const AuditsPage = () => {
     }
   };
 
-  const load = async (overrideSearch) => {
+  const load = async (overrideSearch, overridePage) => {
     setLoading(true);
     try {
+      const currentPage = typeof overridePage === 'number' ? overridePage : page;
       const params = {
-        page,
+        page: currentPage,
         limit,
         sort_by: sortBy,
         sort_dir: sortDir,
@@ -292,7 +293,8 @@ const AuditsPage = () => {
       } else {
         await api.post('/audits', payload);
         setSearch('');
-        load('');
+        setPage(1);
+        load('', 1);
       }
       setModalOpen(false);
       showToast(editing ? 'Audit updated' : 'Audit created');
@@ -395,11 +397,11 @@ const AuditsPage = () => {
       <div className="flex items-end justify-between mb-6 flex-wrap gap-4">
         <div>
           <h1 className="font-head text-3xl md:text-4xl font-extrabold" style={{ color: 'var(--cc-dark-green)' }}>Audits</h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--cc-text-muted)' }}>Track structural audits, reports and payments ({audits.length} total).</p>
+          <p className="text-sm mt-1" style={{ color: 'var(--cc-text-muted)' }}>Track structural audits, reports and payments ({total} total).</p>
         </div>
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto [&_.btn]:w-full sm:[&_.btn]:w-auto">
           <button
-            onClick={() => setShowArchived(v => !v)}
+            onClick={() => { setShowArchived(v => !v); setPage(1); }}
             className={`btn btn-outline ${showArchived ? 'opacity-90' : ''}`}
             data-testid="btn-toggle-archived-audits"
           >
@@ -410,7 +412,7 @@ const AuditsPage = () => {
       </div>
 
       {/* Search */}
-      <form onSubmit={(e) => { e.preventDefault(); load(); }} className="mb-4 flex flex-col sm:flex-row gap-2" data-testid="audits-search-form">
+      <form onSubmit={(e) => { e.preventDefault(); setPage(1); load(search, 1); }} className="mb-4 flex flex-col sm:flex-row gap-2" data-testid="audits-search-form">
         <div className="relative flex-1 w-full sm:w-auto">
           <Search size={14} className="absolute left-3 top-3 text-gray-400"/>
           <input

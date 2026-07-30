@@ -159,7 +159,7 @@ const PaymentTermsTemplateFormPage = () => {
 
   useEffect(() => {
     api.get('/payment-terms').then(res => {
-      setMasterTerms(res.data || []);
+      setMasterTerms(Array.isArray(res.data) ? res.data : (res.data?.data || []));
     }).catch(e => console.error('Failed to fetch payment terms master', e));
 
     if (isEdit) {
