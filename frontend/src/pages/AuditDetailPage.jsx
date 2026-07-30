@@ -70,7 +70,7 @@ const AuditDetailPage = () => {
   if (!audit) return <div className="max-w-5xl mx-auto p-8">Loading...</div>;
 
   const startEditAddress = () => { setAddressDraft(audit?.address || ''); setEditingNotes(true); };
-  const cancelEditNotes = () => { setEditingNotes(false); setNotesDraft(''); };
+  const cancelEditNotes = () => { setEditingNotes(false); setAddressDraft(''); };
   const saveNotes = async () => {
     setSavingNotes(true);
     try {

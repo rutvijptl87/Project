@@ -254,7 +254,7 @@ const AddressListPage = () => {
                 ) : (
                   sortedAddresses.map((a) => (
                     <tr key={a.id} className="hover:bg-gray-50 transition-colors group cursor-pointer" onClick={() => navigate(`/addresses/${a.id}`)}>
-                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}><input type="checkbox" className="rounded-sm border-gray-300" checked={selectedItems.includes(item.id)} onChange={(e) => { e.stopPropagation(); setSelectedItems(prev => e.target.checked ? [...prev, item.id] : prev.filter(id => id !== item.id)); }} /></td>
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}><input type="checkbox" className="rounded-sm border-gray-300" checked={selectedItems.includes(a.id)} onChange={(e) => { e.stopPropagation(); setSelectedItems(prev => e.target.checked ? [...prev, a.id] : prev.filter(id => id !== a.id)); }} /></td>
                       <td className="px-3 py-2 text-gray-700">{a.address_title || `${a.link_name}-${a.address_type}`}</td>
                       <td className="px-3 py-2">
                         <span className={`text-[12px] font-medium ${a.disabled ? 'text-gray-500' : 'text-blue-500'}`}>
@@ -270,7 +270,7 @@ const AddressListPage = () => {
                           <span>1 d</span>
                           <button 
                             className="flex items-center justify-center p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                            onClick={(e) => { e.stopPropagation(); handleDelete(item); }}
+                            onClick={(e) => { e.stopPropagation(); handleDelete(a); }}
                             title="Delete"
                           >
                             <Trash2 size={14} />

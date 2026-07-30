@@ -238,7 +238,11 @@ const CustomDatePicker = ({
           <div className="flex items-center justify-between px-3 py-2 border-t text-xs" style={{ borderColor: 'var(--cc-border)' }}>
             <button
               type="button"
-              onClick={() => selectDay(today.getDate())}
+              onClick={() => {
+                const iso = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+                onChange(iso);
+                setOpen(false);
+              }}
               className="font-semibold hover:underline"
               style={{ color: 'var(--cc-accent)' }}
             >

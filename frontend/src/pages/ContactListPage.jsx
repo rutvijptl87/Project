@@ -258,7 +258,7 @@ const ContactListPage = () => {
                   
     return (
                       <tr key={c.id} className="hover:bg-gray-50 transition-colors group cursor-pointer" onClick={() => navigate(`/contacts/${c.id}`)}>
-                        <td className="px-4 py-3" onClick={e => e.stopPropagation()}><input type="checkbox" className="rounded-sm border-gray-300" checked={selectedItems.includes(item.id)} onChange={(e) => { e.stopPropagation(); setSelectedItems(prev => e.target.checked ? [...prev, item.id] : prev.filter(id => id !== item.id)); }} /></td>
+                        <td className="px-4 py-3" onClick={e => e.stopPropagation()}><input type="checkbox" className="rounded-sm border-gray-300" checked={selectedItems.includes(c.id)} onChange={(e) => { e.stopPropagation(); setSelectedItems(prev => e.target.checked ? [...prev, c.id] : prev.filter(id => id !== c.id)); }} /></td>
                         <td className="px-3 py-2 text-gray-700 font-medium">{fullName || c.id}</td>
                         <td className="px-3 py-2 text-gray-600">{primaryEmail}</td>
                         <td className="px-3 py-2">
@@ -271,7 +271,7 @@ const ContactListPage = () => {
                             <span>1 d</span>
                             <button 
                             className="flex items-center justify-center p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                            onClick={(e) => { e.stopPropagation(); handleDelete(item); }}
+                            onClick={(e) => { e.stopPropagation(); handleDelete(c); }}
                             title="Delete"
                           >
                             <Trash2 size={14} />
