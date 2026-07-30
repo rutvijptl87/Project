@@ -55,7 +55,7 @@ const LetterHeadFormPage = () => {
 
   return (
     <div className="min-h-screen frappe-page flex flex-col font-sans pb-20">
-      <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-100 sticky top-16 z-10">
+      <div className="flex flex-wrap items-center justify-between px-3 sm:px-6 py-3 sm:py-4 bg-white border-b border-gray-100 sticky top-16 z-10 gap-3 w-full">
         <div className="flex items-center gap-4">
           <button onClick={() => navigate('/letter-heads')} className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-md transition-colors">
             <Menu size={20} />

@@ -267,58 +267,48 @@ const QuotationsPage = () => {
       import('react-toastify').then(m => m.toast.error('An error occurred during deletion'));
       load();
     }
-  };
-
-  return (
-    <div className="min-h-screen frappe-page flex flex-col font-sans">
+  };  return (
+    <div className="min-h-screen frappe-page flex flex-col font-sans max-w-[1600px] 2xl:max-w-[1920px] mx-auto w-full">
       {/* Page Header */}
-      <div className="flex flex-wrap items-center justify-between px-6 py-4 bg-white border-b border-gray-100 sticky top-16 z-10 gap-4" ref={headerRef}>
+      <div className="flex flex-wrap items-center justify-between px-3 sm:px-6 py-3 sm:py-4 bg-white border-b border-gray-100 sticky top-16 z-10 gap-2 sm:gap-4" ref={headerRef}>
         <div className="flex items-center gap-3">
-          {/* <div className="relative group">
-            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="text-gray-500 hover:text-gray-900 focus:outline-none p-1 rounded-md hover:bg-gray-100 transition-colors">
-              <Menu size={20}/>
-            </button>
-            <div className="absolute left-0 top-full mt-2 hidden group-hover:block whitespace-nowrap bg-white border border-gray-200 shadow-lg text-gray-700 text-xs py-1.5 px-3 rounded z-50">
-              Toggle Sidebar <span className="ml-2 px-1.5 py-0.5 bg-gray-100 rounded text-gray-500 border border-gray-200">Ctrl+K</span>
-            </div>
-          </div> */}
-          <h1 className="text-xl font-bold text-gray-900">Quotation</h1>
+          <h1 className="text-lg sm:text-xl font-bold text-gray-900">Quotation</h1>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
             
-            <button onClick={() => load()} className="frappe-btn frappe-btn-default">
+            <button onClick={() => load()} className="frappe-btn frappe-btn-default p-2">
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''}/>
             </button>
             
             <div className="relative">
-              <button onClick={() => setShowSettingsMenu(!showSettingsMenu)} className="frappe-btn frappe-btn-default">
+              <button onClick={() => setShowSettingsMenu(!showSettingsMenu)} className="frappe-btn frappe-btn-default text-xs sm:text-sm px-2.5 sm:px-3 py-1.5">
                 Quotations Settings <ChevronDown size={14} />
               </button>
               {showSettingsMenu && (
-                <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 shadow-lg rounded-md py-1 z-20 max-h-80 overflow-y-auto">
-                  <Link to="/items" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Item Code List</Link>
-                  <Link to="/job-types" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Manage Job Type</Link>
-                  <Link to="/job-sub-types" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Manage Job Sub Type</Link>
-                  <Link to="/scope-of-works" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Manage Scope of Work</Link>
-                  <Link to="/tax-categories" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Tax Category</Link>
-                  <Link to="/sales-tax-templates" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Sales Taxes and Charges Template</Link>
-                  <Link to="/payment-terms-templates" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Payment Terms Template</Link>
-                  <Link to="/payment-terms" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Payment Terms</Link>
-                  <Link to="/terms-and-conditions" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Terms and Conditions Template</Link>
-                  <Link to="/test-templates" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Test Template</Link>
-                  <Link to="/letter-heads" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Letter Head</Link>
-                  <Link to="/print-headings" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Print Heading</Link>
-                  <Link to="/addresses" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Address</Link>
-                  <Link to="/site-addresses" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Site Address</Link>
-                  <Link to="/contacts" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Contact</Link>
+                <div className="absolute right-0 top-full mt-1 w-48 sm:w-56 bg-white border border-gray-200 shadow-lg rounded-md py-1 z-20 max-h-80 overflow-y-auto">
+                  <Link to="/items" className="block px-4 py-2 text-xs sm:text-sm text-gray-700 hover:bg-gray-100">Item Code List</Link>
+                  <Link to="/job-types" className="block px-4 py-2 text-xs sm:text-sm text-gray-700 hover:bg-gray-100">Manage Job Type</Link>
+                  <Link to="/job-sub-types" className="block px-4 py-2 text-xs sm:text-sm text-gray-700 hover:bg-gray-100">Manage Job Sub Type</Link>
+                  <Link to="/scope-of-works" className="block px-4 py-2 text-xs sm:text-sm text-gray-700 hover:bg-gray-100">Manage Scope of Work</Link>
+                  <Link to="/tax-categories" className="block px-4 py-2 text-xs sm:text-sm text-gray-700 hover:bg-gray-100">Tax Category</Link>
+                  <Link to="/sales-tax-templates" className="block px-4 py-2 text-xs sm:text-sm text-gray-700 hover:bg-gray-100">Sales Taxes and Charges Template</Link>
+                  <Link to="/payment-terms-templates" className="block px-4 py-2 text-xs sm:text-sm text-gray-700 hover:bg-gray-100">Payment Terms Template</Link>
+                  <Link to="/payment-terms" className="block px-4 py-2 text-xs sm:text-sm text-gray-700 hover:bg-gray-100">Payment Terms</Link>
+                  <Link to="/terms-and-conditions" className="block px-4 py-2 text-xs sm:text-sm text-gray-700 hover:bg-gray-100">Terms and Conditions Template</Link>
+                  <Link to="/test-templates" className="block px-4 py-2 text-xs sm:text-sm text-gray-700 hover:bg-gray-100">Test Template</Link>
+                  <Link to="/letter-heads" className="block px-4 py-2 text-xs sm:text-sm text-gray-700 hover:bg-gray-100">Letter Head</Link>
+                  <Link to="/print-headings" className="block px-4 py-2 text-xs sm:text-sm text-gray-700 hover:bg-gray-100">Print Heading</Link>
+                  <Link to="/addresses" className="block px-4 py-2 text-xs sm:text-sm text-gray-700 hover:bg-gray-100">Address</Link>
+                  <Link to="/site-addresses" className="block px-4 py-2 text-xs sm:text-sm text-gray-700 hover:bg-gray-100">Site Address</Link>
+                  <Link to="/contacts" className="block px-4 py-2 text-xs sm:text-sm text-gray-700 hover:bg-gray-100">Contact</Link>
                 </div>
               )}
             </div>
             
             {selectedIds.length > 0 ? (
               <div className="relative">
-                <button onClick={() => setShowActionsMenu(!showActionsMenu)} className="flex items-center gap-1 px-4 py-1.5 text-[13px] font-medium text-white bg-gray-900 hover:bg-black rounded-md shadow-sm ml-1 transition-colors">
+                <button onClick={() => setShowActionsMenu(!showActionsMenu)} className="flex items-center gap-1 px-3 sm:px-4 py-1.5 text-xs sm:text-[13px] font-medium text-white bg-gray-900 hover:bg-black rounded-md shadow-sm transition-colors">
                   Actions <ChevronDown size={14}/>
                 </button>
                 {showActionsMenu && (
@@ -359,7 +349,7 @@ const QuotationsPage = () => {
                 )}
               </div>
             ) : (
-              <Link to="/quotations/new" className="flex items-center gap-1 px-4 py-1.5 text-[13px] font-medium text-white bg-gray-900 hover:bg-black rounded-md shadow-sm ml-1 transition-colors">
+              <Link to="/quotations/new" className="flex items-center gap-1 px-3 sm:px-4 py-1.5 text-xs sm:text-[13px] font-medium text-white bg-gray-900 hover:bg-black rounded-md shadow-sm transition-colors whitespace-nowrap">
                 <Plus size={14}/> Add Quotation
               </Link>
             )}
@@ -369,155 +359,38 @@ const QuotationsPage = () => {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Sidebar */}
-        {/* <div className={`w-56 border-r border-gray-100 bg-white px-5 py-6 flex flex-col gap-6 overflow-y-auto shrink-0 transition-all ${isSidebarOpen ? 'block' : 'hidden'}`}>
-           
-           <div>
-             <h4 className="text-[12px] font-medium text-gray-500 mb-3">Filter By</h4>
-             <div className="space-y-3">
-                <div className="relative">
-                  <div onClick={() => setShowAssignedToMenu(!showAssignedToMenu)} className="flex items-center justify-between w-full text-[13px] bg-gray-50 hover:bg-gray-100 rounded-full px-3 py-1.5 text-gray-700 cursor-pointer transition-colors">
-                    <span className={searchFilters.assigned_to ? "text-gray-900 font-medium truncate max-w-[120px]" : ""}>{searchFilters.assigned_to || 'Assigned To'}</span> <ArrowUpDown size={12} className="opacity-40 shrink-0"/>
-                  </div>
-                  {showAssignedToMenu && (
-                    <div className="absolute left-0 top-full mt-1 w-full bg-white border border-gray-200 shadow-lg rounded-md p-2 z-20">
-                      <input 
-                        type="text" 
-                        placeholder="Search User..." 
-                        value={searchFilters.assigned_to || ''}
-                        onChange={e => setSearchFilters({...searchFilters, assigned_to: e.target.value})}
-                        className="w-full text-[12px] border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-blue-500" 
-                      />
-                    </div>
-                  )}
-                </div>
-                <div className="relative">
-                  <div onClick={() => setShowCreatedByMenu(!showCreatedByMenu)} className="flex items-center justify-between w-full text-[13px] bg-gray-50 hover:bg-gray-100 rounded-full px-3 py-1.5 text-gray-700 cursor-pointer transition-colors">
-                    <span className={searchFilters.created_by ? "text-gray-900 font-medium truncate max-w-[120px]" : ""}>{searchFilters.created_by || 'Created By'}</span> <ArrowUpDown size={12} className="opacity-40 shrink-0"/>
-                  </div>
-                  {showCreatedByMenu && (
-                    <div className="absolute left-0 top-full mt-1 w-full bg-white border border-gray-200 shadow-lg rounded-md p-2 z-20">
-                      <input 
-                        type="text" 
-                        placeholder="Search User..." 
-                        value={searchFilters.created_by || ''}
-                        onChange={e => setSearchFilters({...searchFilters, created_by: e.target.value})}
-                        className="w-full text-[12px] border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-blue-500" 
-                      />
-                    </div>
-                  )}
-                </div>
-             </div>
-           </div>
-
-           <div>
-             <h4 className="text-[12px] font-medium text-gray-500 mb-3">Edit Filters</h4>
-             <div className="space-y-3">
-                <div className="relative">
-                  <div onClick={() => setShowTagsMenu(!showTagsMenu)} className="flex items-center justify-between w-full text-[13px] bg-gray-50 hover:bg-gray-100 rounded-full px-3 py-1.5 text-gray-700 cursor-pointer transition-colors">
-                    <span className={searchFilters.tags ? "text-gray-900 font-medium truncate max-w-[120px]" : ""}>{searchFilters.tags || 'Tags'}</span> <ArrowUpDown size={12} className="opacity-40 shrink-0"/>
-                  </div>
-                  {showTagsMenu && (
-                    <div className="absolute left-0 top-full mt-1 w-full bg-white border border-gray-200 shadow-lg rounded-md p-2 z-20">
-                      <input 
-                        type="text" 
-                        placeholder="Search Tags..." 
-                        value={searchFilters.tags || ''}
-                        onChange={e => setSearchFilters({...searchFilters, tags: e.target.value})}
-                        className="w-full text-[12px] border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:border-blue-500" 
-                      />
-                    </div>
-                  )}
-                </div>
-                <div onClick={() => setShowTagsColumn(!showTagsColumn)} className="text-[12px] text-gray-500 hover:text-gray-800 cursor-pointer pl-2 select-none">
-                  {showTagsColumn ? 'Hide Tags' : 'Show Tags'}
-                </div>
-             </div>
-           </div>
-           
-           <div>
-             <h4 className="text-[12px] font-medium text-gray-500 mb-3">Save Filter</h4>
-             <input type="text" placeholder="Filter Name" className="w-full text-[13px] bg-gray-50 border-0 rounded-full px-3 py-1.5 focus:bg-white focus:ring-1 focus:ring-blue-500 placeholder-gray-400 transition-colors" />
-           </div>
-        </div> */}
-
         {/* Main Content */}
-        <div className="flex-1 flex flex-col p-6 overflow-y-auto bg-white">
-          
-          {/* Top Filter Bar */}
-          {/* <div className="flex flex-col mb-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <input type="text" placeholder="ID" value={searchFilters.id} onChange={e=>setSearchFilters({...searchFilters, id: e.target.value})} className="w-24 text-[13px] bg-gray-50 border-0 rounded-full px-3 py-1.5 text-gray-800 placeholder-gray-400 focus:bg-white focus:ring-1 focus:ring-blue-500 transition-colors" />
-              <input type="text" placeholder="Title" value={searchFilters.title} onChange={e=>setSearchFilters({...searchFilters, title: e.target.value})} className="w-32 text-[13px] bg-gray-50 border-0 rounded-full px-3 py-1.5 text-gray-800 placeholder-gray-400 focus:bg-white focus:ring-1 focus:ring-blue-500 transition-colors" />
-              <input type="text" placeholder="Quotation To" value={searchFilters.quotation_to} onChange={e=>setSearchFilters({...searchFilters, quotation_to: e.target.value})} className="w-32 text-[13px] bg-gray-50 border-0 rounded-full px-3 py-1.5 text-gray-800 placeholder-gray-400 focus:bg-white focus:ring-1 focus:ring-blue-500 transition-colors" />
-              <input type="text" placeholder="Date" value={searchFilters.date} onChange={e=>setSearchFilters({...searchFilters, date: e.target.value})} className="w-28 text-[13px] bg-gray-50 border-0 rounded-full px-3 py-1.5 text-gray-800 placeholder-gray-400 focus:bg-white focus:ring-1 focus:ring-blue-500 transition-colors" />
-            </div>
-            
-            <div className="flex items-center mt-3 gap-2">
-              <div className="relative">
-                <div onClick={() => setShowOrderTypeMenu(!showOrderTypeMenu)} className="flex items-center justify-between w-36 text-[13px] bg-gray-50 hover:bg-gray-100 rounded-full px-3 py-1.5 text-gray-700 cursor-pointer transition-colors">
-                  <span className={searchFilters.order_type ? "text-gray-900 font-medium truncate max-w-[100px]" : "text-gray-400"}>{searchFilters.order_type || 'Order Type'}</span> <ArrowUpDown size={12} className="opacity-40 shrink-0"/>
-                </div>
-                {showOrderTypeMenu && (
-                  <div className="absolute left-0 top-full mt-1 w-40 bg-white border border-gray-200 shadow-lg rounded-md py-1 z-20">
-                    {['Sales', 'Maintenance', 'Shopping Cart'].map(type => (
-                      <button 
-                        key={type}
-                        onClick={() => {
-                          setSearchFilters({...searchFilters, order_type: type});
-                          setShowOrderTypeMenu(false);
-                        }}
-                        className={`w-full text-left px-4 py-2 text-[13px] hover:bg-gray-50 ${searchFilters.order_type === type ? 'bg-gray-50 font-medium' : 'text-gray-700'}`}
-                      >
-                        {type}
-                      </button>
-                    ))}
-                    {searchFilters.order_type && (
-                      <button 
-                        onClick={() => {
-                          setSearchFilters({...searchFilters, order_type: ''});
-                          setShowOrderTypeMenu(false);
-                        }}
-                        className="w-full text-left px-4 py-2 text-[13px] text-red-500 hover:bg-red-50 border-t border-gray-100 mt-1"
-                      >
-                        Clear Filter
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div> */}
+        <div className="flex-1 flex flex-col p-3 sm:p-6 overflow-y-auto bg-white">
 
           {currentView === 'List' ? (
             <>
-              {/* Table */}
-              <div className="bg-white overflow-hidden mt-2">
-            <table className="w-full text-left text-[13px] whitespace-nowrap">
+              {/* Responsive Table Wrapper */}
+              <div className="bg-white overflow-x-auto min-w-full rounded-lg border border-gray-200 mt-2 shadow-sm">
+            <table className="w-full text-left text-xs sm:text-[13px] whitespace-nowrap">
               <thead className="bg-[#111827] text-white">
                 <tr>
-                  <th className="px-3 py-3 w-8"><input type="checkbox" className="rounded-sm border-gray-600 bg-gray-800" checked={sortedQuotations.length > 0 && selectedIds.length === sortedQuotations.length} onChange={handleSelectAll} /></th>
-                  <th className="px-3 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('quotation_to')}>
+                  <th className="px-2 sm:px-3 py-3 w-8"><input type="checkbox" className="rounded-sm border-gray-600 bg-gray-800" checked={sortedQuotations.length > 0 && selectedIds.length === sortedQuotations.length} onChange={handleSelectAll} /></th>
+                  <th className="px-2 sm:px-3 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('quotation_to')}>
                     <div className="flex items-center gap-1">Title {sortBy === 'quotation_to' ? <ArrowUpDown size={12} className="text-gray-300"/> : <ArrowUpDown size={12} className="opacity-20"/>}</div>
                   </th>
-                  {showTagsColumn && <th className="px-3 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('tag')}>
+                  {showTagsColumn && <th className="px-2 sm:px-3 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors hidden md:table-cell" onClick={() => toggleSort('tag')}>
                     <div className="flex items-center gap-1">Tag {sortBy === 'tag' ? <ArrowUpDown size={12} className="text-gray-300"/> : <ArrowUpDown size={12} className="opacity-20"/>}</div>
                   </th>}
-                  <th className="px-3 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('status')}>
+                  <th className="px-2 sm:px-3 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('status')}>
                     <div className="flex items-center gap-1">Status {sortBy === 'status' ? <ArrowUpDown size={12} className="text-gray-300"/> : <ArrowUpDown size={12} className="opacity-20"/>}</div>
                   </th>
-                  <th className="px-3 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('created_at')}>
+                  <th className="px-2 sm:px-3 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors hidden sm:table-cell" onClick={() => toggleSort('created_at')}>
                     <div className="flex items-center gap-1">Date {sortBy === 'created_at' ? <ArrowUpDown size={12} className="text-gray-300"/> : <ArrowUpDown size={12} className="opacity-20"/>}</div>
                   </th>
-                  <th className="px-3 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors text-right" onClick={() => toggleSort('grand_total')}>
-                    <div className="flex items-center justify-end gap-1">{sortBy === 'grand_total' ? <ArrowUpDown size={12} className="text-gray-300"/> : <ArrowUpDown size={12} className="opacity-20"/>} Grand Total (Exclusive GST)</div>
+                  <th className="px-2 sm:px-3 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors text-right" onClick={() => toggleSort('grand_total')}>
+                    <div className="flex items-center justify-end gap-1">{sortBy === 'grand_total' ? <ArrowUpDown size={12} className="text-gray-300"/> : <ArrowUpDown size={12} className="opacity-20"/>} Grand Total (Excl. GST)</div>
                   </th>
-                  <th className="px-3 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('quotation_no')}>
+                  <th className="px-2 sm:px-3 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors hidden md:table-cell" onClick={() => toggleSort('quotation_no')}>
                     <div className="flex items-center gap-1">ID {sortBy === 'quotation_no' ? <ArrowUpDown size={12} className="text-gray-300"/> : <ArrowUpDown size={12} className="opacity-20"/>}</div>
                   </th>
-                  <th className="px-3 py-3 font-medium text-right">
+                  <th className="px-2 sm:px-3 py-3 font-medium text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <span className="text-gray-400 font-normal">{Math.min(page * limit, total)} of {total}</span>
+                      <span className="text-gray-400 font-normal hidden sm:inline">{Math.min(page * limit, total)} of {total}</span>
                       {selectedIds.length > 0 ? (
                         <button onClick={handleBulkDelete} className="p-1 text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded transition-colors flex items-center justify-center">
                           <Trash2 size={14} />
@@ -541,26 +414,26 @@ const QuotationsPage = () => {
                 ) : (
                   sortedQuotations.map((q) => (
                     <tr key={q.id} className="hover:bg-gray-50 transition-colors group cursor-pointer" onClick={() => navigate(`/quotations/${q.id}`)}>
-                      <td className="px-3 py-2"><input type="checkbox" className="rounded-sm border-gray-300" checked={selectedIds.includes(q.id)} onChange={(e) => handleSelectOne(e, q.id)} onClick={e => e.stopPropagation()} /></td>
-                      <td className="px-3 py-2 text-gray-700">{q.client_name}</td>
+                      <td className="px-2 sm:px-3 py-2.5"><input type="checkbox" className="rounded-sm border-gray-300" checked={selectedIds.includes(q.id)} onChange={(e) => handleSelectOne(e, q.id)} onClick={e => e.stopPropagation()} /></td>
+                      <td className="px-2 sm:px-3 py-2.5 text-gray-700 font-medium">{q.client_name}</td>
                       {showTagsColumn && (
-                        <td className="px-3 py-2 text-[13px] text-gray-600">
+                        <td className="px-2 sm:px-3 py-2.5 text-xs text-gray-600 hidden md:table-cell">
                            {q.tags && q.tags.length > 0 ? q.tags.join(', ') : '-'}
                         </td>
                       )}
-                      <td className="px-3 py-2">
-                        <span className={`text-[13px] ${q.status === 'Draft' || q.status === 'Lost' || q.status === 'Cancelled' ? 'text-red-500' : 'text-gray-700'}`}>
+                      <td className="px-2 sm:px-3 py-2.5">
+                        <span className={`text-xs sm:text-[13px] ${q.status === 'Draft' || q.status === 'Lost' || q.status === 'Cancelled' ? 'text-red-500' : 'text-gray-700'}`}>
                           {q.status}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-gray-600">{q.transaction_date?.split('-').reverse().join('-') || ''}</td>
-                      <td className="px-3 py-2 text-gray-800 text-right">
+                      <td className="px-2 sm:px-3 py-2.5 text-gray-600 hidden sm:table-cell">{q.transaction_date?.split('-').reverse().join('-') || ''}</td>
+                      <td className="px-2 sm:px-3 py-2.5 text-gray-800 text-right font-medium">
                          {formatINR((q.grand_total || 0) - (q.total_taxes_and_charges || 0)).replace('₹', '₹ ')}
                       </td>
-                      <td className="px-3 py-2 text-gray-500 text-[12px] truncate max-w-[120px]">{q.quotation_no}</td>
-                      <td className="px-3 py-2 text-gray-500 flex justify-end" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center gap-3 text-[12px] transition-opacity">
-                          <span className="opacity-70">{formatTimeAgo(q.updated_at || q.created_at || q.transaction_date)}</span>
+                      <td className="px-2 sm:px-3 py-2.5 text-gray-500 text-xs truncate max-w-[100px] sm:max-w-[120px] hidden md:table-cell">{q.quotation_no}</td>
+                      <td className="px-2 sm:px-3 py-2.5 text-gray-500 flex justify-end" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center gap-2 sm:gap-3 text-xs transition-opacity">
+                          <span className="opacity-70 hidden sm:inline">{formatTimeAgo(q.updated_at || q.created_at || q.transaction_date)}</span>
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); handleDelete(q); }}

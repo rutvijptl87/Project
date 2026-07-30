@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { CustomFrappeSelect } from '../components/CustomFrappeSelect';
 import { api } from '../lib/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../lib/auth';
@@ -147,7 +148,7 @@ const AddressFormPage = () => {
     <div className="min-h-screen bg-[#FBFCFB] pb-24">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-16 z-10">
-        <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div className="max-w-5xl mx-auto px-3 sm:px-6 h-auto py-3 sm:h-16 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-4">
             <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-md transition-colors text-gray-500">
               <ArrowLeft size={18} />
@@ -192,7 +193,7 @@ const AddressFormPage = () => {
               <Field label="Address Line 2" value={form.address_line2} onChange={v => updateForm('address_line2', v)} />
               <Field label="City/Town" value={form.city} onChange={v => updateForm('city', v)} required />
               <Field label="County" value={form.county} onChange={v => updateForm('county', v)} />
-              <Field label="State/Province" as="select" options={INDIAN_STATES} value={form.state} onChange={v => updateForm('state', v)} required />
+              <CustomFrappeSelect label="State/Province" options={INDIAN_STATES} value={form.state} onChange={v => updateForm('state', v)} required />
               <Field label="Country" value={form.country} onChange={v => updateForm('country', v)} required />
               <Field label="Postal Code" value={form.postal_code} onChange={v => updateForm('postal_code', v)} required />
             </div>

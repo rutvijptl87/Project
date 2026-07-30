@@ -201,10 +201,10 @@ const TestTemplateCreatePage = () => {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto font-sans pb-32">
+    <div className="w-full max-w-6xl mx-auto font-sans pb-32 px-3 sm:px-6 py-4 sm:py-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center justify-between mb-6 gap-3">
+        <div className="flex items-center gap-3">
           <button onClick={() => navigate('/test-templates')} className="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition-colors">
             <ArrowLeft size={20} />
           </button>

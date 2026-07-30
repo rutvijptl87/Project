@@ -152,8 +152,8 @@ const TestTemplateListPage = () => {
 
 
     return (
-    <div className="min-h-screen bg-white flex flex-col font-sans">
-      <div className="flex flex-wrap items-center justify-between px-6 py-4 bg-white border-b border-gray-100 sticky top-16 z-10 gap-4">
+    <div className="min-h-screen bg-white flex flex-col font-sans w-full overflow-x-hidden">
+      <div className="flex flex-wrap items-center justify-between px-3 sm:px-6 py-3 sm:py-4 bg-white border-b border-gray-100 sticky top-16 z-10 gap-3 w-full">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-bold text-gray-900">Test Template</h1>
         </div>

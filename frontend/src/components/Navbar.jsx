@@ -152,9 +152,9 @@ const Navbar = ({ onRecordPayment }) => {
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b" style={{ borderColor: 'var(--cc-border)' }} data-testid="main-navbar">
-      <div className="max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-1 sm:gap-2">
-        <div className="flex items-center gap-2 min-w-0 flex-shrink">
-          <Link to={isEngineer ? '/site-visits' : '/'} className="flex items-center gap-3 group" data-testid="brand-logo">
+      <div className="max-w-[1600px] mx-auto px-2 sm:px-4 lg:px-6 xl:px-8 h-16 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0 mr-3 xl:mr-6">
+          <Link to={isEngineer ? '/site-visits' : '/'} className="flex items-center gap-3 group flex-shrink-0" data-testid="brand-logo">
             <img src="/logo.jpg" alt="Creator Consultant" className="h-8 sm:h-9 w-auto object-contain flex-shrink-0" />
             <div className="leading-tight hidden sm:block flex-shrink-0">
               <div className="font-head font-extrabold text-[15px] tracking-tight" style={{ color: 'var(--cc-dark-green)' }}>CREATOR</div>
@@ -163,44 +163,44 @@ const Navbar = ({ onRecordPayment }) => {
           </Link>
         </div>
 
-        <nav className="hidden lg:flex items-center gap-1 overflow-x-auto">
+        <nav className="hidden lg:flex items-center gap-0.5 xl:gap-1 overflow-x-auto no-scrollbar max-w-full py-1 min-w-0 flex-1">
           {isEngineer ? (
             <>
-              <NavLink to="/site-visits" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-site-visits"><ClipboardList size={14} className="inline mr-1" />Site Visits</NavLink>
-              <NavLink to="/projects" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-projects">Projects</NavLink>
-              <NavLink to="/tasks" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-tasks">Tasks</NavLink>
+              <NavLink to="/site-visits" className={({ isActive }) => `nav-link text-xs xl:text-sm px-1.5 xl:px-2.5 ${isActive ? 'active' : ''}`} data-testid="nav-site-visits"><ClipboardList size={14} className="inline mr-1 flex-shrink-0" />Site Visits</NavLink>
+              <NavLink to="/projects" className={({ isActive }) => `nav-link text-xs xl:text-sm px-1.5 xl:px-2.5 ${isActive ? 'active' : ''}`} data-testid="nav-projects">Projects</NavLink>
+              <NavLink to="/tasks" className={({ isActive }) => `nav-link text-xs xl:text-sm px-1.5 xl:px-2.5 ${isActive ? 'active' : ''}`} data-testid="nav-tasks">Tasks</NavLink>
             </>
           ) : (
             <>
-              <NavLink to="/" end className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-projects">Projects</NavLink>
-              <NavLink to="/tasks" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-tasks">Tasks</NavLink>
-              <NavLink to="/audits" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-audits">Audits</NavLink>
-              <NavLink to="/documents" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-documents">Documents</NavLink>
+              <NavLink to="/" end className={({ isActive }) => `nav-link text-xs xl:text-sm px-1.5 xl:px-2.5 ${isActive ? 'active' : ''}`} data-testid="nav-projects">Projects</NavLink>
+              <NavLink to="/tasks" className={({ isActive }) => `nav-link text-xs xl:text-sm px-1.5 xl:px-2.5 ${isActive ? 'active' : ''}`} data-testid="nav-tasks">Tasks</NavLink>
+              <NavLink to="/audits" className={({ isActive }) => `nav-link text-xs xl:text-sm px-1.5 xl:px-2.5 ${isActive ? 'active' : ''}`} data-testid="nav-audits">Audits</NavLink>
+              <NavLink to="/documents" className={({ isActive }) => `nav-link text-xs xl:text-sm px-1.5 xl:px-2.5 ${isActive ? 'active' : ''}`} data-testid="nav-documents">Documents</NavLink>
               {!isAccount && (
-                <NavLink to="/site-visits" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-site-visits"><ClipboardList size={14} className="inline mr-1" />Site Visits</NavLink>
+                <NavLink to="/site-visits" className={({ isActive }) => `nav-link text-xs xl:text-sm px-1.5 xl:px-2.5 ${isActive ? 'active' : ''}`} data-testid="nav-site-visits"><ClipboardList size={14} className="inline mr-1 flex-shrink-0" />Site Visits</NavLink>
               )}
-              <NavLink to="/clients" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-clients">Clients</NavLink>
-              <NavLink to="/architects" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-architects">Architects</NavLink>
-              <NavLink to="/settings" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-settings"><SettingsIcon size={14} className="inline mr-1" />Settings</NavLink>
-              <NavLink to="/invoices" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-invoices">Invoices</NavLink>
-              <NavLink to="/quotations" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} data-testid="nav-quotations">Quotation</NavLink>
+              <NavLink to="/clients" className={({ isActive }) => `nav-link text-xs xl:text-sm px-1.5 xl:px-2.5 ${isActive ? 'active' : ''}`} data-testid="nav-clients">Clients</NavLink>
+              <NavLink to="/architects" className={({ isActive }) => `nav-link text-xs xl:text-sm px-1.5 xl:px-2.5 ${isActive ? 'active' : ''}`} data-testid="nav-architects">Architects</NavLink>
+              <NavLink to="/settings" className={({ isActive }) => `nav-link text-xs xl:text-sm px-1.5 xl:px-2.5 ${isActive ? 'active' : ''}`} data-testid="nav-settings"><SettingsIcon size={14} className="inline mr-1 flex-shrink-0" />Settings</NavLink>
+              <NavLink to="/invoices" className={({ isActive }) => `nav-link text-xs xl:text-sm px-1.5 xl:px-2.5 ${isActive ? 'active' : ''}`} data-testid="nav-invoices">Invoices</NavLink>
+              <NavLink to="/quotations" className={({ isActive }) => `nav-link text-xs xl:text-sm px-1.5 xl:px-2.5 ${isActive ? 'active' : ''}`} data-testid="nav-quotations">Quotation</NavLink>
             </>
           )}
         </nav>
 
         <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-          <div className="hidden lg:flex items-center gap-1 sm:gap-2">
+          <div className="hidden lg:flex items-center gap-1">
             {isEngineer ? (
-              <Link to="/site-visits/new" className="btn btn-accent btn-sm" data-testid="btn-nav-new-site-visit">
-                <Plus size={14} /> <span>New Inspection</span>
+              <Link to="/site-visits/new" className="btn btn-accent btn-sm px-2 xl:px-3" data-testid="btn-nav-new-site-visit">
+                <Plus size={14} /> <span className="hidden xl:inline">New Inspection</span>
               </Link>
             ) : (
               <>
-                <Link to="/projects/new" className="btn btn-outline btn-sm px-3" data-testid="btn-nav-new-project">
-                  <Plus size={16} /> <span>New Project</span>
+                <Link to="/projects/new" className="btn btn-outline btn-sm px-2 xl:px-3" data-testid="btn-nav-new-project">
+                  <Plus size={16} /> <span className="hidden xl:inline">New Project</span>
                 </Link>
-                <button onClick={onRecordPayment} className="btn btn-accent btn-sm px-3" data-testid="btn-nav-record-payment">
-                  <IndianRupee size={16} /> <span>Record Payment</span>
+                <button onClick={onRecordPayment} className="btn btn-accent btn-sm px-2 xl:px-3" data-testid="btn-nav-record-payment">
+                  <IndianRupee size={16} /> <span className="hidden xl:inline">Record Payment</span>
                 </button>
               </>
             )}

@@ -171,17 +171,17 @@ const ItemListPage = () => {
 
 
   return (
-    <div className="min-h-screen bg-white flex flex-col font-sans">
-      <div className="flex flex-wrap items-center justify-between px-6 py-4 bg-white border-b border-gray-100 sticky top-16 z-10 gap-4">
+    <div className="min-h-screen bg-white flex flex-col font-sans max-w-[1600px] 2xl:max-w-[1920px] mx-auto w-full">
+      <div className="flex flex-wrap items-center justify-between px-3 sm:px-6 py-3 sm:py-4 bg-white border-b border-gray-100 sticky top-16 z-10 gap-2 sm:gap-4">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold text-gray-900">Item Code List</h1>
+          <h1 className="text-lg sm:text-xl font-bold text-gray-900">Item Code List</h1>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <button onClick={load} className="p-1.5 text-gray-600 bg-gray-100/80 hover:bg-gray-200/80 rounded-md transition-colors">
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''}/>
             </button>
-            <Link to="/items/new" className="flex items-center gap-1 px-4 py-1.5 text-[13px] font-medium text-white bg-gray-900 hover:bg-black rounded-md shadow-sm ml-1 transition-colors">
+            <Link to="/items/new" className="flex items-center gap-1 px-3 sm:px-4 py-1.5 text-xs sm:text-[13px] font-medium text-white bg-gray-900 hover:bg-black rounded-md shadow-sm transition-colors whitespace-nowrap">
               <Plus size={14}/> Add Item
             </Link>
           </div>
@@ -189,49 +189,49 @@ const ItemListPage = () => {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 flex flex-col p-6 overflow-y-auto bg-white">
+        <div className="flex-1 flex flex-col p-3 sm:p-6 overflow-y-auto bg-white">
           <div className="flex flex-col mb-4">
             <div className="flex flex-wrap items-center gap-2">
-              <input type="text" placeholder="Item Code / Name" value={search} onChange={e=>setSearch(e.target.value)} className="w-48 text-[13px] bg-gray-50 border-0 rounded-full px-3 py-1.5 text-gray-800 placeholder-gray-400 focus:bg-white focus:ring-1 focus:ring-blue-500 transition-colors" />
+              <input type="text" placeholder="Item Code / Name" value={search} onChange={e=>setSearch(e.target.value)} className="w-full sm:w-64 text-xs sm:text-[13px] bg-gray-50 border-0 rounded-full px-3 py-1.5 text-gray-800 placeholder-gray-400 focus:bg-white focus:ring-1 focus:ring-blue-500 transition-colors" />
             </div>
           </div>
 
-          <div className="bg-white overflow-hidden mt-2 border border-gray-100 rounded-lg">
+          <div className="bg-white overflow-x-auto min-w-full rounded-lg border border-gray-100 mt-2 shadow-sm">
             {loading ? (
               <div className="p-8 text-center text-gray-500 text-sm">Loading...</div>
             ) : sortedItems.length === 0 ? (
               <div className="p-12 text-center flex flex-col items-center">
                 <List size={32} className="text-gray-300 mb-3" />
                 <p className="text-gray-500 text-sm font-medium">No items found</p>
-                <Link to="/items/new" className="mt-3 flex items-center gap-1 px-4 py-1.5 text-[13px] font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-md transition-colors"><Plus size={12}/> Create First Item</Link>
+                <Link to="/items/new" className="mt-3 flex items-center gap-1 px-4 py-1.5 text-xs sm:text-[13px] font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-md transition-colors"><Plus size={12}/> Create First Item</Link>
               </div>
             ) : (
-              <table className="w-full text-left text-[13px] whitespace-nowrap">
+              <table className="w-full text-left text-xs sm:text-[13px] whitespace-nowrap">
                 <thead className="bg-[#111827] text-white">
                   <tr>
-                    <th className="px-4 py-3 font-medium w-10 text-center"><input type="checkbox" className="rounded border-gray-500 text-blue-600 bg-transparent focus:ring-blue-500" checked={selectedItems.length === sortedItems.length && sortedItems.length > 0} onChange={handleSelectAll} /></th>
-                    <th className="px-4 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('item_code')}>
+                    <th className="px-2 sm:px-4 py-3 font-medium w-10 text-center"><input type="checkbox" className="rounded border-gray-500 text-blue-600 bg-transparent focus:ring-blue-500" checked={selectedItems.length === sortedItems.length && sortedItems.length > 0} onChange={handleSelectAll} /></th>
+                    <th className="px-2 sm:px-4 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('item_code')}>
                       <div className="flex items-center gap-1">Item Code {sortBy === 'item_code' ? (sortDir === 'asc' ? '↑' : '↓') : <ArrowUpDown size={12} className="opacity-40" />}</div>
                     </th>
-                    <th className="px-4 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('item_name')}>
+                    <th className="px-2 sm:px-4 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('item_name')}>
                       <div className="flex items-center gap-1">Item Name {sortBy === 'item_name' ? (sortDir === 'asc' ? '↑' : '↓') : <ArrowUpDown size={12} className="opacity-40" />}</div>
                     </th>
-                    <th className="px-4 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors" onClick={() => toggleSort('item_group')}>
+                    <th className="px-2 sm:px-4 py-3 font-medium cursor-pointer hover:bg-gray-800 transition-colors hidden sm:table-cell" onClick={() => toggleSort('item_group')}>
                       <div className="flex items-center gap-1">Item Group {sortBy === 'item_group' ? (sortDir === 'asc' ? '↑' : '↓') : <ArrowUpDown size={12} className="opacity-40" />}</div>
                     </th>
-                    <th className="px-4 py-3 font-medium">Standard Rate</th>
-                    <th className="px-4 py-3 font-medium w-16 text-right">Actions</th>
+                    <th className="px-2 sm:px-4 py-3 font-medium">Standard Rate</th>
+                    <th className="px-2 sm:px-4 py-3 font-medium w-16 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {sortedItems.map(item => (
                     <tr key={item.id} className="cursor-pointer hover:bg-gray-50/50 transition-colors" onClick={() => navigate(`/items/${item.id}`)}>
-                      <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}><input type="checkbox" className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" checked={selectedItems.includes(item.id)} onChange={(e) => handleSelectOne(e, item.id)} /></td>
-                      <td className="px-4 py-3 font-medium text-gray-900">{item.item_code}</td>
-                      <td className="px-4 py-3 text-gray-600 truncate max-w-xs">{item.item_name || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">{item.item_group}</td>
-                      <td className="px-4 py-3 text-gray-600">{formatINR(item.standard_rate)}</td>
-                      <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
+                      <td className="px-2 sm:px-4 py-2.5 sm:py-3 text-center" onClick={e => e.stopPropagation()}><input type="checkbox" className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" checked={selectedItems.includes(item.id)} onChange={(e) => handleSelectOne(e, item.id)} /></td>
+                      <td className="px-2 sm:px-4 py-2.5 sm:py-3 font-medium text-gray-900">{item.item_code}</td>
+                      <td className="px-2 sm:px-4 py-2.5 sm:py-3 text-gray-600 truncate max-w-[120px] sm:max-w-xs">{item.item_name || '—'}</td>
+                      <td className="px-2 sm:px-4 py-2.5 sm:py-3 text-gray-600 hidden sm:table-cell">{item.item_group}</td>
+                      <td className="px-2 sm:px-4 py-2.5 sm:py-3 text-gray-600">{formatINR(item.standard_rate)}</td>
+                      <td className="px-2 sm:px-4 py-2.5 sm:py-3 text-right" onClick={e => e.stopPropagation()}>
                         <button onClick={() => handleDelete(item)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"><Trash2 size={14}/></button>
                       </td>
                     </tr>

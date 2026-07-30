@@ -72,13 +72,13 @@ const TaxCategoryFormPage = () => {
   if (loading) return <div className="p-6 text-center text-gray-500">Loading...</div>;
 
   return (
-    <div className="min-h-screen bg-[#FBFCFB] flex flex-col font-sans">
-      <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-100 sticky top-16 z-10">
-        <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-[#FBFCFB] flex flex-col font-sans max-w-[1600px] 2xl:max-w-[1920px] mx-auto w-full">
+      <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 bg-white border-b border-gray-100 sticky top-16 z-10 flex-wrap gap-2">
+        <div className="flex items-center gap-2 sm:gap-3">
           <button onClick={() => navigate('/tax-categories')} className="text-gray-500 hover:text-gray-900 focus:outline-none p-1 rounded-md hover:bg-gray-100 transition-colors">
             <Menu size={20}/>
           </button>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+          <h1 className="text-lg sm:text-xl font-bold text-gray-900 flex items-center gap-2">
             {isEdit ? form.title : 'New Tax Category'}
             {!isEdit ? <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">Not Saved</span> : <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium" style={{backgroundColor: "#dbeafe", color: "#1d4ed8"}}>Saved</span>}
           </h1>
@@ -87,15 +87,15 @@ const TaxCategoryFormPage = () => {
           <button 
             onClick={handleSave} 
             disabled={saving} 
-            className="px-5 py-2 text-[13px] font-medium text-white bg-gray-900 hover:bg-black rounded-md shadow-sm transition-colors disabled:opacity-50"
+            className="px-4 sm:px-5 py-1.5 sm:py-2 text-xs sm:text-[13px] font-medium text-white bg-gray-900 hover:bg-black rounded-md shadow-sm transition-colors disabled:opacity-50"
           >
             {saving ? 'Saving...' : 'Save'}
           </button>
         </div>
       </div>
 
-      <div className="p-6 max-w-5xl mx-auto w-full">
-        <div className="bg-white border border-gray-100 rounded-lg shadow-sm p-6 mb-6">
+      <div className="p-3 sm:p-6 max-w-5xl 2xl:max-w-[1400px] mx-auto w-full">
+        <div className="bg-white border border-gray-100 rounded-lg shadow-sm p-4 sm:p-6 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
             <div>
               <label className="text-[12px] font-medium text-gray-600 mb-1.5 block">Title <span className="text-red-500">*</span></label>

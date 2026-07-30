@@ -92,28 +92,28 @@ const JobTypeFormPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50/50 flex flex-col font-sans">
+    <div className="min-h-screen bg-gray-50/50 flex flex-col font-sans max-w-[1600px] 2xl:max-w-[1920px] mx-auto w-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-100 sticky top-16 z-10">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 bg-white border-b border-gray-100 sticky top-16 z-10 flex-wrap gap-2">
+        <div className="flex items-center gap-2 sm:gap-3">
           <button onClick={() => navigate('/job-types')} className="text-gray-500 hover:text-gray-900 focus:outline-none p-1 rounded-md hover:bg-gray-100 transition-colors">
             <Menu size={20}/>
           </button>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+          <h1 className="text-lg sm:text-xl font-bold text-gray-900 flex items-center gap-2">
             {isNew ? 'New Job Type' : form.name}
             {isNew ? <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-orange-100 text-orange-700">Not Saved</span> : <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-orange-100 text-orange-700" style={{backgroundColor: "#dbeafe", color: "#1d4ed8"}}>Saved</span>}
           </h1>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={save} disabled={saving} className="flex items-center gap-1.5 px-4 py-1.5 text-[13px] font-medium text-white bg-gray-900 hover:bg-black rounded-md shadow-sm transition-colors disabled:opacity-50">
+          <button onClick={save} disabled={saving} className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 text-xs sm:text-[13px] font-medium text-white bg-gray-900 hover:bg-black rounded-md shadow-sm transition-colors disabled:opacity-50">
             {saving ? 'Saving...' : 'Save'}
           </button>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="p-6 max-w-5xl mx-auto w-full">
-        <div className="bg-white border border-gray-100 rounded-lg shadow-sm p-6">
+      <div className="p-3 sm:p-6 max-w-5xl 2xl:max-w-[1400px] mx-auto w-full">
+        <div className="bg-white border border-gray-100 rounded-lg shadow-sm p-4 sm:p-6">
           <div className="mb-6 max-w-md">
             <Field 
               label="Job Type Name" 
