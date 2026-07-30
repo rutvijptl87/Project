@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
+import Pagination from '../components/Pagination';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { formatINR } from '../lib/format';
@@ -14,8 +15,7 @@ import { logger } from '../lib/logger';
 import {
   Plus, Search, Download, Upload, Eye, Pencil, Trash2, IndianRupee,
   FileText, Archive, ArchiveRestore, ArrowUpDown, ArrowUp, ArrowDown,
-  Phone, Mail,
-} from 'lucide-react';
+  Phone, Mail, X } from 'lucide-react';
 // Columns visible to admins/draftsman. Engineers see a slimmed list (no money).
 const SORTABLE_COLUMNS_FULL = {
   name: 'Project Name',
@@ -89,6 +89,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [showArchived, page, debouncedSearch]);
 
   const sortedProjects = useMemo(() => {
@@ -130,7 +131,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
   };
 
   const handleArchive = async (id, code) => {
-    if (!window.confirm(`Archive project ${code}? It will be hidden from the main list but can be restored.`)) return;
+    
     try {
       await api.post(`/projects/${id}/archive`);
       showToast('Project archived');
@@ -147,7 +148,7 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
   };
 
   const handleDelete = (id, code) => {
-    if (!window.confirm(`Are you sure you want to permanently DELETE project ${code}?\n\nThis will also delete all its payments, quote revisions and activity history.\n\nYou can undo within 60 seconds.`)) return;
+    
     // Optimistically hide the row
     setHiddenIds((prev) => new Set([...prev, id]));
     schedule({
@@ -406,33 +407,9 @@ const ProjectsPage = ({ showPayModal, setShowPayModal }) => {
           </table>
         </div>
         
-        {/* Pagination Controls */}
-        <div className="flex flex-col sm:flex-row-reverse justify-between items-center p-4 border-t gap-4" style={{ borderColor: 'var(--cc-border)' }}>
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={() => setPage(p => Math.max(1, p - 1))} 
-              disabled={page === 1}
-              className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title="Previous Page"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-            </button>
-            <div className="bg-black text-white px-3 py-1 rounded text-sm font-semibold min-w-[32px] text-center">
-              {page}
-            </div>
-            <button 
-              onClick={() => setPage(p => p + 1)} 
-              disabled={page * limit >= total}
-              className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title="Next Page"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-            </button>
+        <div className="mt-4 border-t border-gray-100 bg-white">
+            <Pagination page={page} setPage={setPage} limit={limit} total={total} />
           </div>
-          <div className="text-sm" style={{ color: 'var(--cc-text-muted)' }}>
-            Showing {total === 0 ? 0 : (page - 1) * limit + 1} to {Math.min(page * limit, total)} of {total} entries
-          </div>
-        </div>
       </div>
 
       <RecordPaymentModal

@@ -5,6 +5,7 @@ import { formatINR } from '../lib/format';
 import { ArrowLeft, Phone, Mail, Eye, FileText, Users, Building2, FileSignature, Pencil, Trash2, Save, X, ArrowRightLeft, CheckSquare, Download } from 'lucide-react';
 import { downloadFile } from '../lib/download';
 import Modal from '../components/Modal';
+import Swal from 'sweetalert2';
 
 const ClientDetailPage = () => {
   const { id } = useParams();
@@ -95,6 +96,7 @@ const ClientDetailPage = () => {
     } finally { setLoading(false); }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
 
   if (loading) return <div className="max-w-5xl mx-auto p-8">Loading...</div>;
@@ -149,7 +151,7 @@ const ClientDetailPage = () => {
       '',
       'This cannot be undone from the clients list.',
     ];
-    if (!window.confirm(lines.join('\n'))) return;
+    
     try {
       await api.delete(`/clients/${c.id}`);
       navigate('/clients');
@@ -225,7 +227,7 @@ const ClientDetailPage = () => {
           <table className="cc-table" data-testid="client-projects-table">
             <thead>
               <tr>
-                <th>Code</th>
+                <th>Job No</th>
                 <th>Type</th>
                 <th>Name</th>
                 <th className="hidden md:table-cell">Architect</th>
@@ -242,7 +244,7 @@ const ClientDetailPage = () => {
                 <tr><td colSpan={10} className="text-center py-10" style={{ color: 'var(--cc-text-muted)' }}>No projects or audits linked to this client yet.</td></tr>
               ) : combined.map((p) => p.__kind === 'audit' ? (
                 <tr key={`audit-${p.id}`} data-testid={`client-audit-row-${p.audit_code}`}>
-                  <td className="font-mono-data font-semibold" style={{ color: '#7C3AED' }}>{p.audit_code}</td>
+                  <td className="font-mono-data font-semibold text-gray-400">—</td>
                   <td><span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6' }}>Audit</span></td>
                   <td className="font-medium">{p.audit_offer || p.notes || '—'}</td>
                   <td className="hidden md:table-cell text-gray-400">—</td>
@@ -264,7 +266,7 @@ const ClientDetailPage = () => {
               ) : (
                 <React.Fragment key={p.id}>
                   <tr data-testid={`client-project-row-${p.project_code}`}>
-                    <td className="font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{p.project_code}</td>
+                    <td className="font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{p.job_no || '—'}</td>
                     <td><span className="badge" style={{ background: '#D1FAE5', color: '#065F46' }}>Project</span></td>
                     <td className="font-medium">{p.name}</td>
                     <td className="hidden md:table-cell">{p.architect_name || <span className="text-gray-400">None</span>}</td>
@@ -483,7 +485,7 @@ const ClientDetailPage = () => {
       >
         <form onSubmit={submitEdit} className="space-y-3">
           <div>
-            <label className="label">Name *</label>
+            <label className="label">Client Name *</label>
             <input className="input" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} autoFocus data-testid="edit-client-name"/>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -497,7 +499,7 @@ const ClientDetailPage = () => {
             </div>
           </div>
           <div>
-            <label className="label">Company</label>
+            <label className="label">Company Name</label>
             <input className="input" value={editForm.company} onChange={(e) => setEditForm({ ...editForm, company: e.target.value })} data-testid="edit-client-company"/>
           </div>
           <div>

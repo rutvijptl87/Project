@@ -36,6 +36,31 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() => caches.match(req).then((r) => r || caches.match('/'))),
     );
+  } else if (
+    req.destination === 'script' ||
+    req.destination === 'style' ||
+    req.destination === 'image' ||
+    req.destination === 'font'
+  ) {
+    event.respondWith(
+      caches.match(req).then((cachedRes) => {
+        if (cachedRes) {
+          // Stale-while-revalidate for static assets
+          fetch(req).then((res) => {
+            if (res && res.status === 200) {
+              caches.open(CACHE_NAME).then((c) => c.put(req, res.clone()));
+            }
+          }).catch(() => {});
+          return cachedRes;
+        }
+        return fetch(req).then((res) => {
+          if (!res || res.status !== 200 || (res.type !== 'basic' && res.type !== 'cors')) return res;
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(req, copy));
+          return res;
+        });
+      })
+    );
   }
 });
 

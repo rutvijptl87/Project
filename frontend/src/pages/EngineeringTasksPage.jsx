@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
+import Pagination from '../components/Pagination';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -21,8 +22,9 @@ const WORK_OPTIONS = [
   { value: 'Quantity', label: 'Quantity' }
 ];
 import {
-  Plus, Trash2, CheckSquare, Square, HardHat, Pencil, ArrowLeft, Search
-} from 'lucide-react';
+  Plus, Trash2, CheckSquare, Square, HardHat, Pencil, ArrowLeft, Search, Filter,
+  ArrowUpDown, ArrowUp, ArrowDown
+, X } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { toast } from 'react-toastify';
 
@@ -261,7 +263,35 @@ const EngineeringTasksPage = () => {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing]     = useState(null);
+  const [statusFilters, setStatusFilters] = useState([]);
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const filterDropdownRef = useRef(null);
+  const [sortBy, setSortBy] = useState('created_at');
+  const [sortDir, setSortDir] = useState('desc');
 
+  const toggleSort = (col) => {
+    if (sortBy === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(col);
+      setSortDir('asc');
+    }
+  };
+
+  const SortIcon = ({ col }) => {
+    if (sortBy !== col) return <ArrowUpDown size={11} className="inline ml-1 opacity-50" />;
+    return sortDir === 'asc' ? <ArrowUp size={11} className="inline ml-1" /> : <ArrowDown size={11} className="inline ml-1" />;
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (filterDropdownRef.current && !filterDropdownRef.current.contains(event.target)) {
+        setShowFilterDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearch(searchQuery);
@@ -274,7 +304,7 @@ const EngineeringTasksPage = () => {
     setLoading(true);
     try {
       const calls = [
-        api.get('/tasks/paginated', { params: { page, limit, q: debouncedSearch, category: 'engineering' } }), 
+        api.get('/tasks/paginated', { params: { page, limit, q: debouncedSearch, category: 'engineering', status: statusFilters.length > 0 ? statusFilters.join(',') : undefined, sort_by: sortBy, sort_dir: sortDir } }), 
         api.get('/projects'), 
         api.get('/auth/users/directory')
       ];
@@ -289,7 +319,7 @@ const EngineeringTasksPage = () => {
       if (usersRes) setUsers(usersRes.data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [page, debouncedSearch]);
+  }, [page, debouncedSearch, statusFilters, sortBy, sortDir]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -342,7 +372,7 @@ const EngineeringTasksPage = () => {
 
 
 
-  const filteredTasks = tasks;
+  const sortedTasks = tasks;
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8" data-testid="engineering-tasks-page">
@@ -352,7 +382,7 @@ const EngineeringTasksPage = () => {
         
         {/* Title & Badges */}
         <div className="flex items-start gap-4">
-          {!isRestricted && (
+          {user?.role !== 'draftsman' && (
             <button onClick={() => navigate('/tasks')} className="btn btn-outline btn-sm mt-1 flex-shrink-0" title="Back to Tasks">
               <ArrowLeft size={14} />
             </button>
@@ -375,7 +405,7 @@ const EngineeringTasksPage = () => {
           </div>
         </div>
 
-        {/* Actions (Search + New Task) */}
+        {/* Actions (Search + Filter + New Task) */}
         <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="relative flex-1 md:w-64">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -387,6 +417,35 @@ const EngineeringTasksPage = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
+          </div>
+          <div className="relative" ref={filterDropdownRef}>
+            <button onClick={() => setShowFilterDropdown(!showFilterDropdown)} className="btn btn-outline h-10 flex-shrink-0" title="Filter by Status">
+              <Filter size={15} /> <span className="hidden sm:inline">Filter</span>
+              {statusFilters.length > 0 && (
+                <span className="ml-1 inline-flex items-center justify-center bg-gray-200 text-gray-700 text-xs font-bold rounded-full w-4 h-4">
+                  {statusFilters.length}
+                </span>
+              )}
+            </button>
+            {showFilterDropdown && (
+              <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 shadow-xl rounded-lg z-50 py-2">
+                <div className="px-3 py-1 text-xs font-bold text-gray-500 uppercase tracking-wider">Status</div>
+                {['pending', 'in progress', 'done', 'cancelled'].map(opt => (
+                  <label key={opt} className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="mr-2 rounded border-gray-300 text-[var(--cc-dark-green)] focus:ring-[var(--cc-dark-green)]" 
+                      checked={statusFilters.includes(opt)}
+                      onChange={() => {
+                        setStatusFilters(prev => prev.includes(opt) ? prev.filter(x => x !== opt) : [...prev, opt]);
+                        setPage(1);
+                      }}
+                    />
+                    <span className="text-sm capitalize">{opt}</span>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
           <button onClick={() => { setEditing(null); setModalOpen(true); }} className="btn btn-primary h-10 flex-shrink-0" data-testid="btn-new-eng-task">
             <Plus size={15} /> <span className="hidden sm:inline">New Task</span>
@@ -410,19 +469,19 @@ const EngineeringTasksPage = () => {
               <thead>
                 <tr>
                   <th style={{ width: 48 }} className="hidden sm:table-cell text-center">Sr No</th>
-                  <th className="hidden md:table-cell">Project Number</th>
-                  <th className="hidden lg:table-cell">Site Location</th>
-                  <th>Work</th>
-                  <th className="hidden md:table-cell">Start Date</th>
-                  <th>Due Date</th>
-                  <th className="hidden md:table-cell">Assign By</th>
-                  <th className="hidden md:table-cell">Assign To</th>
-                  <th className="text-center">Status</th>
+                  <th className="hidden md:table-cell cursor-pointer select-none" onClick={() => toggleSort('project_code')}>Project Number <SortIcon col="project_code" /></th>
+                  <th className="hidden lg:table-cell cursor-pointer select-none" onClick={() => toggleSort('site_location')}>Site Location <SortIcon col="site_location" /></th>
+                  <th className="cursor-pointer select-none" onClick={() => toggleSort('work')}>Work <SortIcon col="work" /></th>
+                  <th className="hidden md:table-cell cursor-pointer select-none" onClick={() => toggleSort('start_date')}>Start Date <SortIcon col="start_date" /></th>
+                  <th className="cursor-pointer select-none" onClick={() => toggleSort('due_date')}>Due Date <SortIcon col="due_date" /></th>
+                  <th className="hidden md:table-cell cursor-pointer select-none" onClick={() => toggleSort('created_by_username')}>Assign By <SortIcon col="created_by_username" /></th>
+                  <th className="hidden md:table-cell cursor-pointer select-none" onClick={() => toggleSort('assigned_to_username')}>Assign To <SortIcon col="assigned_to_username" /></th>
+                  <th className="text-center cursor-pointer select-none" onClick={() => toggleSort('status')}>Status <SortIcon col="status" /></th>
                   <th className="text-center">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredTasks.map((task, idx) => (
+                {sortedTasks.map((task, idx) => (
                   <tr key={task.id} style={{ opacity: task.status === 'done' || task.status === 'cancelled' ? 0.55 : 1, transition: 'opacity 0.2s' }} data-testid={`eng-task-row-${task.id}`}>
                     <td className="font-mono-data text-xs text-center hidden sm:table-cell" style={{ color: 'var(--cc-text-muted)' }}>{(page - 1) * limit + idx + 1}</td>
                     <td className="font-mono-data text-xs font-medium hidden md:table-cell" style={{ color: 'var(--cc-dark-green)' }}>{task.project_code || '—'}</td>
@@ -489,32 +548,8 @@ const EngineeringTasksPage = () => {
             </table>
           </div>
           
-          {/* Pagination Controls */}
-          <div className="flex flex-col sm:flex-row-reverse justify-between items-center p-4 border-t gap-4" style={{ borderColor: 'var(--cc-border)' }}>
-            <div className="flex items-center gap-3">
-              <button 
-                onClick={() => setPage(p => Math.max(1, p - 1))} 
-                disabled={page === 1}
-                className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                title="Previous Page"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-              </button>
-              <div className="bg-black text-white px-3 py-1 rounded text-sm font-semibold min-w-[32px] text-center">
-                {page}
-              </div>
-              <button 
-                onClick={() => setPage(p => p + 1)} 
-                disabled={page * limit >= total}
-                className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                title="Next Page"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-              </button>
-            </div>
-            <div className="text-sm" style={{ color: 'var(--cc-text-muted)' }}>
-              Showing {total === 0 ? 0 : (page - 1) * limit + 1} to {Math.min(page * limit, total)} of {total} entries
-            </div>
+          <div className="mt-4 border-t border-gray-100 bg-white">
+            <Pagination page={page} setPage={setPage} limit={limit} total={total} />
           </div>
         </div>
       )}

@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { useUndo } from '../lib/undo';
-import { formatINR, formatDate } from '../lib/format';
+import { formatINR, formatDate, formatActivityDay } from '../lib/format';
 import { downloadFile } from '../lib/download';
 import { useUserDirectory } from '../lib/userDirectory';
 import InitialsBadge from '../components/InitialsBadge';
@@ -49,7 +49,7 @@ const AuditDetailPage = () => {
 
   // Inline notes editing
   const [editingNotes, setEditingNotes] = useState(false);
-  const [notesDraft, setNotesDraft] = useState('');
+  const [addressDraft, setAddressDraft] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
 
   const load = useCallback(async () => {
@@ -69,31 +69,25 @@ const AuditDetailPage = () => {
 
   if (!audit) return <div className="max-w-5xl mx-auto p-8">Loading...</div>;
 
-  const startEditNotes = () => { setNotesDraft(audit?.notes || ''); setEditingNotes(true); };
+  const startEditAddress = () => { setAddressDraft(audit?.address || ''); setEditingNotes(true); };
   const cancelEditNotes = () => { setEditingNotes(false); setNotesDraft(''); };
   const saveNotes = async () => {
     setSavingNotes(true);
     try {
       await api.put(`/audits/${id}`, {
-        audit_code: audit.audit_code,
-        audit_offer: audit.audit_offer,
-        report_id: audit.report_id,
-        client_id: audit.client_id || null,
-        total_amount: audit.total_amount || 0,
-        status: audit.status || 'Outstanding',
-        notes: notesDraft,
-        file_path: audit.file_path || '',
+        ...audit,
+        address: addressDraft,
       });
-      setAudit((a) => ({ ...a, notes: notesDraft }));
+      setAudit((a) => ({ ...a, address: addressDraft }));
       setEditingNotes(false);
     } catch (e) {
-      alert(e?.response?.data?.detail || 'Failed to save notes');
+      alert(e?.response?.data?.detail || 'Failed to save address');
     } finally { setSavingNotes(false); }
   };
 
   const handleDelete = () => {
     const code = audit.audit_code;
-    if (!window.confirm(`Are you sure you want to permanently DELETE audit ${code}?\n\nThis will also delete all its payments, revisions and activity history.\n\nYou can undo within 60 seconds.\n\nTip: Use Archive instead to keep history.`)) return;
+    
     schedule({
       label: `Audit ${code} deleted`,
       onCommit: async () => { try { await api.delete(`/audits/${id}`); } catch (e) { logger.error('Audit delete failed:', e); } },
@@ -103,7 +97,7 @@ const AuditDetailPage = () => {
   };
 
   const handleArchive = async () => {
-    if (!window.confirm(`Archive audit ${audit.audit_code}?`)) return;
+    
     await api.post(`/audits/${id}/archive`);
     navigate('/audits');
   };
@@ -113,7 +107,7 @@ const AuditDetailPage = () => {
   const downloadReceipt = (paymentId) => downloadFile(`${API}/audit-payments/${paymentId}/receipt`);
 
   const handleDeletePayment = (paymentId) => {
-    if (!window.confirm('Are you sure you want to delete this payment?\n\nAudit totals will be recalculated.\n\nYou can undo within 60 seconds.')) return;
+    
     setPayments((prev) => prev.filter((p) => p.id !== paymentId));
     schedule({
       label: 'Payment deleted',
@@ -234,43 +228,40 @@ const AuditDetailPage = () => {
         </div>
       )}
 
-      {/* Notes */}
-      <div className="card p-5 mb-6" data-testid="audit-notes-card">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-head text-lg font-bold flex items-center gap-2" style={{ color: 'var(--cc-dark-green)' }}>
-            <StickyNote size={18}/> Notes
-          </h2>
+      {/* Address */}
+      <div className="card p-5 mb-6" data-testid="audit-address-card">
+        <div className="flex justify-between items-center mb-3">
+          <h2 className="font-head font-bold text-lg" style={{ color: 'var(--cc-dark-green)' }}>Address</h2>
           {!editingNotes && (
-            <button onClick={startEditNotes} className="btn btn-outline btn-sm" data-testid="audit-btn-edit-notes">
-              <Pencil size={13}/> {audit.notes ? 'Edit' : 'Add notes'}
+            <button onClick={startEditAddress} className="btn btn-outline btn-sm" data-testid="audit-btn-edit-address">
+              <Pencil size={13}/> {audit.address ? 'Edit' : 'Add address'}
             </button>
           )}
         </div>
         {editingNotes ? (
-          <div className="space-y-2" data-testid="audit-notes-editor">
-            <textarea
-              className="textarea"
-              rows={5}
-              value={notesDraft}
-              onChange={(e) => setNotesDraft(e.target.value)}
-              placeholder="Site visit notes, test results, observations, client decisions..."
-              data-testid="audit-notes-textarea"
-              autoFocus
+          <div className="space-y-2" data-testid="audit-address-editor">
+            <textarea 
+              className="textarea" 
+              rows={4} 
+              value={addressDraft} 
+              onChange={(e) => setAddressDraft(e.target.value)}
+              placeholder="Site Location / Address..."
+              data-testid="audit-address-textarea"
             />
             <div className="flex gap-2 justify-end">
-              <button onClick={cancelEditNotes} className="btn btn-outline" data-testid="audit-btn-cancel-notes"><X size={14}/> Cancel</button>
-              <button onClick={saveNotes} disabled={savingNotes} className="btn btn-primary" data-testid="audit-btn-save-notes">
-                <Save size={14}/> {savingNotes ? 'Saving…' : 'Save Notes'}
+              <button onClick={cancelEditNotes} className="btn btn-outline" data-testid="audit-btn-cancel-address"><X size={14}/> Cancel</button>
+              <button onClick={saveNotes} disabled={savingNotes} className="btn btn-primary" data-testid="audit-btn-save-address">
+                {savingNotes ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>
-        ) : audit.notes ? (
-          <div className="whitespace-pre-wrap text-sm leading-relaxed" style={{ color: 'var(--cc-text)' }} data-testid="audit-notes-text">
-            {audit.notes}
+        ) : audit.address ? (
+          <div className="whitespace-pre-wrap text-sm leading-relaxed" style={{ color: 'var(--cc-text)' }} data-testid="audit-address-text">
+            {audit.address}
           </div>
         ) : (
-          <div className="text-sm italic" style={{ color: 'var(--cc-text-muted)' }} data-testid="audit-notes-empty">
-            No notes yet. Click "Add notes" to jot down test results, site observations, or reminders.
+          <div className="text-sm italic" style={{ color: 'var(--cc-text-muted)' }} data-testid="audit-address-empty">
+            No address yet. Click "Add address" to jot down the site location.
           </div>
         )}
       </div>
@@ -390,7 +381,7 @@ const AuditDetailPage = () => {
                 <span className="text-xs font-bold px-2 py-1 rounded whitespace-nowrap" style={actionStyle(a.action)}>{a.action}</span>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm">{a.detail || <span className="text-gray-400">—</span>}</div>
-                  <div className="text-xs font-mono-data mt-0.5" style={{ color: 'var(--cc-text-muted)' }}>{formatDate(a.created_at)}</div>
+                  <div className="text-xs font-mono-data mt-0.5" style={{ color: 'var(--cc-text-muted)' }}>{formatActivityDay(a.created_at)}</div>
                 </div>
               </div>
             );

@@ -4,15 +4,15 @@
   "description": "Project management & site-visit inspection for Creator RCC Consultant LLP.",
   "icons": [
     {
-      "src": "logo.jpg",
+      "src": "logo192.png",
       "sizes": "192x192",
-      "type": "image/jpeg",
-      "purpose": "any"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
-      "src": "logo.jpg",
+      "src": "logo512.png",
       "sizes": "512x512",
-      "type": "image/jpeg",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ],

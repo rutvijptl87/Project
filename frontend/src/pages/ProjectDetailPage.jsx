@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { useUndo } from '../lib/undo';
-import { formatINR, formatDate } from '../lib/format';
+import { formatINR, formatDate, formatActivityDay } from '../lib/format';
 import { downloadFile } from '../lib/download';
 import { useUserDirectory } from '../lib/userDirectory';
 import { logger } from '../lib/logger';
@@ -103,7 +103,7 @@ const ProjectDetailPage = () => {
 
   const handleDelete = () => {
     const code = project.project_code;
-    if (!window.confirm(`Are you sure you want to permanently DELETE project ${code}?\n\nThis will also delete all its payments, quote revisions and activity history.\n\nYou can undo within 60 seconds.\n\nTip: Use Archive instead to keep history.`)) return;
+    
     schedule({
       label: `Project ${code} deleted`,
       onCommit: async () => {
@@ -115,7 +115,7 @@ const ProjectDetailPage = () => {
   };
 
   const handleArchive = async () => {
-    if (!window.confirm(`Archive project ${project.project_code}?`)) return;
+    
     await api.post(`/projects/${id}/archive`);
     navigate('/');
   };
@@ -125,7 +125,7 @@ const ProjectDetailPage = () => {
   const downloadReceipt = (paymentId) => downloadFile(`${API}/payments/${paymentId}/receipt`);
 
   const handleDeletePayment = (paymentId) => {
-    if (!window.confirm('Are you sure you want to delete this payment?\n\nProject totals will be recalculated.\n\nYou can undo within 60 seconds.')) return;
+    
     // Optimistically hide the payment row
     setPayments((prev) => prev.filter((p) => p.id !== paymentId));
     schedule({
@@ -173,14 +173,12 @@ const ProjectDetailPage = () => {
             {project.name}
           </h1>
           <div className="mt-2 flex items-center gap-2 text-sm flex-wrap" style={{ color: 'var(--cc-text-muted)' }}>
-            <span className="font-mono-data font-semibold" style={{ color: 'var(--cc-accent)' }} data-testid="detail-code">{project.project_code}</span>
             {project.job_no && (
               <>
-                <span>·</span>
                 <span className="font-mono-data text-xs px-2 py-0.5 rounded" style={{ background: 'var(--cc-surface)', color: 'var(--cc-dark-green)' }} data-testid="detail-job-no">Job No {project.job_no}</span>
+                <span>·</span>
               </>
             )}
-            <span>·</span>
             {project.client_id ? (
               <Link to={`/clients/${project.client_id}`} className="link-underline" data-testid="detail-client-link">{project.client_name}</Link>
             ) : <span className="text-gray-400">No client</span>}
@@ -457,7 +455,7 @@ const ProjectDetailPage = () => {
                   <td>
                     <div className="flex gap-1 justify-center">
                       <button onClick={() => downloadReceipt(p.id)} className="btn btn-outline btn-sm" data-testid={`btn-receipt-${p.id}`}><Download size={12}/> Receipt</button>
-                      {/* <button onClick={() => handleDeletePayment(p.id)} className="btn btn-danger btn-sm" data-testid={`btn-delete-payment-${p.id}`}><Trash2 size={12}/></button> */}
+                      <button onClick={() => handleDeletePayment(p.id)} className="btn btn-danger btn-sm" data-testid={`btn-delete-payment-${p.id}`}><Trash2 size={12}/></button>
                     </div>
                   </td>
                 </tr>
@@ -647,7 +645,7 @@ const ProjectDetailPage = () => {
               </span>
               <div className="flex-1 min-w-0">
                 <div className="text-sm">{a.detail || <span className="text-gray-400">—</span>}</div>
-                <div className="text-xs font-mono-data mt-0.5" style={{ color: 'var(--cc-text-muted)' }}>{formatDate(a.created_at)}</div>
+                <div className="text-xs font-mono-data mt-0.5" style={{ color: 'var(--cc-text-muted)' }}>{formatActivityDay(a.created_at)}</div>
               </div>
             </div>
             );

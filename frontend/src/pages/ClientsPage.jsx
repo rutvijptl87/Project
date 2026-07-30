@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
+import Pagination from '../components/Pagination';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useUndo } from '../lib/undo';
 import Modal from '../components/Modal';
-import { Plus, Pencil, Trash2, Users, Phone, Mail, Search, Upload, Eye } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Phone, Mail, Search, Upload, Eye, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { toast } from 'react-toastify';
 
@@ -79,9 +80,26 @@ const ClientsPage = () => {
   const [form, setForm] = useState(emptyClient);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [duplicateGstin, setDuplicateGstin] = useState(null);
   const [importing, setImporting] = useState(false);
   const [fetchingGstin, setFetchingGstin] = useState(false);
+  const [sortBy, setSortBy] = useState('created_at');
+  const [sortDir, setSortDir] = useState('desc');
   const fileInputRef = useRef(null);
+
+  const toggleSort = (col) => {
+    if (sortBy === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(col);
+      setSortDir('asc');
+    }
+  };
+
+  const SortIcon = ({ col }) => {
+    if (sortBy !== col) return <ArrowUpDown size={11} className="inline ml-1 opacity-50" />;
+    return sortDir === 'asc' ? <ArrowUp size={11} className="inline ml-1" /> : <ArrowDown size={11} className="inline ml-1" />;
+  };
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -94,16 +112,17 @@ const ClientsPage = () => {
   const load = async () => {
     setLoading(true);
     try {
-      const r = await api.get('/clients/paginated', { params: { page, limit, q: debouncedSearch } });
+      const r = await api.get('/clients/paginated', { params: { page, limit, q: debouncedSearch, sort_by: sortBy, sort_dir: sortDir } });
       setClients(r.data.data);
       setTotal(r.data.total);
     } finally { setLoading(false); }
   };
   
-  useEffect(() => { load(); }, [page, debouncedSearch]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [page, debouncedSearch, sortBy, sortDir]);
 
-  const openNew = () => { setEditing(null); setForm(emptyClient); setError(''); setModalOpen(true); };
-  const openEdit = (c) => { setEditing(c); setForm({ ...c }); setError(''); setModalOpen(true); };
+  const openNew = () => { setEditing(null); setForm(emptyClient); setError(''); setDuplicateGstin(null); setModalOpen(true); };
+  const openEdit = (c) => { setEditing(c); setForm({ ...c }); setError(''); setDuplicateGstin(null); setModalOpen(true); };
   const openView = (c) => { setViewing(c); setViewModalOpen(true); };
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -115,7 +134,9 @@ const ClientsPage = () => {
     }
     setFetchingGstin(true);
     try {
-      const { data } = await api.get(`/clients/verify-gstin/${form.gstin}`);
+      const { data } = await api.get(`/clients/verify-gstin/${form.gstin}`, {
+        params: editing ? { exclude_id: editing.id } : {}
+      });
       setForm((prev) => ({
         ...prev,
         name: data.name || prev.name,
@@ -127,7 +148,11 @@ const ClientsPage = () => {
       }));
       toast.success('GSTIN details fetched successfully');
     } catch (err) {
-      toast.error(err?.response?.data?.detail || 'Failed to fetch GSTIN details');
+      const errorMsg = err?.response?.data?.detail || 'Failed to fetch GSTIN details';
+      toast.error(errorMsg);
+      if (errorMsg === 'GSTIN is already present. Please enter another GSTIN.') {
+        setDuplicateGstin(form.gstin.toUpperCase());
+      }
       setForm((prev) => ({ ...prev, name: '', company: '', pan: '', gst_type: '', place_of_supply: '', address: '' }));
     } finally {
       setFetchingGstin(false);
@@ -160,7 +185,7 @@ const ClientsPage = () => {
   };
 
   const handleDelete = (c) => {
-    if (!window.confirm(`Are you sure you want to delete client "${c.name}"?\n\nAny projects linked to them will be unlinked (but not deleted).\n\nYou can undo within 60 seconds.`)) return;
+    
     setHiddenIds((prev) => new Set([...prev, c.id]));
     schedule({
       label: `Client ${c.name} deleted`,
@@ -282,11 +307,12 @@ const ClientsPage = () => {
           <table className="cc-table" data-testid="clients-table">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Phone</th>
-                <th className="hidden sm:table-cell">Email</th>
-                <th className="hidden lg:table-cell">GSTIN/UIN of Recipient</th>
-                <th className="whitespace-nowrap">Place of Supply</th>
+                <th className="cursor-pointer select-none" onClick={() => toggleSort('name')}>Name <SortIcon col="name" /></th>
+                <th className="cursor-pointer select-none" onClick={() => toggleSort('company')}>Company <SortIcon col="company" /></th>
+                <th className="cursor-pointer select-none" onClick={() => toggleSort('phone')}>Phone <SortIcon col="phone" /></th>
+                <th className="hidden sm:table-cell cursor-pointer select-none" onClick={() => toggleSort('email')}>Email <SortIcon col="email" /></th>
+                <th className="hidden lg:table-cell cursor-pointer select-none" onClick={() => toggleSort('gstin')}>GSTIN/UIN of Recipient <SortIcon col="gstin" /></th>
+                <th className="whitespace-nowrap cursor-pointer select-none" onClick={() => toggleSort('place_of_supply')}>Place of Supply <SortIcon col="place_of_supply" /></th>
                 <th className="text-center">Actions</th>
               </tr>
             </thead>
@@ -306,9 +332,10 @@ const ClientsPage = () => {
                       {c.name}
                     </Link>
                   </td>
+                  <td className="text-xs">{c.company || '—'}</td>
                   <td className="font-mono-data text-xs">{c.phone ? <a href={`tel:${c.phone}`} className="inline-flex items-center gap-1"><Phone size={11}/>{c.phone}</a> : '—'}</td>
-                  <td className="text-xs hidden sm:table-cell">{c.email ? <a href={`mailto:${c.email}`} className="inline-flex items-center gap-1 link-underline"><Mail size={11}/>{c.email}</a> : '—'}</td>
-                  <td className="hidden lg:table-cell font-mono-data text-xs">{c.gstin || '—'}</td>
+                  <td className="text-xs hidden sm:table-cell" title={c.email}>{c.email ? <a href={`mailto:${c.email}`} className="inline-flex items-center gap-1 link-underline"><Mail size={11}/>{c.email.length > 40 ? c.email.substring(0, 40) + '...' : c.email}</a> : '—'}</td>
+                  <td className="hidden lg:table-cell font-mono-data text-xs" title={c.gstin}>{c.gstin ? (c.gstin.length > 16 ? c.gstin.substring(0, 16) + '...' : c.gstin) : '—'}</td>
                   <td className="text-xs whitespace-nowrap">{formatPlaceOfSupply(c.place_of_supply, c.gstin)}</td>
                   <td>
                     <div className="flex gap-1 justify-center">
@@ -323,33 +350,9 @@ const ClientsPage = () => {
           </table>
         </div>
         
-        {/* Pagination Controls */}
-        <div className="flex flex-col sm:flex-row-reverse justify-between items-center p-4 border-t gap-4" style={{ borderColor: 'var(--cc-border)' }}>
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={() => setPage(p => Math.max(1, p - 1))} 
-              disabled={page === 1}
-              className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title="Previous Page"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-            </button>
-            <div className="bg-black text-white px-3 py-1 rounded text-sm font-semibold min-w-[32px] text-center">
-              {page}
-            </div>
-            <button 
-              onClick={() => setPage(p => p + 1)} 
-              disabled={page * limit >= total}
-              className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title="Next Page"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-            </button>
+        <div className="mt-4 border-t border-gray-100 bg-white">
+            <Pagination page={page} setPage={setPage} limit={limit} total={total} />
           </div>
-          <div className="text-sm" style={{ color: 'var(--cc-text-muted)' }}>
-            Showing {total === 0 ? 0 : (page - 1) * limit + 1} to {Math.min(page * limit, total)} of {total} entries
-          </div>
-        </div>
       </div>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Edit Client' : 'New Client'} testId="client-modal">
@@ -358,7 +361,13 @@ const ClientsPage = () => {
             <div>
               <label className="label">GSTIN / UIN</label>
               <div className="flex gap-2">
-                <input className="input" value={form.gstin} onChange={(e) => update('gstin', e.target.value.toUpperCase())} placeholder="e.g. 27AAAAA0000A1Z5" data-testid="client-form-gstin" maxLength={15} />
+                <input className="input" value={form.gstin} onChange={(e) => {
+                  const val = e.target.value.toUpperCase();
+                  update('gstin', val);
+                  if (duplicateGstin && val !== duplicateGstin) {
+                    setDuplicateGstin(null);
+                  }
+                }} placeholder="e.g. 27AAAAA0000A1Z5" data-testid="client-form-gstin" maxLength={15} />
                 <button type="button" onClick={handleFetchGSTIN} disabled={fetchingGstin || !form.gstin} className="btn btn-outline whitespace-nowrap">
                   {fetchingGstin ? 'Fetching...' : 'Fetch'}
                 </button>
@@ -370,7 +379,7 @@ const ClientsPage = () => {
             </div>
           </div>
           <div>
-            <label className="label">Name *</label>
+            <label className="label">Client Name *</label>
             <input className="input" value={form.name} onChange={(e) => update('name', e.target.value)} placeholder="e.g. John Doe" data-testid="client-form-name" />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -384,7 +393,7 @@ const ClientsPage = () => {
             </div>
           </div>
           <div>
-            <label className="label">Company</label>
+            <label className="label">Company Name</label>
             <input className="input" value={form.company} onChange={(e) => update('company', e.target.value)} placeholder="e.g. Acme Corp" data-testid="client-form-company" />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -393,7 +402,7 @@ const ClientsPage = () => {
               <input className="input" value={form.gst_type || ''} onChange={(e) => update('gst_type', e.target.value)} placeholder="e.g. Regular" data-testid="client-form-gst-type" />
             </div>
             <div>
-              <label className="label">Place of Supply</label>
+              <label className="label">Place of Supply (Code or State)</label>
               <input className="input" value={form.place_of_supply} onChange={(e) => update('place_of_supply', e.target.value)} placeholder="e.g. 27 or Maharashtra" data-testid="client-form-pos" />
             </div>
           </div>
@@ -404,7 +413,7 @@ const ClientsPage = () => {
           {error && <div className="text-sm text-red-600">{error}</div>}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setModalOpen(false)} className="btn btn-outline">Cancel</button>
-            <button type="submit" disabled={saving} className="btn btn-primary" data-testid="client-form-save">{saving ? 'Saving...' : 'Save'}</button>
+            <button type="submit" disabled={saving || (duplicateGstin && form.gstin.toUpperCase() === duplicateGstin)} className="btn btn-primary" data-testid="client-form-save">{saving ? 'Saving...' : 'Save'}</button>
           </div>
         </form>
       </Modal>
@@ -414,11 +423,11 @@ const ClientsPage = () => {
           <div className="space-y-4 text-sm mt-2">
             <div className="grid grid-cols-2 gap-4 border-b pb-4" style={{ borderColor: 'var(--cc-border)' }}>
               <div>
-                <div className="text-xs font-semibold mb-1" style={{ color: 'var(--cc-text-muted)' }}>Name</div>
+                <div className="text-xs font-semibold mb-1" style={{ color: 'var(--cc-text-muted)' }}>Client Name</div>
                 <div className="font-medium">{viewing.name}</div>
               </div>
               <div>
-                <div className="text-xs font-semibold mb-1" style={{ color: 'var(--cc-text-muted)' }}>Company</div>
+                <div className="text-xs font-semibold mb-1" style={{ color: 'var(--cc-text-muted)' }}>Company Name</div>
                 <div>{viewing.company || '—'}</div>
               </div>
             </div>

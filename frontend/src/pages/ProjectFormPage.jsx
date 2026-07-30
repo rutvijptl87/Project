@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { api } from '../lib/api';
-import { ArrowLeft, Save } from 'lucide-react';
+import { ArrowLeft, Save , X } from 'lucide-react';
 import InlinePicker from '../components/InlinePicker';
 
 const ProjectFormPage = () => {

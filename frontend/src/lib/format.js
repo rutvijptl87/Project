@@ -25,3 +25,21 @@ export const formatDate = (iso) => {
     return iso;
   }
 };
+
+export const formatActivityDay = (iso) => {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfDate = new Date(d);
+    startOfDate.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((startOfToday - startOfDate) / (1000 * 60 * 60 * 24));
+    if (diffDays <= 0) return 'today';
+    if (diffDays === 1) return 'yesterday';
+    return `${diffDays} days ago`;
+  } catch {
+    return iso;
+  }
+};

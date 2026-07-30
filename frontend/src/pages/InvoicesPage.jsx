@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import Pagination from '../components/Pagination';
 import { api, API } from '../lib/api';
 import { downloadFile } from '../lib/download';
 import Modal from '../components/Modal';
@@ -21,7 +22,7 @@ import {
   Pencil,
   Upload,
   Briefcase
-} from 'lucide-react';
+, X } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { toast } from 'react-toastify';
 
@@ -121,6 +122,7 @@ const InvoicesPage = () => {
     hsn_code: '998332',
     client_id: '',
     client_name: '',
+    client_company: '',
     client_address: '',
     client_gstin: '',
     client_mobile: '',
@@ -179,12 +181,15 @@ const InvoicesPage = () => {
   useEffect(() => {
     const loadStaticData = async () => {
       try {
-        const [clientRes, companyRes, projectRes] = await Promise.all([
+        const [clientRes, companyRes, projectRes, architectRes] = await Promise.all([
           api.get('/clients'),
           api.get('/company-details'),
-          api.get('/projects')
+          api.get('/projects'),
+          api.get('/architects')
         ]);
-        setClients(clientRes.data || []);
+        const clientsData = (clientRes.data || []).map(c => ({ ...c, isArchitect: false }));
+        const architectsData = (architectRes.data || []).map(a => ({ ...a, isArchitect: true }));
+        setClients([...clientsData, ...architectsData]);
         setCompany(companyRes.data || null);
         setProjects(projectRes.data || []);
       } catch (err) {
@@ -214,6 +219,7 @@ const InvoicesPage = () => {
       hsn_code: inv.hsn_code || '998332',
       client_id: inv.client_id || '',
       client_name: inv.client_name || '',
+      client_company: inv.client_company || '',
       client_address: inv.client_address || '',
       client_gstin: inv.client_gstin || '',
       client_mobile: inv.client_mobile || '',
@@ -243,6 +249,7 @@ const InvoicesPage = () => {
         hsn_code: convertModal.hsn_code || '998332',
         client_id: convertModal.client_id || '',
         client_name: convertModal.client_name || '',
+        client_company: convertModal.client_company || '',
         client_address: convertModal.client_address || '',
         client_gstin: convertModal.client_gstin || '',
         client_mobile: convertModal.client_mobile || '',
@@ -293,7 +300,8 @@ const InvoicesPage = () => {
       ...prev,
       client_id: client.id,
       client_name: client.name,
-      client_address: client.address || '',
+      client_company: client.company || client.firm || '',
+      client_address: client.address || client.firm || '',
       client_gstin: client.gstin || '',
       client_mobile: client.phone || '',
       client_pan: client.pan || client.gstin?.substring(2, 12) || '',
@@ -389,8 +397,10 @@ const InvoicesPage = () => {
         setMsg({ type: 'success', text: `Invoice ${r.data.invoice_no} generated successfully!` });
       }
 
-      const [clientRes, projectRes] = await Promise.all([api.get('/clients'), api.get('/projects')]);
-      setClients(clientRes.data || []);
+      const [clientRes, projectRes, architectRes] = await Promise.all([api.get('/clients'), api.get('/projects'), api.get('/architects')]);
+      const clientsData = (clientRes.data || []).map(c => ({ ...c, isArchitect: false }));
+      const architectsData = (architectRes.data || []).map(a => ({ ...a, isArchitect: true }));
+      setClients([...clientsData, ...architectsData]);
       setProjects(projectRes.data || []);
       setView(formType === 'proforma' ? 'proforma_list' : 'tax_list');
     } catch (err) {
@@ -689,33 +699,9 @@ const InvoicesPage = () => {
               </table>
             </div>
 
-            {/* Pagination Controls */}
-            <div className="flex flex-col sm:flex-row-reverse justify-between items-center p-4 border-t gap-4" style={{ borderColor: 'var(--cc-border)' }}>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  title="Previous Page"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
-                </button>
-                <div className="bg-black text-white px-3 py-1 rounded text-sm font-semibold min-w-[32px] text-center">
-                  {page}
-                </div>
-                <button
-                  onClick={() => setPage(p => p + 1)}
-                  disabled={page * limit >= total}
-                  className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  title="Next Page"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
-                </button>
-              </div>
-              <div className="text-sm" style={{ color: 'var(--cc-text-muted)' }}>
-                Showing {total === 0 ? 0 : (page - 1) * limit + 1} to {Math.min(page * limit, total)} of {total} entries
-              </div>
-            </div>
+            <div className="mt-4 border-t border-gray-100 bg-white">
+            <Pagination page={page} setPage={setPage} limit={limit} total={total} />
+          </div>
           </div>
         </div>
       )}
@@ -826,6 +812,7 @@ const InvoicesPage = () => {
                             ...prev,
                             client_id: '',
                             client_name: '',
+                            client_company: '',
                             client_address: '',
                             client_gstin: '',
                             client_mobile: '',
@@ -865,6 +852,7 @@ const InvoicesPage = () => {
                               ...prev,
                               client_id: '',
                               client_name: '',
+                              client_company: '',
                               client_address: '',
                               client_gstin: '',
                               client_mobile: '',
@@ -893,10 +881,11 @@ const InvoicesPage = () => {
                             className="p-2.5 text-sm cursor-pointer hover:bg-emerald-50 border-b border-gray-50 flex flex-col"
                             data-testid={`autocomplete-item-${c.name}`}
                           >
-                            <span className="font-semibold text-gray-900">
-                              {c.name} {c.gstin ? `(GSTIN: ${c.gstin})` : ''}
+                            <span className="font-semibold text-gray-900 flex items-center gap-2">
+                              <span>{c.name} {c.gstin ? `(GSTIN: ${c.gstin})` : ''}</span>
+                              {c.isArchitect && <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">Architect</span>}
                             </span>
-                            <span className="text-xs text-gray-500">{c.company || 'No Company'}</span>
+                            <span className="text-xs text-gray-500">{c.company || c.firm || 'No Company'}</span>
                           </div>
                         ))
                       )}
@@ -906,6 +895,19 @@ const InvoicesPage = () => {
 
                 {/* Billing Address and specific fields */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="label">Company Name</label>
+                    <input
+                      type="text"
+                      className={`input text-sm ${draft.client_id ? 'bg-gray-100/70 text-gray-500 cursor-not-allowed' : ''}`}
+                      value={draft.client_company || ''}
+                      onChange={(e) => handleInputChange('client_company', e.target.value)}
+                      placeholder="Company Name"
+                      readOnly={!!draft.client_id}
+                      data-testid="billing-company-input"
+                    />
+                  </div>
+
                   <div className="sm:col-span-2">
                     <label className="label">Client Billing Address</label>
                     <textarea
@@ -927,14 +929,14 @@ const InvoicesPage = () => {
                   />
 
                   <div>
-                    <label className="label">Place of Supply</label>
+                    <label className="label">Place of Supply (Code or State)</label>
                     <input
                       type="text"
                       required
                       className={`input ${draft.client_id ? 'bg-gray-100/70 text-gray-500 cursor-not-allowed' : ''}`}
                       value={draft.place_of_supply}
                       onChange={(e) => handleInputChange('place_of_supply', e.target.value)}
-                      placeholder="e.g. Maharashtra"
+                      placeholder="e.g. 27 or Maharashtra"
                       readOnly={!!draft.client_id}
                       data-testid="billing-supply-input"
                     />

@@ -2,11 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
 import { formatINR } from '../lib/format';
-import { ArrowLeft, Phone, Mail, Pencil, FileText, Eye, Compass, IndianRupee, Briefcase, FileSignature, Trash2, ArrowRightLeft, Save, X } from 'lucide-react';
+import { ArrowLeft, Phone, Mail, Pencil, FileText, Eye, Compass, IndianRupee, Briefcase, FileSignature, Trash2, ArrowRightLeft, Save, X, MapPin } from 'lucide-react';
 import { downloadFile } from '../lib/download';
 import { useUndo } from '../lib/undo';
 import Modal from '../components/Modal';
 import { logger } from '../lib/logger';
+import { toast } from 'react-toastify';
+import Swal from 'sweetalert2';
+
+const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[A-Z0-9]{1}Z[A-Z0-9]{1}$/;
 
 const ArchitectDetailPage = () => {
   const { id } = useParams();
@@ -23,6 +27,31 @@ const ArchitectDetailPage = () => {
   const [editForm, setEditForm] = useState({ name: '', phone: '', email: '', firm: '' });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
+  const [fetchingGstin, setFetchingGstin] = useState(false);
+
+  const handleFetchGSTIN = async () => {
+    if (!editForm.gstin || !GSTIN_REGEX.test(editForm.gstin)) {
+      toast.error('Invalid GSTIN format');
+      return;
+    }
+    setFetchingGstin(true);
+    try {
+      const { data } = await api.get(`/clients/verify-gstin/${editForm.gstin}`);
+      setEditForm((prev) => ({
+        ...prev,
+        name: data.name || prev.name,
+        firm: data.name || prev.firm,
+        pan: data.pan || prev.pan,
+        place_of_supply: data.place_of_supply || prev.place_of_supply,
+        address: data.principal_address || prev.address,
+      }));
+      toast.success('GSTIN details fetched successfully');
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Failed to fetch GSTIN details');
+    } finally {
+      setFetchingGstin(false);
+    }
+  };
   // Documents move modal — re-assigns a confirmed/draft document to a different architect
   const [docMove, setDocMove] = useState(null); // {doc, query, busy}
   const [docMoveQuery, setDocMoveQuery] = useState('');
@@ -38,6 +67,7 @@ const ArchitectDetailPage = () => {
     } finally { setLoading(false); }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
 
   if (loading) return <div className="max-w-5xl mx-auto p-8">Loading...</div>;
@@ -54,7 +84,7 @@ const ArchitectDetailPage = () => {
   ].sort((x, y) => (y.created_at || '').localeCompare(x.created_at || ''));
 
   const handleDelete = (p) => {
-    if (!window.confirm(`Permanently delete project ${p.project_code} — ${p.name}?\n\nYou can undo within 60 seconds.`)) return;
+    
     setHiddenIds((s) => new Set([...s, p.id]));
     schedule({
       label: `Project ${p.project_code} deleted`,
@@ -181,7 +211,7 @@ const ArchitectDetailPage = () => {
       '',
       'This cannot be undone from the architects list.',
     ];
-    if (!window.confirm(lines.join('\n'))) return;
+    
     try {
       await api.delete(`/architects/${a.id}`);
       navigate('/architects');
@@ -216,6 +246,28 @@ const ArchitectDetailPage = () => {
                   <Mail size={13}/> {a.email}
                 </a>
               )}
+              {a.address && (
+                <span className="inline-flex items-center gap-1 text-gray-600" data-testid="architect-address">
+                  <MapPin size={13}/> {a.address}
+                </span>
+              )}
+            </div>
+            <div className="flex gap-4 mt-2 text-sm flex-wrap">
+              {a.gstin && (
+                <span className="inline-flex items-center gap-1 text-gray-600 font-mono-data text-xs" data-testid="architect-gstin">
+                  <strong>GSTIN:</strong> {a.gstin}
+                </span>
+              )}
+              {a.pan && (
+                <span className="inline-flex items-center gap-1 text-gray-600 font-mono-data text-xs" data-testid="architect-pan">
+                  <strong>PAN:</strong> {a.pan}
+                </span>
+              )}
+              {a.place_of_supply && (
+                <span className="inline-flex items-center gap-1 text-gray-600 font-mono-data text-xs" data-testid="architect-pos">
+                  <strong>POS:</strong> {a.place_of_supply}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -249,8 +301,8 @@ const ArchitectDetailPage = () => {
           <table className="cc-table" data-testid="architect-projects-table">
             <thead>
               <tr>
-                <th>Code</th>
-                <th>Type</th>
+                <th>Job No</th>
+                <th>Project Name</th>
                 <th>Name</th>
                 <th className="hidden md:table-cell">Client</th>
                 <th className="hidden md:table-cell">Site Location</th>
@@ -287,7 +339,7 @@ const ArchitectDetailPage = () => {
                 </tr>
               ) : (
                 <tr key={p.id} data-testid={`arch-project-row-${p.project_code}`}>
-                  <td className="font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{p.project_code}</td>
+                  <td className="font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>{p.job_no || '—'}</td>
                   <td><span className="badge" style={{ background: '#D1FAE5', color: '#065F46' }}>Project</span></td>
                   <td className="font-medium">{p.name}</td>
                   <td className="hidden md:table-cell">{p.client_name || <span className="text-gray-400">None</span>}</td>
@@ -518,6 +570,54 @@ const ArchitectDetailPage = () => {
               value={editForm.firm}
               onChange={(e) => setEditForm({ ...editForm, firm: e.target.value })}
               data-testid="edit-architect-firm"
+            />
+          </div>
+          <div>
+            <label className="label">Address</label>
+            <input
+              className="input"
+              value={editForm.address || ''}
+              onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+              data-testid="edit-architect-address"
+              placeholder="e.g. 123 Main St"
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">GSTIN</label>
+              <div className="flex gap-2">
+                <input
+                  className="input"
+                  value={editForm.gstin || ''}
+                  onChange={(e) => setEditForm({ ...editForm, gstin: e.target.value.toUpperCase() })}
+                  data-testid="edit-architect-gstin"
+                  placeholder="e.g. 22AAAAA0000A1Z5"
+                  maxLength={15}
+                />
+                <button type="button" onClick={handleFetchGSTIN} disabled={fetchingGstin || !editForm.gstin} className="btn btn-outline whitespace-nowrap">
+                  {fetchingGstin ? 'Fetching...' : 'Fetch'}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="label">PAN</label>
+              <input
+                className="input"
+                value={editForm.pan || ''}
+                onChange={(e) => setEditForm({ ...editForm, pan: e.target.value })}
+                data-testid="edit-architect-pan"
+                placeholder="e.g. AAAAA0000A"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="label">Place of Supply (Code or State)</label>
+            <input
+              className="input"
+              value={editForm.place_of_supply || ''}
+              onChange={(e) => setEditForm({ ...editForm, place_of_supply: e.target.value })}
+              data-testid="edit-architect-pos"
+              placeholder="e.g. 27 or Maharashtra"
             />
           </div>
           {editError && <div className="text-sm text-red-600" data-testid="edit-architect-error">{editError}</div>}

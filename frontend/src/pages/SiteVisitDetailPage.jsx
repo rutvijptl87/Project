@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams, useNavigate, Navigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
-import { ArrowLeft, FileText, Edit3, Trash2, Share2, ImageIcon, ClipboardList, MapPin, Calendar, User, Pin, PinOff, Phone, MessageCircle, IndianRupee, ExternalLink } from 'lucide-react';
+import { ArrowLeft, FileText, Edit3, Trash2, Share2, ImageIcon, ClipboardList, MapPin, Calendar, User, Pin, PinOff, Phone, MessageCircle, IndianRupee, ExternalLink , X } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useUndo } from '../lib/undo';
 import { downloadFile } from '../lib/download';
-import { formatINR } from '../lib/format';
+import { formatINR, formatActivityDay } from '../lib/format';
 import PhotoMap from '../components/PhotoMap';
 import SiteVisitPdfDownloadButton from '../components/SiteVisitPdfDownloadButton';
 
-const BACKEND = process.env.REACT_APP_BACKEND_URL;
+const BACKEND = (process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '');
 
 const Pill = ({ children, color }) => (
   <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide" style={{ background: color, color: 'white' }}>{children}</span>
@@ -53,7 +53,7 @@ const SiteVisitDetailPage = () => {
 
   const onDelete = () => {
     if (!v) return;
-    if (!window.confirm(`Delete ${v.visit_code}? You can undo within 60s.`)) return;
+    
     undo.schedule({
       label: `Site visit ${v.visit_code} deleted`,
       onCommit: async () => {
@@ -181,7 +181,7 @@ const SiteVisitDetailPage = () => {
 
         {(v.project_code || v.drg_no || v.revision) && (
           <div className="mt-3 text-xs flex flex-wrap gap-4" style={{ color: 'var(--cc-text-muted)' }}>
-            {v.project_code && <div><strong>Project:</strong> <Link to={`/projects/${v.project_id}`} className="font-mono-data hover:underline" style={{ color: 'var(--cc-dark-green)' }}>{v.project_code}</Link> — {v.project_name}</div>}
+            {v.project_id && <div><strong>Project:</strong> <Link to={`/projects/${v.project_id}`} className="hover:underline" style={{ color: 'var(--cc-dark-green)' }}>{v.project_name || 'View Project'}</Link></div>}
             {v.drg_no && <div><strong>DRG:</strong> <span className="font-mono-data">{v.drg_no}</span></div>}
             {v.revision && <div><strong>Rev:</strong> {v.revision}</div>}
           </div>
@@ -199,12 +199,8 @@ const SiteVisitDetailPage = () => {
                 {project.name} <ExternalLink size={13}/>
               </Link>
               <div className="text-xs mt-0.5 flex flex-wrap items-center gap-2" style={{ color: 'var(--cc-text-muted)' }}>
-                <span className="font-mono-data">{project.project_code}</span>
                 {project.job_no && (
-                  <>
-                    <span>·</span>
-                    <span className="font-mono-data px-1.5 py-0.5 rounded" style={{ background: 'var(--cc-surface)' }}>Job {project.job_no}</span>
-                  </>
+                  <span className="font-mono-data px-1.5 py-0.5 rounded" style={{ background: 'var(--cc-surface)' }}>Job {project.job_no}</span>
                 )}
                 {project.client_name && <><span>·</span><span>{project.client_name}</span></>}
               </div>
@@ -405,7 +401,7 @@ const ActivityCard = ({ visitId }) => {
           <tbody>
             {items.map((a) => (
               <tr key={a.id} className="border-t" style={{ borderColor: 'var(--cc-border)' }} data-testid={`sv-activity-row-${a.action}`}>
-                <td className="px-2 py-2 text-xs font-mono-data" style={{ color: 'var(--cc-text-muted)' }}>{a.created_at ? new Date(a.created_at).toLocaleString() : '—'}</td>
+                <td className="px-2 py-2 text-xs font-mono-data" style={{ color: 'var(--cc-text-muted)' }}>{a.created_at ? formatActivityDay(a.created_at) : '—'}</td>
                 <td className="px-2 py-2 text-xs">{a.username || 'system'}</td>
                 <td className="px-2 py-2">
                   <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide" style={styleForAction(a.action)}>{a.action}</span>

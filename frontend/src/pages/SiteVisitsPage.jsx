@@ -1,14 +1,15 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Link, useSearchParams, Navigate } from 'react-router-dom';
 import { api, API } from '../lib/api';
-import { Plus, Search, Eye, FileText, Trash2, ClipboardList, MapPin, Calendar, FileSpreadsheet } from 'lucide-react';
+import { Plus, Search, Eye, FileText, Trash2, ClipboardList, MapPin, Calendar, FileSpreadsheet , X } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useUndo } from '../lib/undo';
 import { downloadFile } from '../lib/download';
 import MySvWeeklyChart from '../components/MySvWeeklyChart';
 import SiteVisitPdfDownloadButton from '../components/SiteVisitPdfDownloadButton';
+import Pagination from '../components/Pagination';
 
-const BACKEND = process.env.REACT_APP_BACKEND_URL;
+const BACKEND = (process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '');
 
 const StatusBadge = ({ status }) => {
   const cls = status === 'draft' ? 'badge-pending' : 'badge-settled';
@@ -24,40 +25,50 @@ const SiteVisitsPage = () => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = (searchParams.get('status') || '').toLowerCase();
   const [exportMonth, setExportMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
+  
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const limit = 25;
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedQ(q);
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [q]);
 
   const load = async () => {
     setLoading(true);
     try {
-      const r = await api.get('/site-visits', { params: { mine: isEngineer ? true : undefined } });
-      setItems(r.data || []);
+      const params = {
+        mine: isEngineer ? true : undefined,
+        page,
+        limit,
+        status: statusFilter,
+        search: debouncedQ,
+      };
+      const r = await api.get('/site-visits/paginated', { params });
+      setItems(r.data.data || []);
+      setTotal(r.data.total || 0);
     } catch (e) {
       setItems([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { load(); }, []); // eslint-disable-line
+  useEffect(() => { load(); }, [page, statusFilter, debouncedQ]); // eslint-disable-line
 
-  const filtered = useMemo(() => {
-    let arr = items;
-    if (statusFilter) {
-      arr = arr.filter((v) => (v.status || 'submitted').toLowerCase() === statusFilter);
-    }
-    const k = q.trim().toLowerCase();
-    if (!k) return arr;
-    return arr.filter((v) =>
-      [v.visit_code, v.inspection_title, v.job_no, v.customer, v.plot_no, v.site_location, v.project_code, v.project_name]
-        .some((f) => (f || '').toLowerCase().includes(k)),
-    );
-  }, [q, items, statusFilter]);
-
+  const filtered = items;
   const setStatus = (s) => {
     if (!s) {
       searchParams.delete('status');
@@ -68,7 +79,7 @@ const SiteVisitsPage = () => {
   };
 
   const removeVisit = (v) => {
-    if (!window.confirm(`Delete site visit ${v.visit_code}? You can undo within 60s.`)) return;
+    
     setItems((cur) => cur.filter((x) => x.id !== v.id));
     undo.schedule({
       label: `Site visit ${v.visit_code} deleted`,
@@ -137,9 +148,9 @@ const SiteVisitsPage = () => {
       {/* Status filter pills (kept above the search row for easy phone access) */}
       <div className="flex items-center gap-1.5 mb-4 flex-wrap" data-testid="status-filter-pills">
         {[
-          { v: '', label: 'All', count: items.length },
-          { v: 'draft', label: 'Draft', count: items.filter((v) => (v.status || '').toLowerCase() === 'draft').length },
-          { v: 'submitted', label: 'Submitted', count: items.filter((v) => (v.status || 'submitted').toLowerCase() === 'submitted').length },
+          { v: '', label: 'All', count: statusFilter === '' ? total : '—' },
+          { v: 'draft', label: 'Draft', count: statusFilter === 'draft' ? total : '—' },
+          { v: 'submitted', label: 'Submitted', count: statusFilter === 'submitted' ? total : '—' },
         ].map((s) => {
           const active = (statusFilter || '') === s.v;
           return (
@@ -240,6 +251,9 @@ const SiteVisitsPage = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="mt-4 border-t border-gray-100 bg-white">
+            <Pagination page={page} setPage={setPage} limit={limit} total={total} />
           </div>
         </>
       )}

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../lib/auth';
-import { Lock, User, AlertCircle, LogIn } from 'lucide-react';
+import { Lock, User, AlertCircle, LogIn , X } from 'lucide-react';
 
 const formatErr = (detail, fallback) => {
   if (typeof detail === 'string') return detail;

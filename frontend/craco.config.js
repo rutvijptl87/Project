@@ -51,6 +51,18 @@ let webpackConfig = {
         ],
       };
 
+      // Remove source-map-loader rule entirely to prevent third-party map ENOENT errors
+      webpackConfig.module.rules = (webpackConfig.module.rules || []).filter(rule => {
+        const str = JSON.stringify(rule);
+        return !str.includes('source-map-loader');
+      });
+
+      webpackConfig.ignoreWarnings = [
+        ...(webpackConfig.ignoreWarnings || []),
+        /Failed to parse source map/,
+        /ENOENT: no such file or directory/
+      ];
+
       // Add health check plugin to webpack if enabled
       if (config.enableHealthCheck && healthPluginInstance) {
         webpackConfig.plugins.push(healthPluginInstance);

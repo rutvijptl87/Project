@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../lib/auth';
-import { User } from 'lucide-react';
+import { User , X } from 'lucide-react';
 import DefaultSignatureCard from '../components/DefaultSignatureCard';
 import MobileNotificationsCard from '../components/MobileNotificationsCard';
 

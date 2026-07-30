@@ -1,0 +1,185 @@
+/* Frappe Design System Base */
+:root {
+  /* Brand */
+  --brand-color: var(--primary, #1f272e);
+  --primary-color: #1f272e;
+  
+  /* Backgrounds */
+  --bg-color: #ffffff;
+  --fg-color: #ffffff;
+  --subtle-accent: #f9fafb;
+  --subtle-fg: #f3f4f6;
+  --navbar-bg: #ffffff;
+  --fg-hover-color: #f3f4f6;
+  --card-bg: #ffffff;
+  
+  /* Controls (Inputs & Modals) */
+  --control-bg: #f3f4f6; /* gray-100 */
+  --control-bg-on-gray: #e5e7eb; /* gray-200 */
+  --modal-bg: #ffffff;
+  --popover-bg: #ffffff;
+  
+  /* Borders & Shadows */
+  --border-color: #e5e7eb; /* gray-200 */
+  --dark-border-color: #d1d5db; /* gray-300 */
+  --shadow-inset: inset 0px -1px 0px #d1d5db;
+  --modal-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --card-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --btn-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  
+  /* Typography */
+  --text-muted: #4b5563; /* gray-600 */
+  --text-color: #1f2937; /* gray-800 */
+  --disabled-text-color: #4b5563;
+  --link-color: #1f2937;
+  --link-hover-color: #1f2937;
+
+  /* Form Elements */
+  --btn-height: 28px;
+  --btn-primary: #2490ef;
+  --btn-default-bg: #f3f4f6;
+  --btn-default-hover-bg: #d1d5db;
+  
+  --input-height: 28px;
+  --disabled-input-height: 22px;
+  --input-disabled-bg: #e5e7eb;
+}
+
+/* Base Body Override (Optional, scoped to pages using it) */
+.frappe-page {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  color: var(--text-color);
+  background-color: var(--bg-color);
+}
+
+/* Frappe Form Control */
+.frappe-form-control {
+  background-color: var(--control-bg);
+  color: var(--text-color);
+  border-radius: 8px;
+  height: var(--input-height);
+  border: 1px solid transparent; 
+  box-shadow: none;
+  padding: 0 10px;
+  font-size: 13px;
+  width: 100%;
+  transition: all 0.2s ease;
+}
+
+.frappe-form-control:focus {
+  outline: none;
+  border-color: #9ca3af; 
+  background-color: #ffffff;
+}
+
+.frappe-form-control:disabled {
+  background-color: var(--input-disabled-bg);
+  color: var(--disabled-text-color);
+  cursor: not-allowed;
+}
+
+.frappe-form-control::placeholder {
+  color: #9ca3af;
+}
+
+select.frappe-form-control {
+  padding-right: 20px;
+}
+
+textarea.frappe-form-control {
+  height: auto;
+  padding: 6px 10px;
+}
+
+/* Frappe Checkbox */
+.frappe-checkbox {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--dark-border-color);
+  background-color: var(--control-bg);
+  cursor: pointer;
+}
+.frappe-checkbox:checked {
+  background: linear-gradient(180deg, var(--primary-color) -124.51%, var(--primary-color) 100%);
+  border-color: var(--primary-color);
+}
+.frappe-checkbox:focus {
+  box-shadow: 0 0 0 2px var(--dark-border-color);
+}
+
+/* Frappe Buttons */
+.frappe-btn {
+  height: var(--btn-height);
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  cursor: pointer;
+  box-shadow: var(--btn-shadow);
+  transition: background-color 0.2s ease;
+}
+
+.frappe-btn-primary {
+  background-color: var(--btn-primary);
+  color: white;
+}
+.frappe-btn-primary:hover {
+  background-color: #111827;
+}
+
+.frappe-btn-default {
+  background-color: var(--btn-default-bg);
+  color: var(--text-color);
+  border-color: var(--border-color);
+}
+.frappe-btn-default:hover {
+  background-color: #e5e7eb;
+}
+
+/* Frappe List View Items */
+.frappe-list-item {
+  border-bottom: 1px solid var(--border-color);
+  font-size: 13px;
+  color: var(--text-color);
+  padding: 10px 15px;
+  display: flex;
+  align-items: center;
+}
+.frappe-list-item:hover {
+  background-color: var(--fg-hover-color);
+  cursor: pointer;
+}
+
+/* Frappe Layout Containers */
+.frappe-card {
+  background-color: var(--card-bg);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--card-shadow);
+  padding: 15px;
+}
+
+/* Fix for icons */
+.frappe-icon,
+svg.lucide {
+  stroke-width: 1.5px !important;
+}
+
+/* Status Colors used by Frappe */
+.bg-red { background: #fef2f2; }
+.text-on-red { color: #b91c1c; }
+
+.bg-orange { background: #fff7ed; }
+.text-on-orange { color: #c2410c; }
+
+.bg-green { background: #ecfdf5; }
+.text-on-green { color: #047857; }
+
+.bg-light-gray { background: #f3f4f6; }
+.text-on-gray { color: #374151; }
