@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "online.creatorconsultant.twa",
+        "sha256_cert_fingerprints": ["0A:39:A9:F4:6A:1E:1A:98:AB:7B:69:0D:DA:7C:5D:7E:CC:EF:72:5E:D3:6F:53:A9:30:1E:67:68:EF:BE:AA:91"]
+      }
+    }]
