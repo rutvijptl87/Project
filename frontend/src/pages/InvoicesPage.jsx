@@ -120,6 +120,7 @@ const InvoicesPage = () => {
   const initialForm = {
     expiry_date: '',
     hsn_code: '998332',
+    po_number: '',
     client_id: '',
     client_name: '',
     client_company: '',
@@ -217,6 +218,7 @@ const InvoicesPage = () => {
     setDraft({
       expiry_date: inv.expiry_date || '',
       hsn_code: inv.hsn_code || '998332',
+      po_number: inv.po_number || '',
       client_id: inv.client_id || '',
       client_name: inv.client_name || '',
       client_company: inv.client_company || '',
@@ -764,6 +766,19 @@ const InvoicesPage = () => {
                       onChange={(e) => handleInputChange('hsn_code', e.target.value)}
                       placeholder="e.g. 998332"
                       data-testid="hsn-code-input"
+                    />
+                  </div>
+
+                  {/* PO Number (optional, alphanumeric — sits between HSN and PAN NO on the PDF) */}
+                  <div>
+                    <label className="label">PO Number</label>
+                    <input
+                      type="text"
+                      className="input font-mono-data"
+                      value={draft.po_number || ''}
+                      onChange={(e) => handleInputChange('po_number', e.target.value)}
+                      placeholder="Optional (e.g. PO/2026/001)"
+                      data-testid="po-number-input"
                     />
                   </div>
 

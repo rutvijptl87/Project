@@ -931,6 +931,7 @@ class InvoiceIn(BaseModel):
     invoice_date: str # "YYYY-MM-DD"
     expiry_date: Optional[str] = ""
     hsn_code: str = "998332"
+    po_number: Optional[str] = ""
     client_id: str
     client_name: str
     client_company: Optional[str] = ""
@@ -3058,6 +3059,86 @@ async def set_audit_offer_series(payload: dict = Body(...)):
         "next_seq": next_seq,
         "next_code": candidate,
     }
+
+
+@api_router.get("/invoices/series/{kind}")
+async def get_invoice_series(kind: str):
+    """Read the numbering config for `proforma` or `tax` invoices."""
+    _deny_engineer()
+    if kind not in ("proforma", "tax"):
+        raise HTTPException(400, "kind must be 'proforma' or 'tax'")
+    cfg = await _invoice_series_config(kind)
+    year = datetime.now(timezone.utc).year
+    counter_id = f"{'proforma_invoice' if kind == 'proforma' else 'tax_invoice'}"
+    if cfg["year_reset"]:
+        counter_id = f"{counter_id}_{year}"
+    doc = await db.counters.find_one({"_id": counter_id})
+    seq = (doc or {}).get("seq", 0)
+    next_seq = seq + 1
+    return {
+        "kind": kind,
+        "year": year,
+        "prefix": cfg["prefix"],
+        "suffix": cfg["suffix"],
+        "pad": cfg["pad"],
+        "year_reset": cfg["year_reset"],
+        "current_seq": seq,
+        "next_seq": next_seq,
+        "next_code": _format_invoice_no(cfg, year, next_seq),
+    }
+
+
+@api_router.put("/invoices/series/{kind}")
+async def set_invoice_series(kind: str, payload: dict = Body(...)):
+    """Admin: update prefix/suffix/pad/year_reset/next_seq for the invoice series."""
+    _require_admin()
+    if kind not in ("proforma", "tax"):
+        raise HTTPException(400, "kind must be 'proforma' or 'tax'")
+    cfg = await _invoice_series_config(kind)
+    new_prefix = str(payload.get("prefix", cfg["prefix"]))
+    new_suffix = str(payload.get("suffix", cfg["suffix"]))
+    try:
+        new_pad = int(payload.get("pad", cfg["pad"]))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "pad must be a positive integer")
+    if new_pad < 1 or new_pad > 6:
+        raise HTTPException(400, "pad must be between 1 and 6")
+    new_year_reset = bool(payload.get("year_reset", cfg["year_reset"]))
+
+    year = datetime.now(timezone.utc).year
+    base_id = "proforma_invoice" if kind == "proforma" else "tax_invoice"
+    counter_id = f"{base_id}_{year}" if new_year_reset else base_id
+    current_doc = await db.counters.find_one({"_id": counter_id})
+    current_seq = (current_doc or {}).get("seq", 0)
+    if "next_seq" in payload:
+        try:
+            next_seq = int(payload["next_seq"])
+        except (TypeError, ValueError):
+            raise HTTPException(400, "next_seq must be a positive integer")
+        if next_seq < 1:
+            raise HTTPException(400, "next_seq must be at least 1")
+    else:
+        next_seq = current_seq + 1
+
+    new_cfg = {"prefix": new_prefix, "suffix": new_suffix, "pad": new_pad, "year_reset": new_year_reset}
+    candidate = _format_invoice_no(new_cfg, year, next_seq)
+    field = "proforma_no" if kind == "proforma" else "invoice_no"
+    clash = await db.invoices.find_one({field: candidate}, {"_id": 0, "id": 1})
+    if clash:
+        raise HTTPException(400, f"Number {candidate} already exists. Pick a different next_seq.")
+
+    await db.settings.update_one(
+        {"_id": f"{kind}_series"},
+        {"$set": new_cfg},
+        upsert=True,
+    )
+    await db.counters.update_one(
+        {"_id": counter_id},
+        {"$set": {"seq": next_seq - 1}},
+        upsert=True,
+    )
+    return {"ok": True, "kind": kind, "next_code": candidate, **new_cfg, "next_seq": next_seq}
+
 
 
 
@@ -8107,26 +8188,57 @@ def num_to_words_indian(number: float) -> str:
     return result + " Only"
 
 
+async def _invoice_series_config(kind: str) -> dict:
+    """Load numbering config for `proforma` or `tax` invoices from `settings`.
+
+    Falls back to the legacy hard-coded defaults so existing deployments
+    keep issuing numbers before an admin opens Settings for the first time.
+    """
+    doc = await db.settings.find_one({"_id": f"{kind}_series"}) or {}
+    if kind == "proforma":
+        default_prefix, default_suffix = "CC > PIC > ", ""
+    else:
+        default_prefix, default_suffix = "CC > ARL > ", ""
+    return {
+        "prefix": doc.get("prefix", default_prefix),
+        "suffix": doc.get("suffix", default_suffix),
+        "pad": int(doc.get("pad") or 3),
+        "year_reset": bool(doc.get("year_reset", False)),
+    }
+
+
+def _format_invoice_no(cfg: dict, year: int, seq: int) -> str:
+    padded = str(seq).zfill(cfg["pad"])
+    body = f"{year}/{padded}" if cfg["year_reset"] else padded
+    return f"{cfg['prefix']}{body}{cfg['suffix']}"
+
+
 async def _next_proforma_no() -> str:
+    cfg = await _invoice_series_config("proforma")
+    year = datetime.now(timezone.utc).year
+    counter_id = f"proforma_invoice_{year}" if cfg["year_reset"] else "proforma_invoice"
     counter = await db.counters.find_one_and_update(
-        {"_id": "proforma_invoice"},
+        {"_id": counter_id},
         {"$inc": {"seq": 1}},
         upsert=True,
         return_document=True,
     )
     seq = (counter or {}).get("seq", 1)
-    return f"CC > PIC > {seq:03d}"
+    return _format_invoice_no(cfg, year, seq)
 
 
 async def _next_tax_invoice_no() -> str:
+    cfg = await _invoice_series_config("tax")
+    year = datetime.now(timezone.utc).year
+    counter_id = f"tax_invoice_{year}" if cfg["year_reset"] else "tax_invoice"
     counter = await db.counters.find_one_and_update(
-        {"_id": "tax_invoice"},
+        {"_id": counter_id},
         {"$inc": {"seq": 1}},
         upsert=True,
         return_document=True,
     )
     seq = (counter or {}).get("seq", 1)
-    return f"CC > ARL > {seq:03d}"
+    return _format_invoice_no(cfg, year, seq)
 
 
 async def _next_quotation_no(job_sub_type: Optional[str] = None) -> str:
@@ -9123,23 +9235,24 @@ async def _build_invoice_document_pdf(invoice: dict) -> bytes:
     c.setLineWidth(1.0)
     c.line(v_split, y_split_line, width - margin, y_split_line)
 
-    # HSN CODE | PAN NO — two sub-columns in lower part of right panel
-    v_pan_split = v_split + (rp_w / 2)
-    # Line removed based on user feedback
-
-    c1_hsn = v_split + 12.5 * mm
-    c2_pan = (width - margin) - 12.5 * mm
+    # HSN CODE | PO NUMBER | PAN NO — three sub-columns in lower part of right panel
+    third = rp_w / 3
+    c1_hsn = v_split + third / 2
+    c2_po = v_split + third + third / 2
+    c3_pan = v_split + 2 * third + third / 2
 
     h2 = header_h - 22 * mm
     y_meta_bottom_top = y_split_line - (h2 / 2 - 2 * mm)
 
     c.setFont("Roboto-Bold", 10)
     c.drawCentredString(c1_hsn, y_meta_bottom_top, "HSN CODE")
-    c.drawCentredString(c2_pan, y_meta_bottom_top, "PAN NO")
+    c.drawCentredString(c2_po, y_meta_bottom_top, "PO NUMBER")
+    c.drawCentredString(c3_pan, y_meta_bottom_top, "PAN NO")
 
     c.setFont("Roboto", 10)
     c.drawCentredString(c1_hsn, y_meta_bottom_top - 5 * mm, invoice.get("hsn_code", "998332"))
-    c.drawCentredString(c2_pan, y_meta_bottom_top - 5 * mm, cd.get("pan", ""))
+    c.drawCentredString(c2_po, y_meta_bottom_top - 5 * mm, invoice.get("po_number", "") or "-")
+    c.drawCentredString(c3_pan, y_meta_bottom_top - 5 * mm, cd.get("pan", ""))
 
     # ── Bill To block ─────────────────────────────────────────────────────
     y_billto = y_header_bottom
@@ -9181,7 +9294,7 @@ async def _build_invoice_document_pdf(invoice: dict) -> bytes:
     c.setFont("Roboto", 9)
     c.drawString(bx, y_billto - 3.5 * mm, "BILL TO")
 
-    c.setFont("Roboto", 8.5)
+    c.setFont("Roboto-Bold", 10)
     if client_company_str and client_company_str != client_name_str:
         c.drawString(bx, y_pos, client_company_str)
     else:
