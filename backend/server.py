@@ -7509,6 +7509,26 @@ class PaginatedTasks(BaseModel):
     total_done: int = 0
     total_cancelled: int = 0
 
+def _assert_can_edit_task(task: dict, user: Optional[dict]):
+    """All staff can VIEW every task, but only the admin, the person the task is
+    assigned to, or the person who created it may change it."""
+    if not user:
+        raise HTTPException(401, "Not authenticated")
+    if user.get("role") == "admin":
+        return
+    uid = user.get("id")
+    allowed_ids = {
+        task.get("assigned_to_user_id"),
+        task.get("assigned_to_accountant_id"),
+        task.get("created_by_user_id"),  # delete this line if the creator should NOT be able to edit
+    }
+    if uid not in allowed_ids:
+        raise HTTPException(
+            403,
+            "This task is assigned to someone else. You can view it, but only the assignee or an admin can change it."
+        )
+
+
 async def _enrich_task(t: dict):
     if t.get("assigned_to_user_id"):
         u = await db.users.find_one({"id": t["assigned_to_user_id"]}, {"_id": 0, "name": 1, "username": 1, "color": 1})
@@ -7538,15 +7558,27 @@ async def _enrich_task(t: dict):
 
 
 @api_router.get("/tasks")
-async def list_tasks(category: Optional[str] = None, project_id: Optional[str] = None):
+async def list_tasks(
+    category: Optional[str] = None,
+    project_id: Optional[str] = None,
+    mine: bool = False,
+    assigned_to: Optional[str] = None,
+):
     user = get_current_user_safe()
     query: dict = {}
-    if user and user.get("role") != "admin":
+    # All staff can see every task. Pass ?mine=true to see only your own,
+    # or ?assigned_to=<user_id> to see one colleague's tasks.
+    if mine and user:
         query["$or"] = [
             {"assigned_to_user_id": user["id"]},
             {"assigned_to_accountant_id": user["id"]}
         ]
-        
+    elif assigned_to:
+        query["$or"] = [
+            {"assigned_to_user_id": assigned_to},
+            {"assigned_to_accountant_id": assigned_to}
+        ]
+
     if category:
         query["category"] = category
     if project_id:
@@ -7566,20 +7598,25 @@ async def list_tasks_paginated(
     category: Optional[str] = None,
     status: Optional[str] = None,
     sort_by: Optional[str] = "created_at",
-    sort_dir: Optional[str] = "desc"
+    sort_dir: Optional[str] = "desc",
+    mine: bool = False,
+    assigned_to: Optional[str] = None
 ):
     skip = (page - 1) * limit
     user = get_current_user_safe()
     base_query: dict = {}
-    if user and user.get("role") != "admin":
+    # All staff can see every task. Pass ?mine=true to see only your own,
+    # or ?assigned_to=<user_id> to see one colleague's tasks.
+    scope_id = user["id"] if (mine and user) else (assigned_to or None)
+    if scope_id:
         base_query["$and"] = base_query.get("$and", [])
         base_query["$and"].append({
             "$or": [
-                {"assigned_to_user_id": user["id"]},
-                {"assigned_to_accountant_id": user["id"]}
+                {"assigned_to_user_id": scope_id},
+                {"assigned_to_accountant_id": scope_id}
             ]
         })
-        
+
     if category:
         base_query["category"] = category
         
@@ -7726,6 +7763,7 @@ async def update_task(task_id: str, data: TaskIn):
     old_task = await db.tasks.find_one({"id": task_id})
     if not old_task:
         raise HTTPException(404, "Task not found")
+    _assert_can_edit_task(old_task, get_current_user_safe())
     if data.assigned_to_user_id:
         if not await db.users.find_one({"id": data.assigned_to_user_id}):
             raise HTTPException(404, "Assigned user not found")
@@ -7802,6 +7840,7 @@ async def update_task_status(task_id: str, data: TaskStatusUpdate):
     t = await db.tasks.find_one({"id": task_id})
     if not t:
         raise HTTPException(404, "Task not found")
+    _assert_can_edit_task(t, get_current_user_safe())
     
     update_fields = {"status": data.status}
     if data.status == "done" and t.get("status") != "done":
@@ -7845,6 +7884,7 @@ async def update_task_phase(task_id: str, data: TaskPhaseUpdate):
     t = await db.tasks.find_one({"id": task_id})
     if not t:
         raise HTTPException(404, "Task not found")
+    _assert_can_edit_task(t, user)
         
     update_fields = {f"{data.phase}_status": data.status}
     
