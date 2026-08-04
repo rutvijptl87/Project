@@ -246,7 +246,13 @@ const EngineeringTasksPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
-  const isRestricted = user?.role === 'account' || user?.role === 'engineer' || user?.role === 'draftsman';
+  // All staff can SEE every task; only admin / the assignee / the creator can change it.
+  const canEdit = (task) => {
+    if (!task) return false;
+    if (user?.role === 'admin') return true;
+    return [task.assigned_to_user_id, task.assigned_to_accountant_id, task.created_by_user_id]
+      .filter(Boolean).includes(user?.id);
+  };
 
   const [tasks, setTasks]       = useState([]);
   const [total, setTotal]       = useState(0);
@@ -515,6 +521,8 @@ const EngineeringTasksPage = () => {
                         }}
                         value={task.status || 'pending'}
                         onChange={(e) => handleStatusChange(task.id, e.target.value)}
+                        disabled={!canEdit(task)}
+                        title={canEdit(task) ? '' : 'Assigned to someone else — view only'}
                       >
                         <option value="pending" style={{ background: '#fff', color: '#991B1B' }}>Pending</option>
                         <option value="in progress" style={{ background: '#fff', color: '#1D4ED8' }}>In Progress</option>
@@ -526,8 +534,9 @@ const EngineeringTasksPage = () => {
                       <div className="flex items-center justify-center gap-2">
                         <button 
                           onClick={() => { setEditing(task); setModalOpen(true); }} 
-                          className="p-1.5 rounded text-blue-600 hover:bg-blue-50 transition-colors" 
-                          title="Edit"
+                          disabled={!canEdit(task)}
+                          className={`p-1.5 rounded transition-colors ${canEdit(task) ? 'text-blue-600 hover:bg-blue-50' : 'text-gray-300 cursor-not-allowed'}`}
+                          title={canEdit(task) ? 'Edit' : 'Assigned to someone else — view only'}
                         >
                           <Pencil size={15} />
                         </button>

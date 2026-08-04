@@ -65,7 +65,13 @@ const ExpandableDescription = ({ text }) => {
 const StructuralAuditTasksPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const isRestricted = user?.role === 'account' || user?.role === 'engineer' || user?.role === 'draftsman';
+  // All staff can SEE every task; only admin / the assignee / the creator can change it.
+  const canEdit = (task) => {
+    if (!task) return false;
+    if (user?.role === 'admin') return true;
+    return [task.assigned_to_user_id, task.assigned_to_accountant_id, task.created_by_user_id]
+      .filter(Boolean).includes(user?.id);
+  };
 
   const [tasks, setTasks]       = useState([]);
   const [total, setTotal]       = useState(0);
@@ -373,7 +379,7 @@ const StructuralAuditTasksPage = () => {
                           <select
                             value={task.site_visit_status || 'todo'}
                             onChange={(e) => updateTaskPhase(task.id, 'site_visit', e.target.value)}
-                            disabled={user?.role !== 'admin' && user?.role !== 'engineer'}
+                            disabled={!canEdit(task) || (user?.role !== 'admin' && user?.role !== 'engineer')}
                             className="text-[10px] font-semibold py-0.5 pl-1.5 pr-4 rounded border appearance-none outline-none cursor-pointer focus:ring-1 focus:ring-offset-0 transition-all bg-gray-50"
                             style={{
                               backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='gray'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
@@ -398,7 +404,7 @@ const StructuralAuditTasksPage = () => {
                           <select
                             value={task.preparation_status || 'todo'}
                             onChange={(e) => updateTaskPhase(task.id, 'preparation', e.target.value)}
-                            disabled={user?.role !== 'admin' && user?.role !== 'engineer'}
+                            disabled={!canEdit(task) || (user?.role !== 'admin' && user?.role !== 'engineer')}
                             className="text-[10px] font-semibold py-0.5 pl-1.5 pr-4 rounded border appearance-none outline-none cursor-pointer focus:ring-1 focus:ring-offset-0 transition-all bg-gray-50"
                             style={{
                               backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='gray'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
@@ -423,7 +429,7 @@ const StructuralAuditTasksPage = () => {
                           <select
                             value={task.submission_status || 'todo'}
                             onChange={(e) => updateTaskPhase(task.id, 'submission', e.target.value)}
-                            disabled={user?.role !== 'admin' && user?.role !== 'account'}
+                            disabled={!canEdit(task) || (user?.role !== 'admin' && user?.role !== 'account')}
                             className="text-[10px] font-semibold py-0.5 pl-1.5 pr-4 rounded border appearance-none outline-none cursor-pointer focus:ring-1 focus:ring-offset-0 transition-all bg-gray-50"
                             style={{
                               backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='gray'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
@@ -464,8 +470,9 @@ const StructuralAuditTasksPage = () => {
                           <>
                             <button 
                               onClick={() => openEdit(task)} 
-                              className="p-1.5 rounded text-blue-600 hover:bg-blue-50 transition-colors" 
-                              title="Edit"
+                              disabled={!canEdit(task)}
+                              className={`p-1.5 rounded transition-colors ${canEdit(task) ? 'text-blue-600 hover:bg-blue-50' : 'text-gray-300 cursor-not-allowed'}`}
+                              title={canEdit(task) ? 'Edit' : 'Assigned to someone else — view only'}
                             >
                               <Pencil size={15} />
                             </button>
