@@ -7,8 +7,7 @@ import SearchableSelect from '../components/SearchableSelect';
 import Pagination from '../components/Pagination';
 import {
   Plus, Trash2, CheckSquare, Square, Calculator, Pencil, ArrowLeft, Search, Filter,
-  ArrowUpDown, ArrowUp, ArrowDown
-, X } from 'lucide-react';
+  ArrowUpDown, ArrowUp, ArrowDown, Eye, X } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { toast } from 'react-toastify';
 
@@ -63,7 +62,11 @@ const emptyForm = {
   contact_name: '', contact_no: '', follow_up_date: '', assigned_to_user_id: '',
 };
 
-const TaskFormModal = ({ open, onClose, onSaved, editing, users, projects, audits, currentUser }) => {
+const TaskFormModal = ({ open, onClose, onSaved, editing, users = [], projects = [], audits = [], currentUser }) => {
+  const projectList = Array.isArray(projects) ? projects : (projects?.data || []);
+  const auditList = Array.isArray(audits) ? audits : (audits?.data || []);
+  const userList = Array.isArray(users) ? users : (users?.data || []);
+
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -98,12 +101,12 @@ const TaskFormModal = ({ open, onClose, onSaved, editing, users, projects, audit
       if (val.startsWith('proj_')) {
         const pid = val.replace('proj_', '');
         nf.project_id = pid;
-        const proj = projects.find((p) => p.id === pid);
+        const proj = projectList.find((p) => p.id === pid);
         if (proj) nf.site_location = proj.site_location || '';
       } else if (val.startsWith('audit_')) {
         const aid = val.replace('audit_', '');
         nf.audit_id = aid;
-        const aud = audits.find((a) => a.id === aid);
+        const aud = auditList.find((a) => a.id === aid);
         if (aud) nf.site_location = aud.address || '';
       }
       return nf;
@@ -111,11 +114,11 @@ const TaskFormModal = ({ open, onClose, onSaved, editing, users, projects, audit
   };
 
   const combinedOptions = [
-    ...projects.map(p => ({
+    ...projectList.map(p => ({
       value: `proj_${p.id}`,
       label: p.job_no ? `(Project) ${p.job_no} – ${p.name}` : `(Project) ${p.project_code} – ${p.name}`
     })),
-    ...audits.map(a => ({
+    ...auditList.map(a => ({
       value: `audit_${a.id}`,
       label: `(Audit) ${a.audit_offer || a.audit_code}`
     }))
@@ -250,7 +253,7 @@ const TaskFormModal = ({ open, onClose, onSaved, editing, users, projects, audit
             <label className="label">Assign To <span style={{ color: '#DC2626' }}>*</span></label>
             <select className="select" value={form.assigned_to_user_id} onChange={(e) => set('assigned_to_user_id', e.target.value)} data-testid="acc-task-assignee">
               <option value="">— Unassigned —</option>
-              {users.filter(u => u.role === 'admin' || u.role === 'account').map((u) => (
+              {userList.filter(u => u.role === 'admin' || u.role === 'account' || u.role === 'accountant').map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.username}
                 </option>
@@ -293,6 +296,7 @@ const AccountingTasksPage = () => {
   const [loading, setLoading]   = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [viewTask, setViewTask] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing]     = useState(null);
   const [statusFilters, setStatusFilters] = useState([]);
@@ -518,74 +522,88 @@ const AccountingTasksPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {sortedTasks.map((task, idx) => (
-                  <tr key={task.id} style={{ opacity: task.status === 'done' || task.status === 'cancelled' ? 0.55 : 1, transition: 'opacity 0.2s' }} data-testid={`acc-task-row-${task.id}`}>
-                    <td className="font-mono-data text-xs text-center hidden sm:table-cell" style={{ color: 'var(--cc-text-muted)' }}>{(page - 1) * limit + idx + 1}</td>
-                    <td className="hidden md:table-cell">
-                      <div className="font-mono-data text-xs font-medium" style={{ color: 'var(--cc-dark-green)' }}>{task.project_code || '—'}</div>
-                      {task.audit_code && <div className="text-xs" style={{ color: 'var(--cc-text-muted)' }}>{task.audit_code}</div>}
-                    </td>
-                    <td className="hidden lg:table-cell"><div className="text-xs max-w-[180px]">{task.site_location || <span style={{ color: 'var(--cc-text-muted)' }}>—</span>}</div></td>
-                    <td className="hidden lg:table-cell font-mono-data text-xs">{task.contact_name || <span style={{ color: 'var(--cc-text-muted)' }}>—</span>}</td>
-                    <td className="hidden lg:table-cell font-mono-data text-xs">{task.contact_no || <span style={{ color: 'var(--cc-text-muted)' }}>—</span>}</td>
-                    <td>
-                      <div className="font-medium text-sm leading-snug" style={{ color: 'var(--cc-text)' }}>{task.work || <span style={{ color: 'var(--cc-text-muted)', fontStyle: 'italic' }}>No work title</span>}</div>
-                      <ExpandableDescription text={task.notes} />
-                    </td>
-                    <td className="font-mono-data text-xs hidden md:table-cell" style={{ color: 'var(--cc-text-muted)' }}>
-                      {task.created_at ? new Date(task.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                    </td>
-                    <td className="font-mono-data text-xs" style={{ color: 'var(--cc-text-muted)' }}>
-                      {task.follow_up_date ? new Date(task.follow_up_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                    </td>
-                    <td className="hidden md:table-cell" style={{ color: 'var(--cc-text-muted)', fontSize: 12 }}>
-                      {task.created_by_username || '—'}
-                    </td>
-                    <td className="hidden md:table-cell"><AssigneeChip task={task} /></td>
-                    <td className="text-center">
-                      <select 
-                        className="text-xs font-semibold py-1 pl-2 pr-6 rounded-full border appearance-none outline-none cursor-pointer focus:ring-2 focus:ring-offset-1 transition-all shadow-sm"
-                        style={{
-                          ...((task.status === 'done') ? { background: '#D1FAE5', color: '#065F46', borderColor: '#34D399' } : 
-                              (task.status === 'follow up required') ? { background: '#DBEAFE', color: '#1D4ED8', borderColor: '#93C5FD' } :
-                              (task.status === 'cancelled') ? { background: '#F3F4F6', color: '#374151', borderColor: '#D1D5DB' } :
-                              { background: '#FEF2F2', color: '#991B1B', borderColor: '#F87171' }),
-                          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='currentColor'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
-                          backgroundRepeat: 'no-repeat',
-                          backgroundPosition: 'right 0.4rem center',
-                          backgroundSize: '0.8em 0.8em',
-                        }}
-                        value={task.status || 'pending'}
-                        onChange={(e) => handleStatusChange(task.id, e.target.value)}
-                      >
-                        <option value="pending" style={{ background: '#fff', color: '#991B1B' }}>Pending</option>
-                        <option value="follow up required" style={{ background: '#fff', color: '#1D4ED8' }}>Follow Up Required</option>
-                        <option value="done" style={{ background: '#fff', color: '#065F46' }}>Done</option>
-                        <option value="cancelled" style={{ background: '#fff', color: '#374151' }}>Cancelled</option>
-                      </select>
-                    </td>
-                    <td>
-                      <div className="flex items-center justify-center gap-2">
-                        <button 
-                          onClick={() => { setEditing(task); setModalOpen(true); }} 
-                          className="p-1.5 rounded text-blue-600 hover:bg-blue-50 transition-colors" 
-                          title="Edit"
+                {sortedTasks.map((task, idx) => {
+                  const canEdit = isAdmin || task.assigned_to_accountant_id === user?.id || task.assigned_to_user_id === user?.id || task.created_by_user_id === user?.id || (!task.assigned_to_accountant_id && !task.assigned_to_user_id);
+                  return (
+                    <tr key={task.id} style={{ opacity: task.status === 'done' || task.status === 'cancelled' ? 0.55 : 1, transition: 'opacity 0.2s' }} data-testid={`acc-task-row-${task.id}`}>
+                      <td className="font-mono-data text-xs text-center hidden sm:table-cell" style={{ color: 'var(--cc-text-muted)' }}>{(page - 1) * limit + idx + 1}</td>
+                      <td className="hidden md:table-cell">
+                        <div className="font-mono-data text-xs font-medium" style={{ color: 'var(--cc-dark-green)' }}>{task.project_code || '—'}</div>
+                        {task.audit_code && <div className="text-xs" style={{ color: 'var(--cc-text-muted)' }}>{task.audit_code}</div>}
+                      </td>
+                      <td className="hidden lg:table-cell"><div className="text-xs max-w-[180px]">{task.site_location || <span style={{ color: 'var(--cc-text-muted)' }}>—</span>}</div></td>
+                      <td className="hidden lg:table-cell font-mono-data text-xs">{task.contact_name || <span style={{ color: 'var(--cc-text-muted)' }}>—</span>}</td>
+                      <td className="hidden lg:table-cell font-mono-data text-xs">{task.contact_no || <span style={{ color: 'var(--cc-text-muted)' }}>—</span>}</td>
+                      <td>
+                        <div className="font-medium text-sm leading-snug" style={{ color: 'var(--cc-text)' }}>{task.work || <span style={{ color: 'var(--cc-text-muted)', fontStyle: 'italic' }}>No work title</span>}</div>
+                        <ExpandableDescription text={task.notes} />
+                      </td>
+                      <td className="font-mono-data text-xs hidden md:table-cell" style={{ color: 'var(--cc-text-muted)' }}>
+                        {task.created_at ? new Date(task.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                      </td>
+                      <td className="font-mono-data text-xs" style={{ color: 'var(--cc-text-muted)' }}>
+                        {task.follow_up_date ? new Date(task.follow_up_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                      </td>
+                      <td className="hidden md:table-cell" style={{ color: 'var(--cc-text-muted)', fontSize: 12 }}>
+                        {task.created_by_username || '—'}
+                      </td>
+                      <td className="hidden md:table-cell"><AssigneeChip task={task} /></td>
+                      <td className="text-center">
+                        <select 
+                          disabled={!canEdit}
+                          title={!canEdit ? "Read-only: Assigned to another user" : "Change Status"}
+                          className={`text-xs font-semibold py-1 pl-2 pr-6 rounded-full border appearance-none outline-none transition-all shadow-sm ${!canEdit ? 'cursor-not-allowed opacity-75' : 'cursor-pointer focus:ring-2 focus:ring-offset-1'}`}
+                          style={{
+                            ...((task.status === 'done') ? { background: '#D1FAE5', color: '#065F46', borderColor: '#34D399' } : 
+                                (task.status === 'follow up required') ? { background: '#DBEAFE', color: '#1D4ED8', borderColor: '#93C5FD' } :
+                                (task.status === 'cancelled') ? { background: '#F3F4F6', color: '#374151', borderColor: '#D1D5DB' } :
+                                { background: '#FEF2F2', color: '#991B1B', borderColor: '#F87171' }),
+                            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='currentColor'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
+                            backgroundRepeat: 'no-repeat',
+                            backgroundPosition: 'right 0.4rem center',
+                            backgroundSize: '0.8em 0.8em',
+                          }}
+                          value={task.status || 'pending'}
+                          onChange={(e) => handleStatusChange(task.id, e.target.value)}
                         >
-                          <Pencil size={15} />
-                        </button>
-                        {user?.role !== 'draftsman' && (
+                          <option value="pending" style={{ background: '#fff', color: '#991B1B' }}>Pending</option>
+                          <option value="follow up required" style={{ background: '#fff', color: '#1D4ED8' }}>Follow Up Required</option>
+                          <option value="done" style={{ background: '#fff', color: '#065F46' }}>Done</option>
+                          <option value="cancelled" style={{ background: '#fff', color: '#374151' }}>Cancelled</option>
+                        </select>
+                      </td>
+                      <td>
+                        <div className="flex items-center justify-center gap-2">
                           <button 
-                            onClick={() => handleDelete(task)} 
-                            className="p-1.5 rounded text-red-600 hover:bg-red-50 transition-colors" 
-                            title="Delete"
+                            onClick={() => setViewTask(task)} 
+                            className="p-1.5 rounded text-gray-500 hover:bg-gray-100 transition-colors" 
+                            title="View Details"
                           >
-                            <Trash2 size={15} />
+                            <Eye size={15} />
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          {canEdit && (
+                            <button 
+                              onClick={() => { setEditing(task); setModalOpen(true); }} 
+                              className="p-1.5 rounded text-blue-600 hover:bg-blue-50 transition-colors" 
+                              title="Edit"
+                            >
+                              <Pencil size={15} />
+                            </button>
+                          )}
+                          {isAdmin && (
+                            <button 
+                              onClick={() => handleDelete(task)} 
+                              className="p-1.5 rounded text-red-600 hover:bg-red-50 transition-colors" 
+                              title="Delete"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -594,6 +612,85 @@ const AccountingTasksPage = () => {
           </div>
         </div>
       )}
+
+      {/* View Task Modal */}
+      <Modal open={!!viewTask} onClose={() => setViewTask(null)} title="Task Details">
+        {viewTask && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4 border-b pb-4" style={{ borderColor: 'var(--cc-border)' }}>
+              <div>
+                <div className="text-xs font-semibold mb-1 text-gray-500">Project / Audit</div>
+                <div className="font-medium text-emerald-800">{viewTask.project_code || viewTask.audit_code || '—'}</div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold mb-1 text-gray-500">Site Location</div>
+                <div className="text-sm font-medium">{viewTask.site_location || '—'}</div>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4 border-b pb-4" style={{ borderColor: 'var(--cc-border)' }}>
+              <div>
+                <div className="text-xs font-semibold mb-1 text-gray-500">Contact Name</div>
+                <div className="text-sm">{viewTask.contact_name || '—'}</div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold mb-1 text-gray-500">Contact No.</div>
+                <div className="text-sm">{viewTask.contact_no || '—'}</div>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-xs font-semibold mb-1 text-gray-500">Work</div>
+              <div className="text-sm font-bold">{viewTask.work || '—'}</div>
+            </div>
+
+            {viewTask.notes && (
+              <div>
+                <div className="text-xs font-semibold mb-1 text-gray-500">Notes</div>
+                <div className="text-sm bg-gray-50 p-3 rounded">{viewTask.notes}</div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4 border-b pb-4" style={{ borderColor: 'var(--cc-border)' }}>
+              <div>
+                <div className="text-xs font-semibold mb-1 text-gray-500">Assign Date</div>
+                <div className="text-sm">{viewTask.created_at ? new Date(viewTask.created_at).toLocaleDateString() : '—'}</div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold mb-1 text-gray-500">Follow Up Date</div>
+                <div className="text-sm">{viewTask.follow_up_date ? new Date(viewTask.follow_up_date).toLocaleDateString() : '—'}</div>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-xs font-semibold mb-1 text-gray-500">Assignments & Status</div>
+              <div className="flex flex-col gap-2 bg-gray-50 p-3 rounded">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-gray-500 w-24">Assign By:</span>
+                  <span className="text-sm">{viewTask.created_by_username || '—'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-gray-500 w-24">Assign To:</span>
+                  <AssigneeChip task={viewTask} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-gray-500 w-24">Status:</span>
+                  <span className="text-xs font-bold uppercase px-2 py-0.5 rounded" style={
+                    viewTask.status === 'done' ? { background: '#D1FAE5', color: '#065F46' } :
+                    viewTask.status === 'follow up required' ? { background: '#DBEAFE', color: '#1D4ED8' } :
+                    viewTask.status === 'cancelled' ? { background: '#F3F4F6', color: '#374151' } :
+                    { background: '#FEF2F2', color: '#991B1B' }
+                  }>{viewTask.status || 'pending'}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button onClick={() => setViewTask(null)} className="btn btn-outline">Close</button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Modal */}
       <TaskFormModal

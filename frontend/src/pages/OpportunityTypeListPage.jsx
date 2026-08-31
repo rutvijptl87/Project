@@ -16,8 +16,7 @@ const OpportunityTypeListPage = () => {
     
     try {
       // Convert component name to endpoint by taking the prefix
-      const routePrefix = window.location.pathname; 
-      await api.delete(`${routePrefix}/${item.id}`);
+      await api.delete(`/opportunity-types/${item.id}`);
       toast.success('Deleted successfully');
       load();
     } catch (err) {
@@ -46,8 +45,7 @@ const OpportunityTypeListPage = () => {
 
   const handleBulkDelete = async () => {
     try {
-      const routePrefix = window.location.pathname;
-      const results = await Promise.allSettled(selectedItems.map(id => api.delete(`${routePrefix}/${encodeURIComponent(id)}`)));
+      const results = await Promise.allSettled(selectedItems.map(id => api.delete(`/opportunity-types/${encodeURIComponent(id)}`)));
       
       const successful = results.filter(r => r.status === 'fulfilled');
       const failed = results.filter(r => r.status === 'rejected');

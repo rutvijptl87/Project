@@ -45,7 +45,8 @@ const emptyAudit = {
   file_path: '',
 };
 
-const StructuralAuditTaskModal = ({ open, onClose, audit, users, onSave }) => {
+const StructuralAuditTaskModal = ({ open, onClose, audit, users = [], onSave }) => {
+  const userList = Array.isArray(users) ? users : (users?.data || []);
   const [form, setForm] = useState({
     audit_offer_no: '',
     description: '',
@@ -109,7 +110,7 @@ const StructuralAuditTaskModal = ({ open, onClose, audit, users, onSave }) => {
             <label className="label">Assign Engineer</label>
             <select className="select" value={form.assigned_to_user_id} onChange={(e) => setForm({ ...form, assigned_to_user_id: e.target.value })}>
               <option value="">— Unassigned —</option>
-              {users.filter(u => ['admin', 'engineer'].includes(u.role)).map(u => (
+              {userList.filter(u => ['admin', 'engineer', 'draftsman'].includes(u.role)).map(u => (
                 <option key={u.id} value={u.id}>{u.username}</option>
               ))}
             </select>
@@ -118,7 +119,7 @@ const StructuralAuditTaskModal = ({ open, onClose, audit, users, onSave }) => {
             <label className="label">Assign Accountant</label>
             <select className="select" value={form.assigned_to_accountant_id} onChange={(e) => setForm({ ...form, assigned_to_accountant_id: e.target.value })}>
               <option value="">— Unassigned —</option>
-              {users.filter(u => ['admin', 'account'].includes(u.role)).map(u => (
+              {userList.filter(u => ['admin', 'account', 'accountant'].includes(u.role)).map(u => (
                 <option key={u.id} value={u.id}>{u.username}</option>
               ))}
             </select>

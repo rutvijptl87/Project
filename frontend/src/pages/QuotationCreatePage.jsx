@@ -29,6 +29,30 @@ import { toast } from 'react-toastify';
 import { formatINR } from '../lib/format';
 import { formatDistanceToNow } from 'date-fns';
 
+const getImageUrl = (url) => {
+  if (!url) return '';
+  if (url.startsWith('data:') || url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  let path = url;
+  if (!path.startsWith('/') && !path.startsWith('api/')) {
+    path = `/api/uploads/test-images/${path}`;
+  } else if (path.startsWith('api/')) {
+    path = `/${path}`;
+  }
+  const backendUrl = (process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '');
+  if (backendUrl) {
+    return `${backendUrl}${path}`;
+  }
+  if (typeof window !== 'undefined' && window.location) {
+    const { protocol, hostname, port } = window.location;
+    if (port === '3000') {
+      return `${protocol}//${hostname}:8000${path}`;
+    }
+  }
+  return path;
+};
+
 // Scaled Print Preview — fits the 794px template into any container width using CSS transform
 const TEMPLATE_WIDTH = 794;
 const ScaledPrintPreview = ({ children }) => {
@@ -40,33 +64,48 @@ const ScaledPrintPreview = ({ children }) => {
   const updateScale = useCallback(() => {
     if (containerRef.current && innerRef.current) {
       const available = containerRef.current.clientWidth;
-      const newScale = Math.min(1, available / TEMPLATE_WIDTH);
-      setScale(newScale);
-      // After scaling, compute the rendered height of the inner content
-      const naturalHeight = innerRef.current.scrollHeight;
-      setScaledHeight(naturalHeight * newScale);
+      if (available > 0) {
+        const targetWidth = Math.min(TEMPLATE_WIDTH, available - 32);
+        const newScale = Math.max(0.3, Math.min(1, targetWidth / TEMPLATE_WIDTH));
+        setScale(newScale);
+        const naturalHeight = innerRef.current.scrollHeight;
+        setScaledHeight(naturalHeight * newScale);
+      }
     }
   }, []);
 
   useEffect(() => {
-    // Small delay to let the content render before measuring
+    updateScale();
     const timer = setTimeout(updateScale, 100);
-    const ro = new ResizeObserver(updateScale);
+    const timer2 = setTimeout(updateScale, 500);
+    const ro = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateScale);
+    });
     if (containerRef.current) ro.observe(containerRef.current);
-    return () => { clearTimeout(timer); ro.disconnect(); };
+    if (innerRef.current) ro.observe(innerRef.current);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(timer2);
+      ro.disconnect();
+    };
   }, [updateScale]);
 
   return (
-    <div ref={containerRef} className="w-full" style={{ height: scaledHeight !== 'auto' ? `${scaledHeight}px` : 'auto', position: 'relative' }}>
+    <div
+      ref={containerRef}
+      className="w-full relative flex justify-center py-4"
+      style={{
+        height: scaledHeight !== 'auto' ? `${scaledHeight + 32}px` : 'auto',
+      }}
+    >
       <div
         ref={innerRef}
         style={{
           transform: `scale(${scale})`,
-          transformOrigin: 'top left',
+          transformOrigin: 'top center',
           width: `${TEMPLATE_WIDTH}px`,
           position: 'absolute',
-          top: 0,
-          left: 0,
+          top: '16px',
         }}
       >
         {children}
@@ -767,19 +806,30 @@ const QuotationCreatePage = () => {
 
   // Effect: When payment_terms_template changes, update payment_schedule
   useEffect(() => {
-    if (!form.payment_terms_template || isEdit) return;
-    const template = paymentTermsTemplates.find(t => t.template_name === form.payment_terms_template);
-    if (template && template.terms) {
-      updateForm('payment_schedule', template.terms.map(t => ({
-        payment_term: t.payment_term,
-        description: t.description,
-        invoice_portion: t.invoice_portion,
-        due_date_based_on: t.due_date_based_on,
-        credit_days: t.credit_days,
-        payment_amount: 0
-      })));
+    if (!form.payment_terms_template) return;
+    const template = paymentTermsTemplates.find(t => 
+      t.template_name === form.payment_terms_template || 
+      t.name === form.payment_terms_template || 
+      t.id === form.payment_terms_template
+    );
+    if (template) {
+      const termsList = template.terms || template.schedule || [];
+      const totalAmount = calculations?.finalTotal || calculations?.grandTotal || 0;
+      updateForm('payment_schedule', termsList.map(t => {
+        const portion = Number(t.invoice_portion) || 0;
+        const amt = totalAmount > 0 ? (portion / 100) * totalAmount : 0;
+        return {
+          payment_term: t.payment_term || t.payment_term_name || t.name || '',
+          description: t.description || '',
+          due_date: t.due_date || '',
+          invoice_portion: portion,
+          due_date_based_on: t.due_date_based_on || 'Day(s) after invoice date',
+          credit_days: t.credit_days || 0,
+          payment_amount: Number(amt.toFixed(2))
+        };
+      }));
     }
-  }, [form.payment_terms_template, isEdit, paymentTermsTemplates]);
+  }, [form.payment_terms_template, paymentTermsTemplates]);
 
   // Effect: When tc_name changes, update terms
   useEffect(() => {
@@ -892,15 +942,14 @@ const QuotationCreatePage = () => {
     const newSchedule = [...form.payment_schedule];
     newSchedule[index] = { ...newSchedule[index], [key]: val };
     
+    const totalAmount = calculations?.finalTotal || calculations?.grandTotal || 0;
     if (key === 'invoice_portion') {
       const portion = Number(val) || 0;
-      const grandTotal = calculations?.grandTotal || 0;
-      newSchedule[index].payment_amount = Number(((portion / 100) * grandTotal).toFixed(2));
+      newSchedule[index].payment_amount = Number(((portion / 100) * totalAmount).toFixed(2));
     } else if (key === 'payment_amount') {
       const amt = Number(val) || 0;
-      const grandTotal = calculations?.grandTotal || 0;
-      if (grandTotal > 0) {
-        newSchedule[index].invoice_portion = Number(((amt / grandTotal) * 100).toFixed(2));
+      if (totalAmount > 0) {
+        newSchedule[index].invoice_portion = Number(((amt / totalAmount) * 100).toFixed(2));
       }
     }
     
@@ -1167,17 +1216,17 @@ const QuotationCreatePage = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.items, form.taxes, form.disable_rounded_total, taxCategories, form.tax_category]);
 
-  // Effect: Sync payment schedule amounts when grandTotal changes
+  // Effect: Sync payment schedule amounts when total amount changes
   useEffect(() => {
-    if (form.payment_schedule && calculations?.grandTotal !== undefined) {
-      const grandTotal = calculations.grandTotal;
+    const totalAmount = calculations?.finalTotal || calculations?.grandTotal || 0;
+    if (form.payment_schedule && form.payment_schedule.length > 0 && totalAmount > 0) {
       let changed = false;
       const newSchedule = form.payment_schedule.map(schedule => {
         const portion = Number(schedule.invoice_portion) || 0;
-        const newAmount = Number(((portion / 100) * grandTotal).toFixed(2));
-        if (newAmount !== Number(schedule.payment_amount)) {
+        const expectedAmount = Number(((portion / 100) * totalAmount).toFixed(2));
+        if (Number(schedule.payment_amount) !== expectedAmount && portion > 0) {
           changed = true;
-          return { ...schedule, payment_amount: newAmount };
+          return { ...schedule, payment_amount: expectedAmount };
         }
         return schedule;
       });
@@ -1185,7 +1234,7 @@ const QuotationCreatePage = () => {
         setForm(prev => ({ ...prev, payment_schedule: newSchedule }));
       }
     }
-  }, [calculations?.grandTotal, form.payment_schedule]);
+  }, [calculations?.finalTotal, calculations?.grandTotal]);
 
 
   
@@ -1210,9 +1259,12 @@ const QuotationCreatePage = () => {
 
   
   const updateTestRow = (index, field, value) => {
-    const newTests = [...form.test_details];
-    newTests[index][field] = value;
-    updateForm('test_details', newTests);
+    setForm(prev => {
+      const newTests = (prev.test_details || []).map((t, i) =>
+        i === index ? { ...t, [field]: value } : t
+      );
+      return { ...prev, test_details: newTests };
+    });
   };
 
   const handleTestImageUpload = (index) => {
@@ -1220,24 +1272,24 @@ const QuotationCreatePage = () => {
     input.type = 'file';
     input.accept = 'image/*';
     input.onchange = (e) => {
-      const file = e.target.files[0];
+      const file = e.target.files?.[0];
       if (file) {
         const reader = new FileReader();
-        reader.onload = async (e) => {
-            const base64Data = e.target.result;
-            try {
-                const res = await api.post('/test-images/upload', {
-                    filename: file.name,
-                    base64: base64Data
-                });
-                if (res.data && res.data.url) {
-                    updateTestRow(index, 'test_image', res.data.url);
-                    import('react-toastify').then(m => m.toast.success('Image attached successfully'));
-                }
-            } catch (err) {
-                console.error(err);
-                import('react-toastify').then(m => m.toast.error('Failed to upload image'));
+        reader.onload = async (ev) => {
+          const base64Data = ev.target.result;
+          try {
+            const res = await api.post('/test-images/upload', {
+              filename: file.name,
+              base64: base64Data
+            });
+            if (res.data && res.data.url) {
+              updateTestRow(index, 'test_image', res.data.url);
+              toast.success('Image attached successfully');
             }
+          } catch (err) {
+            console.error(err);
+            toast.error('Failed to upload image');
+          }
         };
         reader.readAsDataURL(file);
       }
@@ -1980,11 +2032,7 @@ const QuotationCreatePage = () => {
                               <input 
                                 type="text" 
                                 value={test.test_name} 
-                                onChange={e => {
-                                  const newTests = [...form.test_details];
-                                  newTests[index].test_name = e.target.value;
-                                  updateForm('test_details', newTests);
-                                }}
+                                onChange={e => updateTestRow(index, 'test_name', e.target.value)}
                                 className="w-full bg-transparent border-0 focus:ring-0 p-0 text-[13px] font-medium text-gray-800" 
                                 placeholder="Test name"
                                 disabled={isReadOnly}
@@ -1994,11 +2042,7 @@ const QuotationCreatePage = () => {
                               <input 
                                 type="number" 
                                 value={test.points} 
-                                onChange={e => {
-                                  const newTests = [...form.test_details];
-                                  newTests[index].points = Number(e.target.value);
-                                  updateForm('test_details', newTests);
-                                }}
+                                onChange={e => updateTestRow(index, 'points', e.target.value)}
                                 className="w-full bg-transparent border-0 focus:ring-0 p-0 text-[13px] font-medium text-gray-800 text-right" 
                                 disabled={isReadOnly}
                               />
@@ -2648,7 +2692,7 @@ const QuotationCreatePage = () => {
       {/* Preview Modal */}
       {isPreviewMode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-75 p-2 sm:p-6 overflow-hidden">
-          <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl h-full flex flex-col">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl h-full flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-3 sm:px-6 py-3 border-b border-gray-100 shrink-0">
               <h2 className="text-base sm:text-lg font-semibold text-gray-900">Preview</h2>
               <div className="flex items-center gap-2 sm:gap-3">
@@ -2672,8 +2716,8 @@ const QuotationCreatePage = () => {
                 )}
               </div>
             </div>
-            <div className="overflow-y-auto bg-gray-100 flex-1 p-3 sm:p-6">
-              <div className="bg-white shadow-sm border border-gray-200 rounded-lg p-3 sm:p-6 mx-auto w-full" style={{ maxWidth: '900px' }}>
+            <div className="overflow-y-auto overflow-x-hidden bg-gray-100 flex-1 p-3 sm:p-6 flex justify-center">
+              <div className="w-full flex justify-center max-w-4xl">
                 <ScaledPrintPreview>
                   <QuotationPrintTemplate
                     form={{...form, grand_total: calculations.grandTotal, total_taxes_and_charges: calculations.totalTaxAmount, amount_in_words: calculations.inWords}}
@@ -2850,11 +2894,7 @@ const QuotationCreatePage = () => {
                   <input 
                     type="text" 
                     value={form.test_details[showTestRowModal]?.test_name || ''} 
-                    onChange={e => {
-                      const newTests = [...form.test_details];
-                      newTests[showTestRowModal].test_name = e.target.value;
-                      updateForm('test_details', newTests);
-                    }} 
+                    onChange={e => updateTestRow(showTestRowModal, 'test_name', e.target.value)} 
                     disabled={isReadOnly}
                     className="w-full bg-white border border-gray-200 rounded px-3 py-2 text-[13px] text-gray-900 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none" 
                   />
@@ -2864,11 +2904,7 @@ const QuotationCreatePage = () => {
                   <input 
                     type="text" 
                     value={form.test_details[showTestRowModal]?.points || ''} 
-                    onChange={e => {
-                      const newTests = [...form.test_details];
-                      newTests[showTestRowModal].points = e.target.value;
-                      updateForm('test_details', newTests);
-                    }} 
+                    onChange={e => updateTestRow(showTestRowModal, 'points', e.target.value)} 
                     disabled={isReadOnly}
                     className="w-full bg-gray-50/50 border border-gray-200 rounded px-3 py-2 text-[13px] text-gray-900 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none" 
                   />
@@ -2876,17 +2912,43 @@ const QuotationCreatePage = () => {
                 
                 <div className="mb-4">
                   <label className="text-[12px] text-gray-600 mb-1 font-medium block">Test Image</label>
-                  <button 
-                    onClick={() => handleTestImageUpload(showTestRowModal)}
-                    disabled={isReadOnly}
-                    className="px-3 py-1.5 text-[12px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded transition-colors disabled:opacity-50"
-                  >
-                    Attach
-                  </button>
-                  {form.test_details[showTestRowModal]?.test_image && (
-                      <div className="mt-2 text-[12px] text-blue-600 hover:underline cursor-pointer flex items-center gap-1" onClick={() => window.open(form.test_details[showTestRowModal].test_image, '_blank')}>
-                         <FileText size={14}/> Attached Image
+                  {form.test_details[showTestRowModal]?.test_image ? (
+                    <div className="flex items-center gap-3 mt-1.5 p-2 bg-gray-50 border border-gray-200 rounded-md">
+                      <div className="relative w-20 h-20 border border-gray-300 rounded overflow-hidden bg-white flex items-center justify-center flex-shrink-0">
+                        <img 
+                          src={getImageUrl(form.test_details[showTestRowModal].test_image)} 
+                          alt="Test" 
+                          className="w-full h-full object-cover" 
+                        />
                       </div>
+                      <div className="flex flex-col gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleTestImageUpload(showTestRowModal)}
+                          disabled={isReadOnly}
+                          className="px-3 py-1 text-[12px] font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded transition-colors disabled:opacity-50 text-left shadow-sm"
+                        >
+                          Change Image
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateTestRow(showTestRowModal, 'test_image', '')}
+                          disabled={isReadOnly}
+                          className="px-3 py-1 text-[12px] font-medium text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50 text-left"
+                        >
+                          Remove Image
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button 
+                      type="button"
+                      onClick={() => handleTestImageUpload(showTestRowModal)}
+                      disabled={isReadOnly}
+                      className="px-3 py-1.5 text-[12px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded transition-colors disabled:opacity-50"
+                    >
+                      Attach
+                    </button>
                   )}
                 </div>
 
@@ -2894,11 +2956,7 @@ const QuotationCreatePage = () => {
                   <label className="text-[12px] text-gray-600 mb-1 font-medium block">Test Description</label>
                   <RichTextEditor 
                     value={form.test_details[showTestRowModal]?.test_description || ''} 
-                    onChange={v => {
-                      const newTests = [...form.test_details];
-                      newTests[showTestRowModal].test_description = v;
-                      updateForm('test_details', newTests);
-                    }} 
+                    onChange={v => updateTestRow(showTestRowModal, 'test_description', v)} 
                     disabled={isReadOnly}
                   />
                 </div>

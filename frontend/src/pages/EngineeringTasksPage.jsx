@@ -23,8 +23,7 @@ const WORK_OPTIONS = [
 ];
 import {
   Plus, Trash2, CheckSquare, Square, HardHat, Pencil, ArrowLeft, Search, Filter,
-  ArrowUpDown, ArrowUp, ArrowDown
-, X } from 'lucide-react';
+  ArrowUpDown, ArrowUp, ArrowDown, Eye, X } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { toast } from 'react-toastify';
 
@@ -79,7 +78,10 @@ const emptyForm = {
   start_date: '', due_date: '', assigned_to_user_id: '',
 };
 
-const TaskFormModal = ({ open, onClose, onSaved, editing, users, projects, currentUser }) => {
+const TaskFormModal = ({ open, onClose, onSaved, editing, users = [], projects = [], currentUser }) => {
+  const projectList = Array.isArray(projects) ? projects : (projects?.data || []);
+  const userList = Array.isArray(users) ? users : (users?.data || []);
+
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -107,7 +109,7 @@ const TaskFormModal = ({ open, onClose, onSaved, editing, users, projects, curre
   const handleProjectChange = (pid) => {
     set('project_id', pid);
     if (pid) {
-      const proj = projects.find((p) => p.id === pid);
+      const proj = projectList.find((p) => p.id === pid);
       if (proj) set('site_location', proj.site_location || '');
     } else {
       set('site_location', '');
@@ -156,7 +158,7 @@ const TaskFormModal = ({ open, onClose, onSaved, editing, users, projects, curre
         <div>
           <label className="label">Project Number</label>
           <SearchableSelect
-            options={projects.map(p => ({
+            options={projectList.map(p => ({
               value: p.id,
               label: p.job_no ? `${p.job_no} – ${p.name}` : `${p.project_code} – ${p.name}`
             }))}
@@ -219,7 +221,7 @@ const TaskFormModal = ({ open, onClose, onSaved, editing, users, projects, curre
             <label className="label">Assign To</label>
             <select className="select" value={form.assigned_to_user_id} onChange={(e) => set('assigned_to_user_id', e.target.value)} data-testid="eng-task-assignee">
               <option value="">— Unassigned —</option>
-              {users.filter(u => u.role === 'admin' || u.role === 'engineer' || u.role === 'draftsman').map((u) => (
+              {userList.filter(u => u.role === 'admin' || u.role === 'engineer' || u.role === 'draftsman').map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.username}
                 </option>
@@ -261,6 +263,7 @@ const EngineeringTasksPage = () => {
   const [loading, setLoading]   = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [viewTask, setViewTask] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing]     = useState(null);
   const [statusFilters, setStatusFilters] = useState([]);
@@ -481,69 +484,83 @@ const EngineeringTasksPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {sortedTasks.map((task, idx) => (
-                  <tr key={task.id} style={{ opacity: task.status === 'done' || task.status === 'cancelled' ? 0.55 : 1, transition: 'opacity 0.2s' }} data-testid={`eng-task-row-${task.id}`}>
-                    <td className="font-mono-data text-xs text-center hidden sm:table-cell" style={{ color: 'var(--cc-text-muted)' }}>{(page - 1) * limit + idx + 1}</td>
-                    <td className="font-mono-data text-xs font-medium hidden md:table-cell" style={{ color: 'var(--cc-dark-green)' }}>{task.project_code || '—'}</td>
-                    <td className="hidden lg:table-cell"><div className="text-xs max-w-[180px]">{task.site_location || <span style={{ color: 'var(--cc-text-muted)' }}>—</span>}</div></td>
-                    <td>
-                      <div className="font-medium text-sm leading-snug" style={{ color: 'var(--cc-text)' }}>{task.work}</div>
-                      <ExpandableDescription text={task.description} />
-                    </td>
-                    <td className="font-mono-data text-xs hidden md:table-cell" style={{ color: 'var(--cc-text-muted)' }}>
-                      {task.start_date ? new Date(task.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                    </td>
-                    <td className="font-mono-data text-xs" style={{ color: 'var(--cc-text-muted)' }}>
-                      {task.due_date ? new Date(task.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                    </td>
-                    <td className="hidden md:table-cell" style={{ color: 'var(--cc-text-muted)', fontSize: 12 }}>
-                      {task.created_by_username || '—'}
-                    </td>
-                    <td className="hidden md:table-cell"><AssigneeChip task={task} /></td>
-                    <td className="text-center">
-                      <select 
-                        className="text-xs font-semibold py-1 pl-2 pr-6 rounded-full border appearance-none outline-none cursor-pointer focus:ring-2 focus:ring-offset-1 transition-all shadow-sm"
-                        style={{
-                          ...((task.status === 'done') ? { background: '#D1FAE5', color: '#065F46', borderColor: '#34D399' } : 
-                              (task.status === 'in progress') ? { background: '#DBEAFE', color: '#1D4ED8', borderColor: '#93C5FD' } :
-                              (task.status === 'cancelled') ? { background: '#F3F4F6', color: '#374151', borderColor: '#D1D5DB' } :
-                              { background: '#FEF2F2', color: '#991B1B', borderColor: '#F87171' }),
-                          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='currentColor'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
-                          backgroundRepeat: 'no-repeat',
-                          backgroundPosition: 'right 0.4rem center',
-                          backgroundSize: '0.8em 0.8em',
-                        }}
-                        value={task.status || 'pending'}
-                        onChange={(e) => handleStatusChange(task.id, e.target.value)}
-                      >
-                        <option value="pending" style={{ background: '#fff', color: '#991B1B' }}>Pending</option>
-                        <option value="in progress" style={{ background: '#fff', color: '#1D4ED8' }}>In Progress</option>
-                        <option value="done" style={{ background: '#fff', color: '#065F46' }}>Done</option>
-                        <option value="cancelled" style={{ background: '#fff', color: '#374151' }}>Cancelled</option>
-                      </select>
-                    </td>
-                    <td>
-                      <div className="flex items-center justify-center gap-2">
-                        <button 
-                          onClick={() => { setEditing(task); setModalOpen(true); }} 
-                          className="p-1.5 rounded text-blue-600 hover:bg-blue-50 transition-colors" 
-                          title="Edit"
+                {sortedTasks.map((task, idx) => {
+                  const canEdit = isAdmin || task.assigned_to_user_id === user?.id || task.created_by_user_id === user?.id || !task.assigned_to_user_id;
+                  return (
+                    <tr key={task.id} style={{ opacity: task.status === 'done' || task.status === 'cancelled' ? 0.55 : 1, transition: 'opacity 0.2s' }} data-testid={`eng-task-row-${task.id}`}>
+                      <td className="font-mono-data text-xs text-center hidden sm:table-cell" style={{ color: 'var(--cc-text-muted)' }}>{(page - 1) * limit + idx + 1}</td>
+                      <td className="font-mono-data text-xs font-medium hidden md:table-cell" style={{ color: 'var(--cc-dark-green)' }}>{task.project_code || '—'}</td>
+                      <td className="hidden lg:table-cell"><div className="text-xs max-w-[180px]">{task.site_location || <span style={{ color: 'var(--cc-text-muted)' }}>—</span>}</div></td>
+                      <td>
+                        <div className="font-medium text-sm leading-snug" style={{ color: 'var(--cc-text)' }}>{task.work}</div>
+                        <ExpandableDescription text={task.description} />
+                      </td>
+                      <td className="font-mono-data text-xs hidden md:table-cell" style={{ color: 'var(--cc-text-muted)' }}>
+                        {task.start_date ? new Date(task.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                      </td>
+                      <td className="font-mono-data text-xs" style={{ color: 'var(--cc-text-muted)' }}>
+                        {task.due_date ? new Date(task.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                      </td>
+                      <td className="hidden md:table-cell" style={{ color: 'var(--cc-text-muted)', fontSize: 12 }}>
+                        {task.created_by_username || '—'}
+                      </td>
+                      <td className="hidden md:table-cell"><AssigneeChip task={task} /></td>
+                      <td className="text-center">
+                        <select 
+                          disabled={!canEdit}
+                          title={!canEdit ? "Read-only: Assigned to another user" : "Change Status"}
+                          className={`text-xs font-semibold py-1 pl-2 pr-6 rounded-full border appearance-none outline-none transition-all shadow-sm ${!canEdit ? 'cursor-not-allowed opacity-75' : 'cursor-pointer focus:ring-2 focus:ring-offset-1'}`}
+                          style={{
+                            ...((task.status === 'done') ? { background: '#D1FAE5', color: '#065F46', borderColor: '#34D399' } : 
+                                (task.status === 'in progress') ? { background: '#DBEAFE', color: '#1D4ED8', borderColor: '#93C5FD' } :
+                                (task.status === 'cancelled') ? { background: '#F3F4F6', color: '#374151', borderColor: '#D1D5DB' } :
+                                { background: '#FEF2F2', color: '#991B1B', borderColor: '#F87171' }),
+                            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='currentColor'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
+                            backgroundRepeat: 'no-repeat',
+                            backgroundPosition: 'right 0.4rem center',
+                            backgroundSize: '0.8em 0.8em',
+                          }}
+                          value={task.status || 'pending'}
+                          onChange={(e) => handleStatusChange(task.id, e.target.value)}
                         >
-                          <Pencil size={15} />
-                        </button>
-                        {user?.role !== 'draftsman' && (
+                          <option value="pending" style={{ background: '#fff', color: '#991B1B' }}>Pending</option>
+                          <option value="in progress" style={{ background: '#fff', color: '#1D4ED8' }}>In Progress</option>
+                          <option value="done" style={{ background: '#fff', color: '#065F46' }}>Done</option>
+                          <option value="cancelled" style={{ background: '#fff', color: '#374151' }}>Cancelled</option>
+                        </select>
+                      </td>
+                      <td>
+                        <div className="flex items-center justify-center gap-2">
                           <button 
-                            onClick={() => handleDelete(task)} 
-                            className="p-1.5 rounded text-red-600 hover:bg-red-50 transition-colors" 
-                            title="Delete"
+                            onClick={() => setViewTask(task)} 
+                            className="p-1.5 rounded text-gray-500 hover:bg-gray-100 transition-colors" 
+                            title="View Details"
                           >
-                            <Trash2 size={15} />
+                            <Eye size={15} />
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          {canEdit && (
+                            <button 
+                              onClick={() => { setEditing(task); setModalOpen(true); }} 
+                              className="p-1.5 rounded text-blue-600 hover:bg-blue-50 transition-colors" 
+                              title="Edit"
+                            >
+                              <Pencil size={15} />
+                            </button>
+                          )}
+                          {isAdmin && (
+                            <button 
+                              onClick={() => handleDelete(task)} 
+                              className="p-1.5 rounded text-red-600 hover:bg-red-50 transition-colors" 
+                              title="Delete"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -553,6 +570,74 @@ const EngineeringTasksPage = () => {
           </div>
         </div>
       )}
+
+      {/* View Task Modal */}
+      <Modal open={!!viewTask} onClose={() => setViewTask(null)} title="Task Details">
+        {viewTask && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4 border-b pb-4" style={{ borderColor: 'var(--cc-border)' }}>
+              <div>
+                <div className="text-xs font-semibold mb-1 text-gray-500">Project Code</div>
+                <div className="font-medium text-emerald-800">{viewTask.project_code || '—'}</div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold mb-1 text-gray-500">Site Location</div>
+                <div className="text-sm font-medium">{viewTask.site_location || '—'}</div>
+              </div>
+            </div>
+            
+            <div>
+              <div className="text-xs font-semibold mb-1 text-gray-500">Work</div>
+              <div className="text-sm font-bold">{viewTask.work}</div>
+            </div>
+
+            {viewTask.description && (
+              <div>
+                <div className="text-xs font-semibold mb-1 text-gray-500">Description</div>
+                <div className="text-sm bg-gray-50 p-3 rounded">{viewTask.description}</div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4 border-b pb-4" style={{ borderColor: 'var(--cc-border)' }}>
+              <div>
+                <div className="text-xs font-semibold mb-1 text-gray-500">Start Date</div>
+                <div className="text-sm">{viewTask.start_date ? new Date(viewTask.start_date).toLocaleDateString() : '—'}</div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold mb-1 text-gray-500">Due Date</div>
+                <div className="text-sm">{viewTask.due_date ? new Date(viewTask.due_date).toLocaleDateString() : '—'}</div>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-xs font-semibold mb-1 text-gray-500">Assignments & Status</div>
+              <div className="flex flex-col gap-2 bg-gray-50 p-3 rounded">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-gray-500 w-24">Assign By:</span>
+                  <span className="text-sm">{viewTask.created_by_username || '—'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-gray-500 w-24">Assign To:</span>
+                  <AssigneeChip task={viewTask} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-gray-500 w-24">Status:</span>
+                  <span className="text-xs font-bold uppercase px-2 py-0.5 rounded" style={
+                    viewTask.status === 'done' ? { background: '#D1FAE5', color: '#065F46' } :
+                    viewTask.status === 'in progress' ? { background: '#DBEAFE', color: '#1D4ED8' } :
+                    viewTask.status === 'cancelled' ? { background: '#F3F4F6', color: '#374151' } :
+                    { background: '#FEF2F2', color: '#991B1B' }
+                  }>{viewTask.status || 'pending'}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button onClick={() => setViewTask(null)} className="btn btn-outline">Close</button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Modal */}
       <TaskFormModal

@@ -23,6 +23,8 @@ const emptyDoc = {
   phase: '',
   number_field: '',
   remark: '',
+  audit_offer_path: '',
+  audit_report_path: '',
   contact_person: '',
   mobile: '',
   other_comments: '',
@@ -146,7 +148,11 @@ const DocumentsPage = () => {
 
   const activeFiltersCount = [search, typeFilter, clientFilter, architectFilter, dateFrom, dateTo].filter(Boolean).length;
 
-  const typeById = useMemo(() => Object.fromEntries(types.map((t) => [t.id, t])), [types]);
+  const typeList = Array.isArray(types) ? types : (types?.data || []);
+  const clientList = Array.isArray(clients) ? clients : (clients?.data || []);
+  const architectList = Array.isArray(architects) ? architects : (architects?.data || []);
+
+  const typeById = useMemo(() => Object.fromEntries(typeList.map((t) => [t.id, t])), [typeList]);
 
   const openNew = () => {
     setEditing(null);
@@ -170,6 +176,8 @@ const DocumentsPage = () => {
       phase: d.phase || '',
       number_field: d.number_field || '',
       remark: d.remark || '',
+      audit_offer_path: d.audit_offer_path || '',
+      audit_report_path: d.audit_report_path || '',
       contact_person: d.contact_person || '',
       mobile: d.mobile || '',
       other_comments: d.other_comments || '',
@@ -384,21 +392,21 @@ const DocumentsPage = () => {
             <CustomSelect
               value={typeFilter}
               onChange={(v) => setTypeFilter(v)}
-              options={types.map((t) => ({ value: String(t.id), label: t.name }))}
+              options={typeList.map((t) => ({ value: String(t.id), label: t.name }))}
               placeholder="All types"
               data-testid="documents-type-filter"
             />
             <CustomSelect
               value={clientFilter}
               onChange={(v) => setClientFilter(v)}
-              options={clients.map((c) => ({ value: String(c.id), label: c.name }))}
+              options={clientList.map((c) => ({ value: String(c.id), label: c.name }))}
               placeholder="All clients"
               data-testid="documents-client-filter"
             />
             <CustomSelect
               value={architectFilter}
               onChange={(v) => setArchitectFilter(v)}
-              options={architects.map((a) => ({ value: String(a.id), label: a.name }))}
+              options={architectList.map((a) => ({ value: String(a.id), label: a.name }))}
               placeholder="All architects"
               className="col-span-2 sm:col-span-1"
               data-testid="documents-architect-filter"
@@ -550,7 +558,7 @@ const DocumentsPage = () => {
               <CustomSelect
                 value={form.doc_type_id}
                 onChange={(v) => update('doc_type_id', v)}
-                options={types.map((t) => ({ value: String(t.id), label: `${t.name} (${t.prefix})` }))}
+                options={typeList.map((t) => ({ value: String(t.id), label: `${t.name} (${t.prefix})` }))}
                 placeholder="-- Select type --"
                 data-testid="document-form-type"
               />
@@ -593,8 +601,13 @@ const DocumentsPage = () => {
           </div>
 
           <div>
-            <label className="label">Path of Folder</label>
-            <input className="input font-mono-data w-full" value={form.remark} onChange={(e) => update('remark', e.target.value)} placeholder="e.g. D:/Projects/2026/ACCP-003" data-testid="document-form-folder-path" />
+            <label className="label">Audit Offer Path</label>
+            <input className="input font-mono-data w-full" value={form.audit_offer_path} onChange={(e) => update('audit_offer_path', e.target.value)} placeholder="e.g. D:/Projects/2026/ACCP-003-Offer" data-testid="document-form-audit-offer-path" />
+          </div>
+
+          <div>
+            <label className="label">Audit Report Path</label>
+            <input className="input font-mono-data w-full" value={form.audit_report_path} onChange={(e) => update('audit_report_path', e.target.value)} placeholder="e.g. D:/Projects/2026/ACCP-003-Report" data-testid="document-form-audit-report-path" />
           </div>
 
           <div>

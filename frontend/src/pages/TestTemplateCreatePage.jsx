@@ -9,6 +9,30 @@ import { formatActivityDay } from '../lib/format';
 import { CustomFrappeSelect } from '../components/CustomFrappeSelect';
 import RichTextEditor from '../components/RichTextEditor';
 
+const getImageUrl = (url) => {
+  if (!url) return '';
+  if (url.startsWith('data:') || url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  let path = url;
+  if (!path.startsWith('/') && !path.startsWith('api/')) {
+    path = `/api/uploads/test-images/${path}`;
+  } else if (path.startsWith('api/')) {
+    path = `/${path}`;
+  }
+  const backendUrl = (process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '');
+  if (backendUrl) {
+    return `${backendUrl}${path}`;
+  }
+  if (typeof window !== 'undefined' && window.location) {
+    const { protocol, hostname, port } = window.location;
+    if (port === '3000') {
+      return `${protocol}//${hostname}:8000${path}`;
+    }
+  }
+  return path;
+};
+
 const Section = ({ title, children, className = "" }) => (
   <div className={`mb-8 ${className}`}>
     <h3 className="text-[13px] font-bold text-gray-800 mb-3">{title}</h3>
@@ -151,15 +175,19 @@ const TestTemplateCreatePage = () => {
   };
 
   const updateTestRow = (index, field, value) => {
-    const newTests = [...form.test_details];
-    newTests[index][field] = value;
-    setForm({ ...form, test_details: newTests });
+    setForm(prev => {
+      const newTests = (prev.test_details || []).map((t, i) =>
+        i === index ? { ...t, [field]: value } : t
+      );
+      return { ...prev, test_details: newTests };
+    });
   };
   
   const removeTestRow = (index) => {
-    const newTests = [...form.test_details];
-    newTests.splice(index, 1);
-    setForm({ ...form, test_details: newTests });
+    setForm(prev => ({
+      ...prev,
+      test_details: (prev.test_details || []).filter((_, i) => i !== index)
+    }));
   };
 
   const handleImageUpload = (index) => {
@@ -167,24 +195,24 @@ const TestTemplateCreatePage = () => {
     input.type = 'file';
     input.accept = 'image/*';
     input.onchange = (e) => {
-      const file = e.target.files[0];
+      const file = e.target.files?.[0];
       if (file) {
         const reader = new FileReader();
-        reader.onload = async (e) => {
-            const base64Data = e.target.result;
-            try {
-                const res = await api.post('/test-images/upload', {
-                    filename: file.name,
-                    base64: base64Data
-                });
-                if (res.data && res.data.url) {
-                    updateTestRow(index, 'test_image', res.data.url);
-                    toast.success('Image attached successfully');
-                }
-            } catch (err) {
-                console.error(err);
-                toast.error('Failed to upload image');
+        reader.onload = async (ev) => {
+          const base64Data = ev.target.result;
+          try {
+            const res = await api.post('/test-images/upload', {
+              filename: file.name,
+              base64: base64Data
+            });
+            if (res.data && res.data.url) {
+              updateTestRow(index, 'test_image', res.data.url);
+              toast.success('Image attached successfully');
             }
+          } catch (err) {
+            console.error(err);
+            toast.error('Failed to upload image');
+          }
         };
         reader.readAsDataURL(file);
       }
@@ -389,16 +417,40 @@ const TestTemplateCreatePage = () => {
                 
                 <div className="mb-4">
                   <label className="text-[12px] text-gray-600 mb-1 font-medium block">Test Image</label>
-                  <button 
-                    onClick={() => handleImageUpload(showEditRowModal)}
-                    className="px-3 py-1.5 text-[12px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
-                  >
-                    Attach
-                  </button>
-                  {form.test_details[showEditRowModal]?.test_image && (
-                      <div className="mt-2 text-[12px] text-blue-600 hover:underline cursor-pointer flex items-center gap-1" onClick={() => window.open(form.test_details[showEditRowModal].test_image, '_blank')}>
-                         <FileText size={14}/> Attached Image
+                  {form.test_details[showEditRowModal]?.test_image ? (
+                    <div className="flex items-center gap-3 mt-1.5 p-2 bg-gray-50 border border-gray-200 rounded-md">
+                      <div className="relative w-20 h-20 border border-gray-300 rounded overflow-hidden bg-white flex items-center justify-center flex-shrink-0">
+                        <img 
+                          src={getImageUrl(form.test_details[showEditRowModal].test_image)} 
+                          alt="Test" 
+                          className="w-full h-full object-cover" 
+                        />
                       </div>
+                      <div className="flex flex-col gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleImageUpload(showEditRowModal)}
+                          className="px-3 py-1 text-[12px] font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded transition-colors text-left shadow-sm"
+                        >
+                          Change Image
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateTestRow(showEditRowModal, 'test_image', '')}
+                          className="px-3 py-1 text-[12px] font-medium text-red-600 hover:bg-red-50 rounded transition-colors text-left"
+                        >
+                          Remove Image
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button 
+                      type="button"
+                      onClick={() => handleImageUpload(showEditRowModal)}
+                      className="px-3 py-1.5 text-[12px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                    >
+                      Attach
+                    </button>
                   )}
                 </div>
 

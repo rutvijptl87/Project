@@ -65,6 +65,7 @@ const ExpandableDescription = ({ text }) => {
 const StructuralAuditTasksPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const isRestricted = user?.role === 'account' || user?.role === 'engineer' || user?.role === 'draftsman';
 
   const [tasks, setTasks]       = useState([]);
@@ -357,111 +358,118 @@ const StructuralAuditTasksPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {sortedTasks.map((task, idx) => (
-                  <tr key={task.id} style={{ opacity: task.status === 'done' || task.status === 'cancelled' ? 0.55 : 1, transition: 'opacity 0.2s' }}>
-                    <td className="font-mono-data text-xs text-center hidden sm:table-cell" style={{ color: 'var(--cc-text-muted)' }}>{(page - 1) * limit + idx + 1}</td>
-                    <td className="font-mono-data text-xs font-medium hidden md:table-cell" style={{ color: 'var(--cc-dark-green)' }}>{task.audit_offer_no || '—'}</td>
-                    <td>
-                      <ExpandableDescription text={task.description || task.work} />
-                    </td>
-                    <td className="font-mono-data text-xs hidden md:table-cell" style={getDateStyle(task, 'site_visit')}>
-                      {task.site_visit_date ? (
-                        <div className="flex flex-col gap-1.5 items-start">
-                          <span className={task.site_visit_status === 'done' ? 'opacity-50' : task.site_visit_status === 'cancelled' ? 'opacity-50 text-red-500' : ''}>
-                            {new Date(task.site_visit_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                          </span>
-                          <select
-                            value={task.site_visit_status || 'todo'}
-                            onChange={(e) => updateTaskPhase(task.id, 'site_visit', e.target.value)}
-                            disabled={user?.role !== 'admin' && user?.role !== 'engineer'}
-                            className="text-[10px] font-semibold py-0.5 pl-1.5 pr-4 rounded border appearance-none outline-none cursor-pointer focus:ring-1 focus:ring-offset-0 transition-all bg-gray-50"
-                            style={{
-                              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='gray'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
-                              backgroundRepeat: 'no-repeat',
-                              backgroundPosition: 'right 0.2rem center',
-                              backgroundSize: '0.8em 0.8em',
-                            }}
+                {sortedTasks.map((task, idx) => {
+                  const canEditEngPhase = isAdmin || ((user?.role === 'engineer' || user?.role === 'draftsman') && (task.assigned_to_user_id === user?.id || task.created_by_user_id === user?.id || !task.assigned_to_user_id));
+                  const canEditAccPhase = isAdmin || ((user?.role === 'account' || user?.role === 'accountant') && (task.assigned_to_accountant_id === user?.id || task.created_by_user_id === user?.id || !task.assigned_to_accountant_id));
+                  const canEditTask = isAdmin || task.assigned_to_user_id === user?.id || task.assigned_to_accountant_id === user?.id || task.created_by_user_id === user?.id || (!task.assigned_to_user_id && !task.assigned_to_accountant_id);
+
+                  return (
+                    <tr key={task.id} style={{ opacity: task.status === 'done' || task.status === 'cancelled' ? 0.55 : 1, transition: 'opacity 0.2s' }}>
+                      <td className="font-mono-data text-xs text-center hidden sm:table-cell" style={{ color: 'var(--cc-text-muted)' }}>{(page - 1) * limit + idx + 1}</td>
+                      <td className="font-mono-data text-xs font-medium hidden md:table-cell" style={{ color: 'var(--cc-dark-green)' }}>{task.audit_offer_no || '—'}</td>
+                      <td>
+                        <ExpandableDescription text={task.description || task.work} />
+                      </td>
+                      <td className="font-mono-data text-xs hidden md:table-cell" style={getDateStyle(task, 'site_visit')}>
+                        {task.site_visit_date ? (
+                          <div className="flex flex-col gap-1.5 items-start">
+                            <span className={task.site_visit_status === 'done' ? 'opacity-50' : task.site_visit_status === 'cancelled' ? 'opacity-50 text-red-500' : ''}>
+                              {new Date(task.site_visit_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </span>
+                            <select
+                              value={task.site_visit_status || 'todo'}
+                              onChange={(e) => updateTaskPhase(task.id, 'site_visit', e.target.value)}
+                              disabled={!canEditEngPhase}
+                              title={!canEditEngPhase ? "Read-only: Assigned to another engineer" : "Update Site Visit Phase"}
+                              className={`text-[10px] font-semibold py-0.5 pl-1.5 pr-4 rounded border appearance-none outline-none transition-all bg-gray-50 ${!canEditEngPhase ? 'cursor-not-allowed opacity-75' : 'cursor-pointer focus:ring-1 focus:ring-offset-0'}`}
+                              style={{
+                                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='gray'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
+                                backgroundRepeat: 'no-repeat',
+                                backgroundPosition: 'right 0.2rem center',
+                                backgroundSize: '0.8em 0.8em',
+                              }}
+                            >
+                              <option value="todo">To-Do</option>
+                              <option value="done">Done</option>
+                              <option value="cancelled">Cancelled</option>
+                            </select>
+                          </div>
+                        ) : '—'}
+                      </td>
+                      <td className="font-mono-data text-xs" style={getDateStyle(task, 'preparation')}>
+                        {task.preparation_date ? (
+                          <div className="flex flex-col gap-1.5 items-start">
+                            <span className={task.preparation_status === 'done' ? 'opacity-50' : task.preparation_status === 'cancelled' ? 'opacity-50 text-red-500' : ''}>
+                              {new Date(task.preparation_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </span>
+                            <select
+                              value={task.preparation_status || 'todo'}
+                              onChange={(e) => updateTaskPhase(task.id, 'preparation', e.target.value)}
+                              disabled={!canEditEngPhase}
+                              title={!canEditEngPhase ? "Read-only: Assigned to another engineer" : "Update Preparation Phase"}
+                              className={`text-[10px] font-semibold py-0.5 pl-1.5 pr-4 rounded border appearance-none outline-none transition-all bg-gray-50 ${!canEditEngPhase ? 'cursor-not-allowed opacity-75' : 'cursor-pointer focus:ring-1 focus:ring-offset-0'}`}
+                              style={{
+                                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='gray'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
+                                backgroundRepeat: 'no-repeat',
+                                backgroundPosition: 'right 0.2rem center',
+                                backgroundSize: '0.8em 0.8em',
+                              }}
+                            >
+                              <option value="todo">To-Do</option>
+                              <option value="done">Done</option>
+                              <option value="cancelled">Cancelled</option>
+                            </select>
+                          </div>
+                        ) : '—'}
+                      </td>
+                      <td className="font-mono-data text-xs hidden md:table-cell" style={getDateStyle(task, 'submission')}>
+                        {task.submission_date ? (
+                          <div className="flex flex-col gap-1.5 items-start">
+                            <span className={task.submission_status === 'done' ? 'opacity-50' : task.submission_status === 'cancelled' ? 'opacity-50 text-red-500' : ''}>
+                              {new Date(task.submission_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </span>
+                            <select
+                              value={task.submission_status || 'todo'}
+                              onChange={(e) => updateTaskPhase(task.id, 'submission', e.target.value)}
+                              disabled={!canEditAccPhase}
+                              title={!canEditAccPhase ? "Read-only: Assigned to another accountant" : "Update Submission Phase"}
+                              className={`text-[10px] font-semibold py-0.5 pl-1.5 pr-4 rounded border appearance-none outline-none transition-all bg-gray-50 ${!canEditAccPhase ? 'cursor-not-allowed opacity-75' : 'cursor-pointer focus:ring-1 focus:ring-offset-0'}`}
+                              style={{
+                                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='gray'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
+                                backgroundRepeat: 'no-repeat',
+                                backgroundPosition: 'right 0.2rem center',
+                                backgroundSize: '0.8em 0.8em',
+                              }}
+                            >
+                              <option value="todo">To-Do</option>
+                              <option value="done">Done</option>
+                              <option value="cancelled">Cancelled</option>
+                            </select>
+                          </div>
+                        ) : '—'}
+                      </td>
+                      <td className="hidden md:table-cell">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-gray-500 font-medium w-8">Eng:</span>
+                            <AssigneeChip task={task} />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-gray-500 font-medium w-8">Acc:</span>
+                            <AssigneeChip task={task} isAccountant={true} />
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="flex items-center justify-center gap-2">
+                          <button 
+                            onClick={() => setViewTask(task)} 
+                            className="p-1.5 rounded text-gray-500 hover:bg-gray-100 transition-colors" 
+                            title="View Details"
                           >
-                            <option value="todo">To-Do</option>
-                            <option value="done">Done</option>
-                            <option value="cancelled">Cancelled</option>
-                          </select>
-                        </div>
-                      ) : '—'}
-                    </td>
-                    <td className="font-mono-data text-xs" style={getDateStyle(task, 'preparation')}>
-                      {task.preparation_date ? (
-                        <div className="flex flex-col gap-1.5 items-start">
-                          <span className={task.preparation_status === 'done' ? 'opacity-50' : task.preparation_status === 'cancelled' ? 'opacity-50 text-red-500' : ''}>
-                            {new Date(task.preparation_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                          </span>
-                          <select
-                            value={task.preparation_status || 'todo'}
-                            onChange={(e) => updateTaskPhase(task.id, 'preparation', e.target.value)}
-                            disabled={user?.role !== 'admin' && user?.role !== 'engineer'}
-                            className="text-[10px] font-semibold py-0.5 pl-1.5 pr-4 rounded border appearance-none outline-none cursor-pointer focus:ring-1 focus:ring-offset-0 transition-all bg-gray-50"
-                            style={{
-                              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='gray'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
-                              backgroundRepeat: 'no-repeat',
-                              backgroundPosition: 'right 0.2rem center',
-                              backgroundSize: '0.8em 0.8em',
-                            }}
-                          >
-                            <option value="todo">To-Do</option>
-                            <option value="done">Done</option>
-                            <option value="cancelled">Cancelled</option>
-                          </select>
-                        </div>
-                      ) : '—'}
-                    </td>
-                    <td className="font-mono-data text-xs hidden md:table-cell" style={getDateStyle(task, 'submission')}>
-                      {task.submission_date ? (
-                        <div className="flex flex-col gap-1.5 items-start">
-                          <span className={task.submission_status === 'done' ? 'opacity-50' : task.submission_status === 'cancelled' ? 'opacity-50 text-red-500' : ''}>
-                            {new Date(task.submission_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                          </span>
-                          <select
-                            value={task.submission_status || 'todo'}
-                            onChange={(e) => updateTaskPhase(task.id, 'submission', e.target.value)}
-                            disabled={user?.role !== 'admin' && user?.role !== 'account'}
-                            className="text-[10px] font-semibold py-0.5 pl-1.5 pr-4 rounded border appearance-none outline-none cursor-pointer focus:ring-1 focus:ring-offset-0 transition-all bg-gray-50"
-                            style={{
-                              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='gray'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
-                              backgroundRepeat: 'no-repeat',
-                              backgroundPosition: 'right 0.2rem center',
-                              backgroundSize: '0.8em 0.8em',
-                            }}
-                          >
-                            <option value="todo">To-Do</option>
-                            <option value="done">Done</option>
-                            <option value="cancelled">Cancelled</option>
-                          </select>
-                        </div>
-                      ) : '—'}
-                    </td>
-                    <td className="hidden md:table-cell">
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-gray-500 font-medium w-8">Eng:</span>
-                          <AssigneeChip task={task} />
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-gray-500 font-medium w-8">Acc:</span>
-                          <AssigneeChip task={task} isAccountant={true} />
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="flex items-center justify-center gap-2">
-                        <button 
-                          onClick={() => setViewTask(task)} 
-                          className="p-1.5 rounded text-gray-500 hover:bg-gray-100 transition-colors" 
-                          title="View Details"
-                        >
-                          <Eye size={15} />
-                        </button>
-                        {user?.role !== 'draftsman' && (
-                          <>
+                            <Eye size={15} />
+                          </button>
+                          {canEditTask && (
                             <button 
                               onClick={() => openEdit(task)} 
                               className="p-1.5 rounded text-blue-600 hover:bg-blue-50 transition-colors" 
@@ -469,6 +477,8 @@ const StructuralAuditTasksPage = () => {
                             >
                               <Pencil size={15} />
                             </button>
+                          )}
+                          {isAdmin && (
                             <button 
                               onClick={() => handleDelete(task)} 
                               className="p-1.5 rounded text-red-600 hover:bg-red-50 transition-colors" 
@@ -476,12 +486,12 @@ const StructuralAuditTasksPage = () => {
                             >
                               <Trash2 size={15} />
                             </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>          
@@ -596,7 +606,7 @@ const StructuralAuditTasksPage = () => {
                 <label className="label">Assign Engineer</label>
                 <select className="select" value={editForm.assigned_to_user_id} onChange={(e) => setEditForm({ ...editForm, assigned_to_user_id: e.target.value })}>
                   <option value="">— Unassigned —</option>
-                  {users.filter(u => ['admin', 'engineer'].includes(u.role)).map(u => (
+                  {(Array.isArray(users) ? users : users?.data || []).filter(u => ['admin', 'engineer', 'draftsman'].includes(u.role)).map(u => (
                     <option key={u.id} value={u.id}>{u.username}</option>
                   ))}
                 </select>
@@ -605,7 +615,7 @@ const StructuralAuditTasksPage = () => {
                 <label className="label">Assign Accountant</label>
                 <select className="select" value={editForm.assigned_to_accountant_id} onChange={(e) => setEditForm({ ...editForm, assigned_to_accountant_id: e.target.value })}>
                   <option value="">— Unassigned —</option>
-                  {users.filter(u => ['admin', 'account'].includes(u.role)).map(u => (
+                  {(Array.isArray(users) ? users : users?.data || []).filter(u => ['admin', 'account', 'accountant'].includes(u.role)).map(u => (
                     <option key={u.id} value={u.id}>{u.username}</option>
                   ))}
                 </select>

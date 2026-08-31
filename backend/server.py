@@ -14,6 +14,7 @@ import bcrypt
 import secrets
 import shutil
 import time
+from html.parser import HTMLParser
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional, Union, Any, Dict
@@ -52,6 +53,14 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 app = FastAPI(title="Creator Consultant API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Auth: /api/auth/* — public (login) + JWT-protected (others)
 import auth as auth_module  # noqa: E402
@@ -1154,6 +1163,8 @@ class DocumentIn(BaseModel):
     phase: Optional[str] = ""
     number_field: Optional[str] = ""  # the "Number" field on the form (free-text)
     remark: Optional[str] = ""
+    audit_offer_path: Optional[str] = ""
+    audit_report_path: Optional[str] = ""
     contact_person: Optional[str] = ""
     mobile: Optional[str] = ""
     other_comments: Optional[str] = ""
@@ -1177,6 +1188,8 @@ class Document(BaseModel):
     phase: str = ""
     number_field: str = ""
     remark: str = ""
+    audit_offer_path: str = ""
+    audit_report_path: str = ""
     contact_person: str = ""
     mobile: str = ""
     other_comments: str = ""
@@ -4059,66 +4072,197 @@ async def offer_pdf(offer_id: str):
 
 # ---------------------- QUOTATION & SALES ORDER PDF GENERATION ----------------------
 
+class _ReportLabHTMLParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.parts = []
+        self.current_part = []
+        self.open_tags = []  # list of (tag, open_str, close_str)
+        self.list_stack = []
+
+    def _flush_part(self):
+        content = ''.join(self.current_part).strip()
+        while content.startswith('<br/>'):
+            content = content[5:].strip()
+        while content.endswith('<br/>'):
+            content = content[:-5].strip()
+        if content:
+            close_strs = [t[2] for t in reversed(self.open_tags) if t[0] not in ('p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'ul', 'ol')]
+            full_content = content + ''.join(close_strs)
+            self.parts.append(full_content)
+        self.current_part = []
+
+    def _has_text_content(self):
+        return any(c.strip() for c in self.current_part)
+
+    def handle_starttag(self, tag, attrs):
+        import re
+        tag_lower = tag.lower()
+        attr_dict = dict(attrs)
+        style = attr_dict.get('style', '')
+
+        color = None
+        rgb_match = re.search(r'color:\s*rgb\((\d+),\s*(\d+),\s*(\d+)\)', style, flags=re.IGNORECASE)
+        hex_match = re.search(r'color:\s*(#[0-9a-fA-F]{3,6})', style, flags=re.IGNORECASE)
+        if rgb_match:
+            r, g, b = map(int, rgb_match.groups())
+            color = f'#{r:02x}{g:02x}{b:02x}'
+        elif hex_match:
+            color = hex_match.group(1)
+
+        is_bold = bool(re.search(r'font-weight:\s*(bold|[6-9]00)', style, flags=re.IGNORECASE))
+        is_italic = bool(re.search(r'font-style:\s*italic', style, flags=re.IGNORECASE))
+        is_underline = bool(re.search(r'text-decoration:\s*underline', style, flags=re.IGNORECASE))
+
+        align_match = re.search(r'text-align:\s*(center|right|justify|left)', style, flags=re.IGNORECASE)
+        align_val = align_match.group(1).lower() if align_match else None
+
+        if tag_lower in ('p', 'div', 'blockquote'):
+            if self._has_text_content() and not self.current_part[-1].endswith('<br/>'):
+                self.current_part.append('<br/>')
+            self.open_tags.append((tag_lower, '', ''))
+        elif tag_lower == 'h1':
+            self._flush_part()
+            self.open_tags.append((tag_lower, '<b><font size="13">', '</font></b>'))
+            self.current_part.append('<b><font size="13">')
+        elif tag_lower == 'h2':
+            self._flush_part()
+            self.open_tags.append((tag_lower, '<b><font size="11.5">', '</font></b>'))
+            self.current_part.append('<b><font size="11.5">')
+        elif tag_lower == 'h3':
+            self._flush_part()
+            self.open_tags.append((tag_lower, '<b><font size="10.5">', '</font></b>'))
+            self.current_part.append('<b><font size="10.5">')
+        elif tag_lower in ('h4', 'h5', 'h6'):
+            self._flush_part()
+            self.open_tags.append((tag_lower, '<b><font size="9.5">', '</font></b>'))
+            self.current_part.append('<b><font size="9.5">')
+        elif tag_lower in ('ul', 'ol'):
+            self._flush_part()
+            self.list_stack.append([tag_lower, 0])
+            self.open_tags.append((tag_lower, '', ''))
+        elif tag_lower == 'li':
+            if self._has_text_content() and not self.current_part[-1].endswith('<br/>'):
+                self.current_part.append('<br/>')
+            prefix = ''
+            if self.list_stack:
+                ltype = self.list_stack[-1][0]
+                self.list_stack[-1][1] += 1
+                cnt = self.list_stack[-1][1]
+                prefix = f'{cnt}. ' if ltype == 'ol' else '&bull; '
+            else:
+                prefix = '&bull; '
+            self.current_part.append(prefix)
+            self.open_tags.append((tag_lower, '', ''))
+        elif tag_lower in ('strong', 'b'):
+            self.open_tags.append((tag_lower, '<b>', '</b>'))
+            self.current_part.append('<b>')
+        elif tag_lower in ('em', 'i'):
+            self.open_tags.append((tag_lower, '<i>', '</i>'))
+            self.current_part.append('<i>')
+        elif tag_lower == 'u':
+            self.open_tags.append((tag_lower, '<u>', '</u>'))
+            self.current_part.append('<u>')
+        elif tag_lower == 'font':
+            color_attr = attr_dict.get('color', color)
+            f_open = f'<font color="{color_attr}">' if color_attr else '<font>'
+            self.open_tags.append((tag_lower, f_open, '</font>'))
+            self.current_part.append(f_open)
+        elif tag_lower == 'span':
+            s_open = ''
+            s_close = ''
+            if color:
+                s_open += f'<font color="{color}">'
+                s_close = '</font>' + s_close
+            if is_bold:
+                s_open += '<b>'
+                s_close = '</b>' + s_close
+            if is_italic:
+                s_open += '<i>'
+                s_close = '</i>' + s_close
+            if is_underline:
+                s_open += '<u>'
+                s_close = '</u>' + s_close
+            self.open_tags.append((tag_lower, s_open, s_close))
+            if s_open:
+                self.current_part.append(s_open)
+        elif tag_lower == 'br':
+            self.current_part.append('<br/>')
+
+    def handle_endtag(self, tag):
+        tag_lower = tag.lower()
+        found_idx = -1
+        for i in range(len(self.open_tags) - 1, -1, -1):
+            if self.open_tags[i][0] == tag_lower:
+                found_idx = i
+                break
+        if found_idx != -1:
+            to_reopen = []
+            while len(self.open_tags) > found_idx:
+                t, o_str, c_str = self.open_tags.pop()
+                if c_str:
+                    self.current_part.append(c_str)
+                if len(self.open_tags) > found_idx and t not in ('p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'ul', 'ol'):
+                    to_reopen.append((t, o_str, c_str))
+            for t, o_str, c_str in reversed(to_reopen):
+                self.open_tags.append((t, o_str, c_str))
+                if o_str:
+                    self.current_part.append(o_str)
+
+        if tag_lower in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
+            self._flush_part()
+        elif tag_lower in ('ul', 'ol'):
+            self._flush_part()
+            if self.list_stack:
+                self.list_stack.pop()
+
+    def handle_data(self, data):
+        clean_text = data.replace('\xa0', ' ').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        self.current_part.append(clean_text)
+
+    def handle_entityref(self, name):
+        if name in ('nbsp', 'xa0'):
+            self.current_part.append(' ')
+        elif name in ('amp', 'lt', 'gt', 'quot', 'bull'):
+            self.current_part.append(f'&{name};')
+        else:
+            self.current_part.append(f'&{name};')
+
+    def handle_charref(self, name):
+        if name in ('160', 'xa0'):
+            self.current_part.append(' ')
+        else:
+            self.current_part.append(f'&#{name};')
+
+    def get_parts(self):
+        self._flush_part()
+        return self.parts
+
+
 def _clean_quill_html(html_str: str) -> list:
     import re
     if not html_str:
         return []
-    text = str(html_str).replace('&nbsp;', ' ')
-    
-    def rgb_to_hex(match):
-        r, g, b = map(int, match.groups())
-        return f'#{r:02x}{g:02x}{b:02x}'
-        
-    def replace_style_color(match):
-        content = match.group(2)
-        style = match.group(1)
-        rgb_match = re.search(r'color:\s*rgb\((\d+),\s*(\d+),\s*(\d+)\)', style, flags=re.IGNORECASE)
-        hex_match = re.search(r'color:\s*(#[0-9a-fA-F]{3,6})', style, flags=re.IGNORECASE)
-        
-        color = None
-        if rgb_match:
-            color = rgb_to_hex(rgb_match)
-        elif hex_match:
-            color = hex_match.group(1)
-            
-        if color:
-            return f'<font color="{color}">{content}</font>'
-        return content
-
-    text = re.sub(r'<span[^>]*style=["\']([^"\']*)["\'][^>]*>(.*?)</span>', replace_style_color, text, flags=re.IGNORECASE|re.DOTALL)
-    text = re.sub(r'<strong[^>]*style=["\']([^"\']*)["\'][^>]*>(.*?)</strong>', lambda m: f'<b>{replace_style_color(m)}</b>', text, flags=re.IGNORECASE|re.DOTALL)
-
-    text = re.sub(r'<strong\b[^>]*>(.*?)</strong>', r'<b>\1</b>', text, flags=re.IGNORECASE|re.DOTALL)
-    text = re.sub(r'<b\b[^>]*>(.*?)</b>', r'<b>\1</b>', text, flags=re.IGNORECASE|re.DOTALL)
-    text = re.sub(r'<em\b[^>]*>(.*?)</em>', r'<i>\1</i>', text, flags=re.IGNORECASE|re.DOTALL)
-    text = re.sub(r'<i\b[^>]*>(.*?)</i>', r'<i>\1</i>', text, flags=re.IGNORECASE|re.DOTALL)
-    text = re.sub(r'<u\b[^>]*>(.*?)</u>', r'<u>\1</u>', text, flags=re.IGNORECASE|re.DOTALL)
-    
-    text = re.sub(r'</?span[^>]*>', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'<br\s*/?>', '<br/>', text, flags=re.IGNORECASE)
-
-    parts = []
-    
-    if not re.search(r'<(p|ul|ol|div)[^>]*>', text, flags=re.IGNORECASE):
-        text = text.replace('\n', '<br/>')
-        if text.strip():
-            parts.append(text.strip())
+    if not re.search(r'<[a-z][\s\S]*>', html_str, flags=re.IGNORECASE):
+        parts = []
+        for line in str(html_str).split('\n'):
+            line_s = line.strip()
+            if line_s:
+                parts.append(line_s.replace('\xa0', ' ').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'))
+            else:
+                parts.append('<br/>')
         return parts
 
-    for block in re.split(r'(<ul[^>]*>.*?</ul>|<ol[^>]*>.*?</ol>)', text, flags=re.IGNORECASE|re.DOTALL):
-        if block.lower().startswith('<ul') or block.lower().startswith('<ol'):
-            for li in re.findall(r'<li[^>]*>(.*?)</li>', block, flags=re.IGNORECASE|re.DOTALL):
-                clean_li = li.strip()
-                if clean_li:
-                    parts.append('• ' + clean_li)
-        else:
-            sub_blocks = re.split(r'<(?:p|div)[^>]*>(.*?)</(?:p|div)>', block, flags=re.IGNORECASE|re.DOTALL)
-            for i, sub in enumerate(sub_blocks):
-                if sub.strip() and sub.strip() != '<br/>':
-                    clean_sub = sub.strip().replace('\n', '')
-                    parts.append(clean_sub)
+    parser = _ReportLabHTMLParser()
+    try:
+        parser.feed(str(html_str).replace('\xa0', ' '))
+        parts = parser.get_parts()
+        if parts:
+            return parts
+    except Exception as e:
+        print(f"[pdf] _clean_quill_html parser error: {e}")
 
-    return parts
+    return [str(html_str)]
 
 
 async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_type: str = "QUOTATION") -> bytes:
@@ -4130,7 +4274,7 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
     width, height = A4
     margin = 18 * mm
     LH_TOP_RESERVE = 22 * mm
-    LH_BOTTOM_RESERVE = 34 * mm
+    LH_BOTTOM_RESERVE = 46 * mm
     page_bottom_limit = LH_BOTTOM_RESERVE
 
     styles = getSampleStyleSheet()
@@ -4306,6 +4450,9 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
     if greetings_parts:
         import re
         for i, p_str in enumerate(greetings_parts):
+            if p_str == '<br/>':
+                y -= 3.5 * mm
+                continue
             clean_s = p_str.strip()
             is_heading = False
             if re.search(r'<h[1-6][^>]*>', clean_s, re.IGNORECASE):
@@ -4316,7 +4463,7 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
                     is_heading = True
 
             is_bullet = clean_s.startswith('•')
-            gap = 3.5 * mm if is_heading else (1.0 * mm if is_bullet else 0.0 * mm)
+            gap = 3.5 * mm if is_heading else (1.5 * mm if is_bullet else 2.0 * mm)
             
             if is_heading and i > 0:
                 y -= 2.0 * mm
@@ -4336,9 +4483,15 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
     c.drawString(margin, y, "Pricing Details-")
     y -= 6 * mm
 
-    items = doc.get("items") or []
-    if not items:
-        items = [{"description": doc.get("scope_of_work") or "Professional Services", "amount": doc.get("total_amount") or 0}]
+    raw_items = doc.get("items") or []
+    items = []
+    for item in raw_items:
+        if isinstance(item, dict):
+            c_code = str(item.get("item_code") or "").strip()
+            c_name = str(item.get("item_name") or "").strip()
+            c_desc = str(item.get("description") or "").strip()
+            if c_code or c_name or c_desc:
+                items.append(item)
 
     is_lumpsum = _parse_bool(doc.get("is_lumpsum"))
 
@@ -4358,8 +4511,8 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
         ]]
 
     for idx, item in enumerate(items):
-        desc_text = str(item.get("item_code") or item.get("item_name") or item.get("description", "") or "Item").replace("<br>", "<br/>").replace("\n", "<br/>")
-        qty_val = float(item.get("number") or item.get("qty") or 1.0)
+        desc_text = str(item.get("item_code") or item.get("item_name") or item.get("description", "") or "").replace("<br>", "<br/>").replace("\n", "<br/>")
+        qty_val = float(item.get("number") or item.get("qty") or 0.0)
         rate_val = float(item.get("rate", 0) or 0)
         item_amt = float(item.get("amount") or 0)
         if item_amt == 0:
@@ -4502,6 +4655,9 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
 
         import re
         for i, p_str in enumerate(sow_clean_parts):
+            if p_str == '<br/>':
+                y -= 3.5 * mm
+                continue
             clean_s = p_str.strip()
             is_heading = False
             if re.search(r'<h[1-6][^>]*>', clean_s, re.IGNORECASE):
@@ -4512,7 +4668,7 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
                     is_heading = True
 
             is_bullet = clean_s.startswith('•')
-            gap = 3.5 * mm if is_heading else (1.0 * mm if is_bullet else 0.0 * mm)
+            gap = 3.5 * mm if is_heading else (1.5 * mm if is_bullet else 2.0 * mm)
 
             if is_heading and i > 0:
                 y -= 2.0 * mm
@@ -4635,11 +4791,14 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
         terms_parts = _clean_quill_html(terms)
         if terms_parts:
             for p_str in terms_parts:
+                if p_str == '<br/>':
+                    y -= 3.5 * mm
+                    continue
                 p_tc = Paragraph(p_str, body_style)
                 _, tc_h = p_tc.wrap(width - 2 * margin, 40 * mm)
-                check_space(tc_h + 0 * mm)
+                check_space(tc_h + 2.0 * mm)
                 p_tc.drawOn(c, margin, y - tc_h)
-                y -= tc_h + 0 * mm
+                y -= tc_h + 2.0 * mm
         y -= 6 * mm
 
     # Sign off & Bank Details Box
@@ -4674,6 +4833,14 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
 
     # Draw any test descriptions & images right at the end on a new page
     has_test_section = any((td.get("test_description") or td.get("test_image")) for td in test_details)
+    if not has_test_section and test_details and doc.get("test_template"):
+        try:
+            t_match = await db.test_templates.find_one({"test_name": doc["test_template"]})
+            if t_match and any((td.get("test_description") or td.get("test_image")) for td in t_match.get("test_details", [])):
+                has_test_section = True
+        except Exception:
+            pass
+
     if has_test_section:
         c.showPage()
         page_num += 1
@@ -4682,94 +4849,74 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
         for td in test_details:
             td_desc = td.get("test_description") or ""
             td_img = td.get("test_image") or ""
-            if td_desc or td_img:
+            img_bytes = None
+
+            if td_img:
+                img_bytes = await _load_photo_bytes(td_img)
+            elif td.get("test_name"):
+                try:
+                    t_match = None
+                    if doc.get("test_template"):
+                        t_match = await db.test_templates.find_one({"test_name": doc["test_template"]})
+                    if not t_match:
+                        t_match = await db.test_templates.find_one({"test_details.test_name": td.get("test_name")})
+                    if t_match and t_match.get("test_details"):
+                        for t_td in t_match["test_details"]:
+                            if t_td.get("test_name") == td.get("test_name"):
+                                if not td_desc and t_td.get("test_description"):
+                                    td_desc = t_td["test_description"]
+                                if t_td.get("test_image"):
+                                    img_bytes = await _load_photo_bytes(t_td["test_image"])
+                                break
+                except Exception as e:
+                    print(f"[pdf] Test template fallback failed: {e}")
+
+            if td_desc or img_bytes:
                 check_space(25 * mm)
+                y -= 3 * mm
                 c.setFont("Roboto-Bold", 10.5)
                 c.drawString(margin, y, str(td.get("test_name", "Test Detail")))
-                y -= 5 * mm
+                y -= 6 * mm
                 if td_desc:
-                    p_td = Paragraph(str(td_desc).replace("<br>", "<br/>").replace("\n", "<br/>"), body_style)
-                    _, pd_h = p_td.wrap(width - 2 * margin, height)
-                    check_space(pd_h + 5 * mm)
-                    p_td.drawOn(c, margin, y - pd_h)
-                    y -= pd_h + 6 * mm
-                if td_img:
-                    img_bytes = None
-                    if td_img.startswith("data:image/"):
-                        try:
-                            _, encoded = td_img.split(",", 1)
-                            img_bytes = base64.b64decode(encoded)
-                        except Exception:
-                            pass
-                    elif td_img.startswith("/api/uploads/") or td_img.startswith("http") or td_img.startswith("uploads/"):
-                        fname = td_img.rsplit("/", 1)[-1]
-                        for sub in ["test-images", "site-visits", "general", "item-images"]:
-                            fp = ROOT_DIR / "uploads" / sub / fname
-                            if fp.exists():
-                                try:
-                                    raw = fp.read_bytes()
-                                    if fp.suffix.lower() == '.b64':
-                                        b64_content = raw.decode('utf-8', errors='ignore')
-                                        if ',' in b64_content and b64_content.startswith('data:'):
-                                            _, b64_str = b64_content.split(',', 1)
-                                        else:
-                                            b64_str = b64_content
-                                        img_bytes = base64.b64decode(b64_str.strip())
-                                    else:
-                                        img_bytes = raw
-                                    break
-                                except Exception as e:
-                                    print(f"[pdf] Local img read error for {fname}: {e}")
-                    if not img_bytes:
-                        img_bytes = await _load_photo_bytes(td_img)
-                    if not img_bytes and td.get("test_name"):
-                        try:
-                            t_match = None
-                            if doc.get("test_template"):
-                                t_match = await db.test_templates.find_one({"test_name": doc["test_template"]})
-                            if not t_match:
-                                t_match = await db.test_templates.find_one({"test_details.test_name": td.get("test_name")})
-                            if t_match and t_match.get("test_details"):
-                                for t_td in t_match["test_details"]:
-                                    if t_td.get("test_name") == td.get("test_name") and t_td.get("test_image"):
-                                        fb_url = t_td["test_image"]
-                                        fname = fb_url.rsplit("/", 1)[-1]
-                                        for sub in ["test-images", "site-visits", "general", "item-images"]:
-                                            fp = ROOT_DIR / "uploads" / sub / fname
-                                            if fp.exists():
-                                                try:
-                                                    raw = fp.read_bytes()
-                                                    if fp.suffix.lower() == '.b64':
-                                                        b64_content = raw.decode('utf-8', errors='ignore')
-                                                        if ',' in b64_content and b64_content.startswith('data:'):
-                                                            _, b64_str = b64_content.split(',', 1)
-                                                        else:
-                                                            b64_str = b64_content
-                                                        img_bytes = base64.b64decode(b64_str.strip())
-                                                    else:
-                                                        img_bytes = raw
-                                                    break
-                                                except Exception:
-                                                    pass
-                                        if not img_bytes:
-                                            img_bytes = await _load_photo_bytes(fb_url)
-                                        break
-                        except Exception as e:
-                            print(f"[pdf] Test template fallback failed: {e}")
-                    if img_bytes:
-                        try:
-                            ir = ImageReader(io.BytesIO(img_bytes))
-                            img_w, img_h = ir.getSize()
-                            max_w = width - 2 * margin
-                            max_h = 75 * mm
-                            scale = min(max_w / float(img_w), max_h / float(img_h), 1.0)
-                            dw = img_w * scale
-                            dh = img_h * scale
-                            check_space(dh + 6 * mm)
-                            c.drawImage(ir, margin + (max_w - dw) / 2, y - dh, width=dw, height=dh, preserveAspectRatio=True)
-                            y -= dh + 8 * mm
-                        except Exception as e:
-                            print(f"[pdf] Test image draw failed: {e}")
+                    td_parts = _clean_quill_html(td_desc)
+                    if td_parts:
+                        for p_str in td_parts:
+                            if p_str == '<br/>':
+                                y -= 3.5 * mm
+                                continue
+                            p_td = Paragraph(p_str, body_style)
+                            _, pd_h = p_td.wrap(width - 2 * margin, height)
+                            check_space(pd_h + 3 * mm)
+                            p_td.drawOn(c, margin, y - pd_h)
+                            y -= pd_h + 3 * mm
+
+                if img_bytes:
+                    try:
+                        from PIL import Image as PILImage
+                        pil_img = PILImage.open(io.BytesIO(img_bytes))
+                        if pil_img.mode in ("RGBA", "LA") or (pil_img.mode == "P" and "transparency" in pil_img.info):
+                            pil_img = pil_img.convert("RGBA")
+                            bg = PILImage.new("RGBA", pil_img.size, (255, 255, 255, 255))
+                            composited = PILImage.alpha_composite(bg, pil_img)
+                            pil_img = composited.convert("RGB")
+                        elif pil_img.mode != "RGB":
+                            pil_img = pil_img.convert("RGB")
+                        img_buf = io.BytesIO()
+                        pil_img.save(img_buf, format="JPEG", quality=95)
+                        img_buf.seek(0)
+                        ir = ImageReader(img_buf)
+                        img_w, img_h = ir.getSize()
+                        max_w = width - 2 * margin - 15 * mm
+                        max_h = 65 * mm
+                        scale = min(max_w / float(img_w), max_h / float(img_h), 1.0)
+                        dw = img_w * scale
+                        dh = img_h * scale
+                        check_space(dh + 6 * mm)
+                        c.drawImage(ir, margin, y - dh, width=dw, height=dh, preserveAspectRatio=True)
+                        y -= dh + 8 * mm
+                    except Exception as e:
+                        print(f"[pdf] Test image draw failed: {e}")
+                y -= 6 * mm
 
     c.showPage()
     c.save()
@@ -5791,6 +5938,7 @@ async def list_documents(
         q["$or"] = [
             {"doc_number": rx}, {"doc_type_name": rx}, {"client_name": rx}, {"architect_name": rx},
             {"plot_place": rx}, {"contact_person": rx}, {"mobile": rx}, {"remark": rx},
+            {"audit_offer_path": rx}, {"audit_report_path": rx},
         ]
     rows = await db.documents.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
     for r in rows:
@@ -5819,6 +5967,7 @@ async def list_documents_paginated(
         q["$or"] = [
             {"doc_number": rx}, {"doc_type_name": rx}, {"client_name": rx}, {"architect_name": rx},
             {"plot_place": rx}, {"contact_person": rx}, {"mobile": rx}, {"remark": rx},
+            {"audit_offer_path": rx}, {"audit_report_path": rx},
         ]
 
     total = await db.documents.count_documents(q)
@@ -5870,6 +6019,8 @@ async def create_document(data: DocumentIn):
         "phase": data.phase or "",
         "number_field": data.number_field or "",
         "remark": data.remark or "",
+        "audit_offer_path": data.audit_offer_path or "",
+        "audit_report_path": data.audit_report_path or "",
         "contact_person": data.contact_person or "",
         "mobile": data.mobile or "",
         "other_comments": data.other_comments or "",
@@ -5902,6 +6053,8 @@ async def update_document(doc_id: str, data: DocumentIn):
         "phase": data.phase or "",
         "number_field": data.number_field or "",
         "remark": data.remark or "",
+        "audit_offer_path": data.audit_offer_path or "",
+        "audit_report_path": data.audit_report_path or "",
         "contact_person": data.contact_person or "",
         "mobile": data.mobile or "",
         "other_comments": data.other_comments or "",
@@ -6081,7 +6234,9 @@ async def document_pdf(doc_id: str):
 
     rows = [
         ("Location", d.get("phase")),
-        ("Path of Folder", d.get("remark")),
+        ("Audit Offer Path", d.get("audit_offer_path")),
+        ("Audit Report Path", d.get("audit_report_path")),
+        ("Path of Folder", d.get("remark") if not d.get("audit_offer_path") and not d.get("audit_report_path") else None),
         ("Other Comments", d.get("other_comments")),
     ]
     styles = getSampleStyleSheet()
@@ -6794,13 +6949,39 @@ def _photo_to_image_reader(p: dict) -> Optional[ImageReader]:
 
 
 async def _load_photo_bytes(url: str) -> Optional[bytes]:
-    """Download an image's raw bytes for the PDF builder. Tries disk folders
-    first (test-images, site-visits, item-images, general), decoding .b64 if needed,
-    then tries GridFS by filename."""
+    """Download an image's raw bytes for the PDF builder. Tries base64 data URIs,
+    disk folders (test-images, site-visits, item-images, general), decoding .b64 if needed,
+    GridFS by filename, and remote URLs."""
     if not url:
         return None
-    fname = url.rsplit("/", 1)[-1]
-    for folder in [TEST_IMAGE_UPLOAD_DIR, SITE_VISIT_UPLOAD_DIR, ITEM_IMAGE_UPLOAD_DIR, UPLOAD_ROOT / "general"]:
+    url_str = str(url).strip()
+    if url_str.startswith("data:"):
+        try:
+            _, b64_str = url_str.split(",", 1)
+            return base64.b64decode(b64_str.strip())
+        except Exception:
+            return None
+
+    clean_url = url_str.split("?")[0].split("#")[0]
+    fname = clean_url.rsplit("/", 1)[-1]
+    if not fname:
+        return None
+
+    folders_to_check = [
+        TEST_IMAGE_UPLOAD_DIR,
+        SITE_VISIT_UPLOAD_DIR,
+        ITEM_IMAGE_UPLOAD_DIR,
+        UPLOAD_ROOT / "general",
+        UPLOAD_ROOT / "test-images",
+        UPLOAD_ROOT / "item-images",
+        UPLOAD_ROOT / "site-visits",
+        ROOT_DIR / "uploads" / "test-images",
+        ROOT_DIR / "uploads" / "item-images",
+        ROOT_DIR / "uploads" / "site-visits",
+        ROOT_DIR / "uploads" / "general"
+    ]
+
+    for folder in folders_to_check:
         fpath = folder / fname
         if fpath.exists():
             try:
@@ -6815,25 +6996,47 @@ async def _load_photo_bytes(url: str) -> Optional[bytes]:
                 return raw
             except Exception:
                 pass
-    try:
-        stream = await _photo_bucket.open_download_stream_by_name(fname)
+
+    if _photo_bucket:
         try:
-            raw = await stream.read()
-            if fname.lower().endswith('.b64'):
-                b64_content = raw.decode('utf-8', errors='ignore')
-                if ',' in b64_content and b64_content.startswith('data:'):
-                    _, b64_str = b64_content.split(',', 1)
-                else:
-                    b64_str = b64_content
-                return base64.b64decode(b64_str.strip())
-            return raw
-        finally:
+            stream = await _photo_bucket.open_download_stream_by_name(fname)
             try:
-                stream.close()
-            except Exception:
-                pass
-    except Exception:
-        return None
+                raw = await stream.read()
+                if fname.lower().endswith('.b64'):
+                    b64_content = raw.decode('utf-8', errors='ignore')
+                    if ',' in b64_content and b64_content.startswith('data:'):
+                        _, b64_str = b64_content.split(',', 1)
+                    else:
+                        b64_str = b64_content
+                    return base64.b64decode(b64_str.strip())
+                return raw
+            finally:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    if url_str.startswith("http://") or url_str.startswith("https://"):
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url_str)
+                if resp.status_code == 200:
+                    raw = resp.content
+                    if fname.lower().endswith('.b64'):
+                        b64_content = raw.decode('utf-8', errors='ignore')
+                        if ',' in b64_content and b64_content.startswith('data:'):
+                            _, b64_str = b64_content.split(',', 1)
+                        else:
+                            b64_str = b64_content
+                        return base64.b64decode(b64_str.strip())
+                    return raw
+        except Exception:
+            pass
+
+    return None
 
 
 @api_router.post("/site-visits/uploads")
@@ -7359,7 +7562,7 @@ def _render_site_visit_pdf_response(v: dict) -> StreamingResponse:
     # the bottom ~32mm (green band + contact details). We keep our body well
     # inside those zones so nothing visually clashes.
     LH_TOP_RESERVE = 22 * mm   # space below top of page where our title sits
-    LH_BOTTOM_RESERVE = 34 * mm  # space above the letterhead footer band
+    LH_BOTTOM_RESERVE = 46 * mm  # space above the letterhead footer band
     page_bottom_limit = LH_BOTTOM_RESERVE
 
     def header():
@@ -7618,15 +7821,71 @@ async def _enrich_task(t: dict):
             t["project_code"] = p.get("job_no") or p.get("project_code") or ""
 
 
+async def _get_task_role_query(user: dict) -> dict:
+    if not user or user.get("role") == "admin":
+        return {}
+    role = (user.get("role") or "").lower()
+    user_id = user.get("id")
+
+    if role in ("engineer", "draftsman"):
+        colleagues = await db.users.find({"role": {"$in": ["engineer", "draftsman", "admin"]}}, {"_id": 0, "id": 1}).to_list(None)
+        colleague_ids = [u["id"] for u in colleagues if "id" in u]
+        return {
+            "$or": [
+                {"assigned_to_user_id": {"$in": colleague_ids}},
+                {"assigned_to_user_id": user_id},
+                {"assigned_to_accountant_id": user_id},
+                {"created_by_user_id": user_id},
+                {"category": {"$in": ["engineering", "structural"]}}
+            ]
+        }
+    elif role in ("account", "accountant"):
+        colleagues = await db.users.find({"role": {"$in": ["account", "accountant", "admin"]}}, {"_id": 0, "id": 1}).to_list(None)
+        colleague_ids = [u["id"] for u in colleagues if "id" in u]
+        return {
+            "$or": [
+                {"assigned_to_accountant_id": {"$in": colleague_ids}},
+                {"assigned_to_user_id": {"$in": colleague_ids}},
+                {"assigned_to_user_id": user_id},
+                {"assigned_to_accountant_id": user_id},
+                {"created_by_user_id": user_id},
+                {"category": {"$in": ["accounting", "structural"]}}
+            ]
+        }
+    else:
+        return {
+            "$or": [
+                {"assigned_to_user_id": user_id},
+                {"assigned_to_accountant_id": user_id},
+                {"created_by_user_id": user_id}
+            ]
+        }
+
+
+def _can_modify_task(task: dict, user: dict) -> bool:
+    if not user:
+        return False
+    if user.get("role") == "admin":
+        return True
+    user_id = user.get("id")
+    assigned_user = task.get("assigned_to_user_id")
+    assigned_acc = task.get("assigned_to_accountant_id")
+    created_by = task.get("created_by_user_id")
+    
+    if user_id and user_id in (assigned_user, assigned_acc, created_by):
+        return True
+    if not assigned_user and not assigned_acc:
+        return True
+    return False
+
+
 @api_router.get("/tasks")
 async def list_tasks(category: Optional[str] = None, project_id: Optional[str] = None):
     user = get_current_user_safe()
     query: dict = {}
-    if user and user.get("role") != "admin":
-        query["$or"] = [
-            {"assigned_to_user_id": user["id"]},
-            {"assigned_to_accountant_id": user["id"]}
-        ]
+    role_q = await _get_task_role_query(user)
+    if role_q:
+        query.update(role_q)
         
     if category:
         query["category"] = category
@@ -7652,14 +7911,10 @@ async def list_tasks_paginated(
     skip = (page - 1) * limit
     user = get_current_user_safe()
     base_query: dict = {}
-    if user and user.get("role") != "admin":
+    role_q = await _get_task_role_query(user)
+    if role_q:
         base_query["$and"] = base_query.get("$and", [])
-        base_query["$and"].append({
-            "$or": [
-                {"assigned_to_user_id": user["id"]},
-                {"assigned_to_accountant_id": user["id"]}
-            ]
-        })
+        base_query["$and"].append(role_q)
         
     if category:
         base_query["category"] = category
@@ -7807,6 +8062,9 @@ async def update_task(task_id: str, data: TaskIn):
     old_task = await db.tasks.find_one({"id": task_id})
     if not old_task:
         raise HTTPException(404, "Task not found")
+    user = get_current_user_safe()
+    if not _can_modify_task(old_task, user):
+        raise HTTPException(403, "You can only view tasks assigned to other team members.")
     if data.assigned_to_user_id:
         if not await db.users.find_one({"id": data.assigned_to_user_id}):
             raise HTTPException(404, "Assigned user not found")
@@ -7883,6 +8141,9 @@ async def update_task_status(task_id: str, data: TaskStatusUpdate):
     t = await db.tasks.find_one({"id": task_id})
     if not t:
         raise HTTPException(404, "Task not found")
+    user = get_current_user_safe()
+    if not _can_modify_task(t, user):
+        raise HTTPException(403, "You can only view tasks assigned to other team members.")
     
     update_fields = {"status": data.status}
     if data.status == "done" and t.get("status") != "done":
@@ -7914,18 +8175,22 @@ async def update_task_phase(task_id: str, data: TaskPhaseUpdate):
         raise HTTPException(401, "Not authenticated")
     role = user.get("role")
     
-    if data.phase in ["site_visit", "preparation"]:
-        if role not in ["admin", "engineer"]:
-            raise HTTPException(403, f"Only engineers can update {data.phase}")
-    elif data.phase == "submission":
-        if role not in ["admin", "account"]:
-            raise HTTPException(403, "Only accountants can update submission")
-    else:
-        raise HTTPException(400, "Invalid phase")
-        
     t = await db.tasks.find_one({"id": task_id})
     if not t:
         raise HTTPException(404, "Task not found")
+        
+    if data.phase in ["site_visit", "preparation"]:
+        if role not in ["admin", "engineer"]:
+            raise HTTPException(403, f"Only engineers can update {data.phase}")
+        if role != "admin" and t.get("assigned_to_user_id") and t.get("assigned_to_user_id") != user.get("id") and t.get("created_by_user_id") != user.get("id"):
+            raise HTTPException(403, "You can only view tasks assigned to other engineers.")
+    elif data.phase == "submission":
+        if role not in ["admin", "account"]:
+            raise HTTPException(403, "Only accountants can update submission")
+        if role != "admin" and t.get("assigned_to_accountant_id") and t.get("assigned_to_accountant_id") != user.get("id") and t.get("created_by_user_id") != user.get("id"):
+            raise HTTPException(403, "You can only view tasks assigned to other accountants.")
+    else:
+        raise HTTPException(400, "Invalid phase")
         
     update_fields = {f"{data.phase}_status": data.status}
     
@@ -11491,6 +11756,21 @@ async def upload_item_image_base64(data: Base64ImageUpload):
 @auth_public_router.get("/uploads/test-images/{filename}")
 async def get_test_image(filename: str):
     fpath = TEST_IMAGE_UPLOAD_DIR / filename
+    if not fpath.exists() and _photo_bucket:
+        try:
+            grid_out = await _photo_bucket.open_download_stream_by_name(filename)
+            bdata = await grid_out.read()
+            if bdata:
+                TEST_IMAGE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+                if filename.endswith(".b64"):
+                    with open(fpath, "w", encoding="utf-8") as f:
+                        f.write(bdata.decode("utf-8", errors="ignore"))
+                else:
+                    with open(fpath, "wb") as f:
+                        f.write(bdata)
+        except Exception as e:
+            print(f"[get_test_image] GridFS download failed for {filename}: {e}")
+            
     if not fpath.exists():
         raise HTTPException(404, "Image not found")
         
@@ -11519,6 +11799,21 @@ async def get_test_image(filename: str):
 @auth_public_router.get("/uploads/item-images/{filename}")
 async def get_item_image(filename: str):
     fpath = ITEM_IMAGE_UPLOAD_DIR / filename
+    if not fpath.exists() and _photo_bucket:
+        try:
+            grid_out = await _photo_bucket.open_download_stream_by_name(filename)
+            bdata = await grid_out.read()
+            if bdata:
+                ITEM_IMAGE_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+                if filename.endswith(".b64"):
+                    with open(fpath, "w", encoding="utf-8") as f:
+                        f.write(bdata.decode("utf-8", errors="ignore"))
+                else:
+                    with open(fpath, "wb") as f:
+                        f.write(bdata)
+        except Exception as e:
+            print(f"[get_item_image] GridFS download failed for {filename}: {e}")
+
     if not fpath.exists():
         raise HTTPException(404, "Image not found")
         

@@ -42,31 +42,48 @@ const ScaledPrintPreview = ({ children }) => {
   const updateScale = useCallback(() => {
     if (containerRef.current && innerRef.current) {
       const available = containerRef.current.clientWidth;
-      const newScale = Math.min(1, available / TEMPLATE_WIDTH);
-      setScale(newScale);
-      const naturalHeight = innerRef.current.scrollHeight;
-      setScaledHeight(naturalHeight * newScale);
+      if (available > 0) {
+        const targetWidth = Math.min(TEMPLATE_WIDTH, available - 32);
+        const newScale = Math.max(0.3, Math.min(1, targetWidth / TEMPLATE_WIDTH));
+        setScale(newScale);
+        const naturalHeight = innerRef.current.scrollHeight;
+        setScaledHeight(naturalHeight * newScale);
+      }
     }
   }, []);
 
   useEffect(() => {
+    updateScale();
     const timer = setTimeout(updateScale, 100);
-    const ro = new ResizeObserver(updateScale);
+    const timer2 = setTimeout(updateScale, 500);
+    const ro = new ResizeObserver(() => {
+      window.requestAnimationFrame(updateScale);
+    });
     if (containerRef.current) ro.observe(containerRef.current);
-    return () => { clearTimeout(timer); ro.disconnect(); };
+    if (innerRef.current) ro.observe(innerRef.current);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(timer2);
+      ro.disconnect();
+    };
   }, [updateScale]);
 
   return (
-    <div ref={containerRef} className="w-full" style={{ height: scaledHeight !== 'auto' ? `${scaledHeight}px` : 'auto', position: 'relative' }}>
+    <div
+      ref={containerRef}
+      className="w-full relative flex justify-center py-4"
+      style={{
+        height: scaledHeight !== 'auto' ? `${scaledHeight + 32}px` : 'auto',
+      }}
+    >
       <div
         ref={innerRef}
         style={{
           transform: `scale(${scale})`,
-          transformOrigin: 'top left',
+          transformOrigin: 'top center',
           width: `${TEMPLATE_WIDTH}px`,
           position: 'absolute',
-          top: 0,
-          left: 0,
+          top: '16px',
         }}
       >
         {children}
@@ -639,19 +656,30 @@ const SalesOrderCreatePage = () => {
 
   // Effect: When payment_terms_template changes, update payment_schedule
   useEffect(() => {
-    if (!form.payment_terms_template || isEdit) return;
-    const template = paymentTermsTemplates.find(t => t.template_name === form.payment_terms_template);
-    if (template && template.terms) {
-      updateForm('payment_schedule', template.terms.map(t => ({
-        payment_term: t.payment_term,
-        description: t.description,
-        invoice_portion: t.invoice_portion,
-        due_date_based_on: t.due_date_based_on,
-        credit_days: t.credit_days,
-        payment_amount: 0
-      })));
+    if (!form.payment_terms_template) return;
+    const template = paymentTermsTemplates.find(t => 
+      t.template_name === form.payment_terms_template || 
+      t.name === form.payment_terms_template || 
+      t.id === form.payment_terms_template
+    );
+    if (template) {
+      const termsList = template.terms || template.schedule || [];
+      const totalAmount = calculations?.finalTotal || calculations?.grandTotal || 0;
+      updateForm('payment_schedule', termsList.map(t => {
+        const portion = Number(t.invoice_portion) || 0;
+        const amt = totalAmount > 0 ? (portion / 100) * totalAmount : 0;
+        return {
+          payment_term: t.payment_term || t.payment_term_name || t.name || '',
+          description: t.description || '',
+          due_date: t.due_date || '',
+          invoice_portion: portion,
+          due_date_based_on: t.due_date_based_on || 'Day(s) after invoice date',
+          credit_days: t.credit_days || 0,
+          payment_amount: Number(amt.toFixed(2))
+        };
+      }));
     }
-  }, [form.payment_terms_template, isEdit, paymentTermsTemplates]);
+  }, [form.payment_terms_template, paymentTermsTemplates]);
 
   // Effect: When tc_name changes, update terms
   useEffect(() => {
@@ -764,14 +792,15 @@ const SalesOrderCreatePage = () => {
     const newSchedule = [...form.payment_schedule];
     newSchedule[index] = { ...newSchedule[index], [key]: val };
     
+    const totalAmount = calculations?.finalTotal || calculations?.grandTotal || 0;
     if (key === 'invoice_portion') {
       const portion = Number(val) || 0;
-      const grandTotal = calculations?.grandTotal || 0;
-      newSchedule[index].payment_amount = (portion / 100) * grandTotal;
+      newSchedule[index].payment_amount = Number(((portion / 100) * totalAmount).toFixed(2));
     } else if (key === 'payment_amount') {
-      const amount = Number(val) || 0;
-      const grandTotal = calculations?.grandTotal || 0;
-      newSchedule[index].invoice_portion = grandTotal > 0 ? (amount / grandTotal) * 100 : 0;
+      const amt = Number(val) || 0;
+      if (totalAmount > 0) {
+        newSchedule[index].invoice_portion = Number(((amt / totalAmount) * 100).toFixed(2));
+      }
     }
     
     setForm(prev => ({ ...prev, payment_schedule: newSchedule }));
@@ -1036,17 +1065,17 @@ const SalesOrderCreatePage = () => {
     };
   }, [form.items, form.taxes, form.disable_rounded_total, form.is_lumpsum, taxCategories, form.tax_category]);
 
-  // Effect: Sync payment schedule amounts when grandTotal changes
+  // Effect: Sync payment schedule amounts when total amount changes
   useEffect(() => {
-    if (form.payment_schedule && calculations?.grandTotal !== undefined) {
-      const grandTotal = calculations.grandTotal;
+    const totalAmount = calculations?.finalTotal || calculations?.grandTotal || 0;
+    if (form.payment_schedule && form.payment_schedule.length > 0 && totalAmount > 0) {
       let changed = false;
       const newSchedule = form.payment_schedule.map(schedule => {
         const portion = Number(schedule.invoice_portion) || 0;
-        const newAmount = Number(((portion / 100) * grandTotal).toFixed(2));
-        if (newAmount !== Number(schedule.payment_amount)) {
+        const expectedAmount = Number(((portion / 100) * totalAmount).toFixed(2));
+        if (Number(schedule.payment_amount) !== expectedAmount && portion > 0) {
           changed = true;
-          return { ...schedule, payment_amount: newAmount };
+          return { ...schedule, payment_amount: expectedAmount };
         }
         return schedule;
       });
@@ -1054,7 +1083,7 @@ const SalesOrderCreatePage = () => {
         setForm(prev => ({ ...prev, payment_schedule: newSchedule }));
       }
     }
-  }, [calculations?.grandTotal, form.payment_schedule]);
+  }, [calculations?.finalTotal, calculations?.grandTotal]);
 
 
   
@@ -2399,7 +2428,7 @@ const SalesOrderCreatePage = () => {
       {/* Preview Modal */}
       {isPreviewMode && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-75 p-2 sm:p-6 overflow-hidden">
-          <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl h-full flex flex-col">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl h-full flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-3 sm:px-6 py-3 border-b border-gray-100 shrink-0">
               <h2 className="text-base sm:text-lg font-semibold text-gray-900">Preview</h2>
               <div className="flex items-center gap-2 sm:gap-3">
@@ -2423,8 +2452,8 @@ const SalesOrderCreatePage = () => {
                 )}
               </div>
             </div>
-            <div className="overflow-y-auto bg-gray-100 flex-1 p-3 sm:p-6">
-              <div className="bg-white shadow-sm border border-gray-200 rounded-lg p-3 sm:p-6 mx-auto w-full" style={{ maxWidth: '900px' }}>
+            <div className="overflow-y-auto overflow-x-hidden bg-gray-100 flex-1 p-3 sm:p-6 flex justify-center">
+              <div className="w-full flex justify-center max-w-4xl">
                 <ScaledPrintPreview>
                   <SalesOrderPrintTemplate
                     form={{...form, grand_total: calculations.grandTotal, total_taxes_and_charges: calculations.totalTaxAmount, amount_in_words: calculations.inWords}}
