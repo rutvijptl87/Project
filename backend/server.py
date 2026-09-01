@@ -940,7 +940,6 @@ class InvoiceIn(BaseModel):
     invoice_date: str # "YYYY-MM-DD"
     expiry_date: Optional[str] = ""
     hsn_code: str = "998332"
-    po_number: Optional[str] = ""
     client_id: str
     client_name: str
     client_company: Optional[str] = ""
@@ -3074,86 +3073,6 @@ async def set_audit_offer_series(payload: dict = Body(...)):
     }
 
 
-@api_router.get("/invoices/series/{kind}")
-async def get_invoice_series(kind: str):
-    """Read the numbering config for `proforma` or `tax` invoices."""
-    _deny_engineer()
-    if kind not in ("proforma", "tax"):
-        raise HTTPException(400, "kind must be 'proforma' or 'tax'")
-    cfg = await _invoice_series_config(kind)
-    year = datetime.now(timezone.utc).year
-    counter_id = f"{'proforma_invoice' if kind == 'proforma' else 'tax_invoice'}"
-    if cfg["year_reset"]:
-        counter_id = f"{counter_id}_{year}"
-    doc = await db.counters.find_one({"_id": counter_id})
-    seq = (doc or {}).get("seq", 0)
-    next_seq = seq + 1
-    return {
-        "kind": kind,
-        "year": year,
-        "prefix": cfg["prefix"],
-        "suffix": cfg["suffix"],
-        "pad": cfg["pad"],
-        "year_reset": cfg["year_reset"],
-        "current_seq": seq,
-        "next_seq": next_seq,
-        "next_code": _format_invoice_no(cfg, year, next_seq),
-    }
-
-
-@api_router.put("/invoices/series/{kind}")
-async def set_invoice_series(kind: str, payload: dict = Body(...)):
-    """Admin: update prefix/suffix/pad/year_reset/next_seq for the invoice series."""
-    _require_admin()
-    if kind not in ("proforma", "tax"):
-        raise HTTPException(400, "kind must be 'proforma' or 'tax'")
-    cfg = await _invoice_series_config(kind)
-    new_prefix = str(payload.get("prefix", cfg["prefix"]))
-    new_suffix = str(payload.get("suffix", cfg["suffix"]))
-    try:
-        new_pad = int(payload.get("pad", cfg["pad"]))
-    except (TypeError, ValueError):
-        raise HTTPException(400, "pad must be a positive integer")
-    if new_pad < 1 or new_pad > 6:
-        raise HTTPException(400, "pad must be between 1 and 6")
-    new_year_reset = bool(payload.get("year_reset", cfg["year_reset"]))
-
-    year = datetime.now(timezone.utc).year
-    base_id = "proforma_invoice" if kind == "proforma" else "tax_invoice"
-    counter_id = f"{base_id}_{year}" if new_year_reset else base_id
-    current_doc = await db.counters.find_one({"_id": counter_id})
-    current_seq = (current_doc or {}).get("seq", 0)
-    if "next_seq" in payload:
-        try:
-            next_seq = int(payload["next_seq"])
-        except (TypeError, ValueError):
-            raise HTTPException(400, "next_seq must be a positive integer")
-        if next_seq < 1:
-            raise HTTPException(400, "next_seq must be at least 1")
-    else:
-        next_seq = current_seq + 1
-
-    new_cfg = {"prefix": new_prefix, "suffix": new_suffix, "pad": new_pad, "year_reset": new_year_reset}
-    candidate = _format_invoice_no(new_cfg, year, next_seq)
-    field = "proforma_no" if kind == "proforma" else "invoice_no"
-    clash = await db.invoices.find_one({field: candidate}, {"_id": 0, "id": 1})
-    if clash:
-        raise HTTPException(400, f"Number {candidate} already exists. Pick a different next_seq.")
-
-    await db.settings.update_one(
-        {"_id": f"{kind}_series"},
-        {"$set": new_cfg},
-        upsert=True,
-    )
-    await db.counters.update_one(
-        {"_id": counter_id},
-        {"$set": {"seq": next_seq - 1}},
-        upsert=True,
-    )
-    return {"ok": True, "kind": kind, "next_code": candidate, **new_cfg, "next_seq": next_seq}
-
-
-
 
 @api_router.get("/audits/paginated", response_model=PaginatedAudits)
 async def list_audits_paginated(
@@ -4872,24 +4791,28 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
                     print(f"[pdf] Test template fallback failed: {e}")
 
             if td_desc or img_bytes:
-                check_space(25 * mm)
-                y -= 3 * mm
-                c.setFont("Roboto-Bold", 10.5)
-                c.drawString(margin, y, str(td.get("test_name", "Test Detail")))
-                y -= 6 * mm
+                t_name_str = str(td.get("test_name", "Test Detail"))
+                p_title = Paragraph(f"<b><u>{t_name_str}</u></b>", ParagraphStyle("td_title", parent=bold_style, fontSize=10.5, leading=14, spaceAfter=0, spaceBefore=0))
+                _, title_h = p_title.wrap(width - 2 * margin, height)
+                heading_total_h = 3 * mm + title_h + 4 * mm
+
+                desc_items = []
+                desc_total_h = 0
                 if td_desc:
                     td_parts = _clean_quill_html(td_desc)
                     if td_parts:
                         for p_str in td_parts:
                             if p_str == '<br/>':
-                                y -= 3.5 * mm
-                                continue
-                            p_td = Paragraph(p_str, body_style)
-                            _, pd_h = p_td.wrap(width - 2 * margin, height)
-                            check_space(pd_h + 3 * mm)
-                            p_td.drawOn(c, margin, y - pd_h)
-                            y -= pd_h + 3 * mm
+                                desc_items.append(('br', None, 3.5 * mm))
+                                desc_total_h += 3.5 * mm
+                            else:
+                                p_td = Paragraph(p_str, body_style)
+                                _, pd_h = p_td.wrap(width - 2 * margin, height)
+                                desc_items.append(('p', p_td, pd_h, 3 * mm))
+                                desc_total_h += pd_h + 3 * mm
 
+                img_info = None
+                img_total_h = 0
                 if img_bytes:
                     try:
                         from PIL import Image as PILImage
@@ -4911,12 +4834,59 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
                         scale = min(max_w / float(img_w), max_h / float(img_h), 1.0)
                         dw = img_w * scale
                         dh = img_h * scale
-                        check_space(dh + 6 * mm)
-                        c.drawImage(ir, margin, y - dh, width=dw, height=dh, preserveAspectRatio=True)
-                        y -= dh + 8 * mm
+                        img_info = (ir, dw, dh)
+                        img_total_h = dh + 8 * mm
                     except Exception as e:
                         print(f"[pdf] Test image draw failed: {e}")
-                y -= 6 * mm
+
+                test_gap = 6 * mm
+                total_test_h = heading_total_h + desc_total_h + img_total_h + test_gap
+                usable_page_h = (height - LH_TOP_RESERVE - 5 * mm) - page_bottom_limit
+
+                if total_test_h <= usable_page_h:
+                    if y - total_test_h < page_bottom_limit:
+                        c.showPage()
+                        page_num += 1
+                        header()
+                        y = height - LH_TOP_RESERVE - 5 * mm
+                else:
+                    if y < height - LH_TOP_RESERVE - 10 * mm:
+                        c.showPage()
+                        page_num += 1
+                        header()
+                        y = height - LH_TOP_RESERVE - 5 * mm
+
+                # Draw heading
+                y -= 3 * mm
+                p_title.drawOn(c, margin, y - title_h)
+                y -= title_h + 4 * mm
+
+                # Draw description
+                for item in desc_items:
+                    if item[0] == 'br':
+                        y -= item[2]
+                    else:
+                        _, p_td, pd_h, gap = item
+                        if y - pd_h < page_bottom_limit:
+                            c.showPage()
+                            page_num += 1
+                            header()
+                            y = height - LH_TOP_RESERVE - 5 * mm
+                        p_td.drawOn(c, margin, y - pd_h)
+                        y -= pd_h + gap
+
+                # Draw image
+                if img_info:
+                    ir, dw, dh = img_info
+                    if y - dh < page_bottom_limit:
+                        c.showPage()
+                        page_num += 1
+                        header()
+                        y = height - LH_TOP_RESERVE - 5 * mm
+                    c.drawImage(ir, margin, y - dh, width=dw, height=dh, preserveAspectRatio=True)
+                    y -= dh + 8 * mm
+
+                y -= test_gap
 
     c.showPage()
     c.save()
@@ -8453,57 +8423,26 @@ def num_to_words_indian(number: float) -> str:
     return result + " Only"
 
 
-async def _invoice_series_config(kind: str) -> dict:
-    """Load numbering config for `proforma` or `tax` invoices from `settings`.
-
-    Falls back to the legacy hard-coded defaults so existing deployments
-    keep issuing numbers before an admin opens Settings for the first time.
-    """
-    doc = await db.settings.find_one({"_id": f"{kind}_series"}) or {}
-    if kind == "proforma":
-        default_prefix, default_suffix = "CC > PIC > ", ""
-    else:
-        default_prefix, default_suffix = "CC > ARL > ", ""
-    return {
-        "prefix": doc.get("prefix", default_prefix),
-        "suffix": doc.get("suffix", default_suffix),
-        "pad": int(doc.get("pad") or 3),
-        "year_reset": bool(doc.get("year_reset", False)),
-    }
-
-
-def _format_invoice_no(cfg: dict, year: int, seq: int) -> str:
-    padded = str(seq).zfill(cfg["pad"])
-    body = f"{year}/{padded}" if cfg["year_reset"] else padded
-    return f"{cfg['prefix']}{body}{cfg['suffix']}"
-
-
 async def _next_proforma_no() -> str:
-    cfg = await _invoice_series_config("proforma")
-    year = datetime.now(timezone.utc).year
-    counter_id = f"proforma_invoice_{year}" if cfg["year_reset"] else "proforma_invoice"
     counter = await db.counters.find_one_and_update(
-        {"_id": counter_id},
+        {"_id": "proforma_invoice"},
         {"$inc": {"seq": 1}},
         upsert=True,
         return_document=True,
     )
     seq = (counter or {}).get("seq", 1)
-    return _format_invoice_no(cfg, year, seq)
+    return f"CC > PIC > {seq:03d}"
 
 
 async def _next_tax_invoice_no() -> str:
-    cfg = await _invoice_series_config("tax")
-    year = datetime.now(timezone.utc).year
-    counter_id = f"tax_invoice_{year}" if cfg["year_reset"] else "tax_invoice"
     counter = await db.counters.find_one_and_update(
-        {"_id": counter_id},
+        {"_id": "tax_invoice"},
         {"$inc": {"seq": 1}},
         upsert=True,
         return_document=True,
     )
     seq = (counter or {}).get("seq", 1)
-    return _format_invoice_no(cfg, year, seq)
+    return f"CC > ARL > {seq:03d}"
 
 
 async def _next_quotation_no(job_sub_type: Optional[str] = None) -> str:
@@ -9500,24 +9439,23 @@ async def _build_invoice_document_pdf(invoice: dict) -> bytes:
     c.setLineWidth(1.0)
     c.line(v_split, y_split_line, width - margin, y_split_line)
 
-    # HSN CODE | PO NUMBER | PAN NO — three sub-columns in lower part of right panel
-    third = rp_w / 3
-    c1_hsn = v_split + third / 2
-    c2_po = v_split + third + third / 2
-    c3_pan = v_split + 2 * third + third / 2
+    # HSN CODE | PAN NO — two sub-columns in lower part of right panel
+    v_pan_split = v_split + (rp_w / 2)
+    # Line removed based on user feedback
+
+    c1_hsn = v_split + 12.5 * mm
+    c2_pan = (width - margin) - 12.5 * mm
 
     h2 = header_h - 22 * mm
     y_meta_bottom_top = y_split_line - (h2 / 2 - 2 * mm)
 
     c.setFont("Roboto-Bold", 10)
     c.drawCentredString(c1_hsn, y_meta_bottom_top, "HSN CODE")
-    c.drawCentredString(c2_po, y_meta_bottom_top, "PO NUMBER")
-    c.drawCentredString(c3_pan, y_meta_bottom_top, "PAN NO")
+    c.drawCentredString(c2_pan, y_meta_bottom_top, "PAN NO")
 
     c.setFont("Roboto", 10)
     c.drawCentredString(c1_hsn, y_meta_bottom_top - 5 * mm, invoice.get("hsn_code", "998332"))
-    c.drawCentredString(c2_po, y_meta_bottom_top - 5 * mm, invoice.get("po_number", "") or "-")
-    c.drawCentredString(c3_pan, y_meta_bottom_top - 5 * mm, cd.get("pan", ""))
+    c.drawCentredString(c2_pan, y_meta_bottom_top - 5 * mm, cd.get("pan", ""))
 
     # ── Bill To block ─────────────────────────────────────────────────────
     y_billto = y_header_bottom
@@ -9559,7 +9497,7 @@ async def _build_invoice_document_pdf(invoice: dict) -> bytes:
     c.setFont("Roboto", 9)
     c.drawString(bx, y_billto - 3.5 * mm, "BILL TO")
 
-    c.setFont("Roboto-Bold", 10)
+    c.setFont("Roboto", 8.5)
     if client_company_str and client_company_str != client_name_str:
         c.drawString(bx, y_pos, client_company_str)
     else:

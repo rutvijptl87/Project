@@ -9,7 +9,6 @@ import DocumentTypesCard from '../components/DocumentTypesCard';
 import SiteVisitTemplatesCard from '../components/SiteVisitTemplatesCard';
 import SiteVisitNumberSeriesCard from '../components/SiteVisitNumberSeriesCard';
 import AuditOfferSeriesCard from '../components/AuditOfferSeriesCard';
-import InvoiceSeriesCard from '../components/InvoiceSeriesCard';
 import DefaultSignatureCard from '../components/DefaultSignatureCard';
 import MobileNotificationsCard from '../components/MobileNotificationsCard';
 import CompanyDetailsCard from '../components/CompanyDetailsCard';
@@ -88,16 +87,6 @@ const SettingsPage = () => {
       {/* Site Visit Report Numbering — admin can set the next SV-NNNN */}
       <SiteVisitNumberSeriesCard />
       <AuditOfferSeriesCard />
-      <InvoiceSeriesCard
-        kind="proforma"
-        title="Proforma Number"
-        hint="Edit the prefix, suffix, padding, and next serial for Proforma invoices. E.g. CC > PIC > 001."
-      />
-      <InvoiceSeriesCard
-        kind="tax"
-        title="Tax Invoice Number"
-        hint="Edit the prefix, suffix, padding, and next serial for Tax invoices. E.g. CC > ARL > 001."
-      />
 
       {/* Per-user activity feed */}
       <div className="mb-4"><UserActivityCard /></div>

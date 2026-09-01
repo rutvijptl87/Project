@@ -8,18 +8,7 @@ import { formatActivityDay } from '../lib/format';
 const POLL_INTERVAL_MS = 30_000;
 
 const relTime = (iso) => {
-  // DD-MM-YYYY hh:mm AM/PM — requested unified format across notifications + activity log.
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso);
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  let hh = d.getHours();
-  const min = String(d.getMinutes()).padStart(2, '0');
-  const ampm = hh >= 12 ? 'PM' : 'AM';
-  hh = hh % 12 || 12;
-  return `${dd}-${mm}-${yyyy} ${String(hh).padStart(2, '0')}:${min} ${ampm}`;
+  return formatActivityDay(iso);
 };
 
 const NotificationBell = () => {

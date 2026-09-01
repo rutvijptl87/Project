@@ -27,19 +27,18 @@ export const formatDate = (iso) => {
 };
 
 export const formatActivityDay = (iso) => {
-  // Unified DD-MM-YYYY hh:mm AM/PM stamp — used by activity feed + notifications.
   if (!iso) return '—';
   try {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return iso;
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
-    let hh = d.getHours();
-    const min = String(d.getMinutes()).padStart(2, '0');
-    const ampm = hh >= 12 ? 'PM' : 'AM';
-    hh = hh % 12 || 12;
-    return `${dd}-${mm}-${yyyy} ${String(hh).padStart(2, '0')}:${min} ${ampm}`;
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfDate = new Date(d);
+    startOfDate.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((startOfToday - startOfDate) / (1000 * 60 * 60 * 24));
+    if (diffDays <= 0) return 'today';
+    if (diffDays === 1) return 'yesterday';
+    return `${diffDays} days ago`;
   } catch {
     return iso;
   }

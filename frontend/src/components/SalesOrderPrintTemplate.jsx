@@ -97,7 +97,21 @@ const SalesOrderPrintTemplate = forwardRef(({ form, letterHead, printHeading, te
     <div ref={ref} className="bg-white text-black text-[12px] leading-relaxed relative shadow-md border border-gray-200 rounded-sm" style={{ width: '794px', minHeight: '1123px', padding: '40px 48px', fontFamily: '"Open Sans", sans-serif', boxSizing: 'border-box' }}>
       
       <style>
-        {`@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;700&display=swap');`}
+        {`@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;700&display=swap');
+        @media print {
+          .page-break-inside-avoid, .break-inside-avoid {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          .break-before-page {
+            break-before: page !important;
+            page-break-before: always !important;
+          }
+        }
+        .page-break-inside-avoid, .break-inside-avoid {
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }`}
       </style>
 
       {/* Header */}
@@ -325,7 +339,7 @@ const SalesOrderPrintTemplate = forwardRef(({ form, letterHead, printHeading, te
         <div className="break-before-page pt-8">
           <div className="font-bold underline text-[15px] mb-8">Tests to be Done</div>
           {form.test_details.map((test, idx) => (
-            <div key={idx} className="mb-10 page-break-inside-avoid">
+            <div key={idx} className="mb-10 page-break-inside-avoid break-inside-avoid" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
               <div className="font-bold underline text-[15px] mb-4">{test.test_name}</div>
               {test.test_description && renderRichText(test.test_description, 'mb-4')}
               {test.test_image && (
