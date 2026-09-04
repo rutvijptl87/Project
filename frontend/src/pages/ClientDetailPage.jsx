@@ -73,7 +73,7 @@ const ClientDetailPage = () => {
         number_field: docMove.number_field || '',
         remark: docMove.remark || '',
         audit_offer_path: docMove.audit_offer_path || '',
-        audit_report_path: docMove.audit_report_path || '',
+        report_path: docMove.report_path || docMove.audit_report_path || '',
         contact_person: docMove.contact_person || '',
         mobile: docMove.mobile || '',
         other_comments: docMove.other_comments || '',

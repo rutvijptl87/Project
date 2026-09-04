@@ -5,6 +5,7 @@ import { useAuth } from '../lib/auth';
 import Modal from '../components/Modal';
 import SearchableSelect from '../components/SearchableSelect';
 import Pagination from '../components/Pagination';
+import ColumnFilterDropdown from '../components/ColumnFilterDropdown';
 import {
   Plus, Trash2, CheckSquare, Square, Calculator, Pencil, ArrowLeft, Search, Filter,
   ArrowUpDown, ArrowUp, ArrowDown, Eye, X } from 'lucide-react';
@@ -284,6 +285,7 @@ const AccountingTasksPage = () => {
 
   const [tasks, setTasks]       = useState([]);
   const [total, setTotal]       = useState(0);
+  const [totalAll, setTotalAll] = useState(0);
   const [totalPending, setTotalPending] = useState(0);
   const [totalInProgress, setTotalInProgress] = useState(0);
   const [totalDone, setTotalDone]       = useState(0);
@@ -300,6 +302,10 @@ const AccountingTasksPage = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing]     = useState(null);
   const [statusFilters, setStatusFilters] = useState([]);
+  const [projectFilter, setProjectFilter] = useState('');
+  const [assignedToFilter, setAssignedToFilter] = useState('');
+  const [assignedByFilter, setAssignedByFilter] = useState('');
+  const [filterOptions, setFilterOptions] = useState({ project_numbers: [], assigned_to: [], assigned_by: [], statuses: [] });
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const filterDropdownRef = useRef(null);
   const [sortBy, setSortBy] = useState('created_at');
@@ -341,14 +347,29 @@ const AccountingTasksPage = () => {
     setLoading(true);
     try {
       const calls = [
-        api.get('/tasks/paginated', { params: { page, limit, q: debouncedSearch, category: 'accounting', status: statusFilters.length > 0 ? statusFilters.join(',') : undefined, sort_by: sortBy, sort_dir: sortDir } }),
+        api.get('/tasks/paginated', {
+          params: {
+            page,
+            limit,
+            q: debouncedSearch,
+            category: 'accounting',
+            status: statusFilters.length > 0 ? statusFilters.join(',') : undefined,
+            project_code: projectFilter || undefined,
+            assigned_to: assignedToFilter || undefined,
+            assigned_by: assignedByFilter || undefined,
+            sort_by: sortBy,
+            sort_dir: sortDir
+          }
+        }),
         api.get('/projects'),
         api.get('/audits'),
-        api.get('/auth/users/directory')
+        api.get('/auth/users/directory'),
+        api.get('/tasks/filter-options', { params: { category: 'accounting' } })
       ];
-      const [tasksRes, projRes, auditRes, usersRes] = await Promise.all(calls);
+      const [tasksRes, projRes, auditRes, usersRes, filterOptRes] = await Promise.all(calls);
       setTasks(tasksRes.data.data || []);
       setTotal(tasksRes.data.total || 0);
+      setTotalAll(tasksRes.data.total_all || tasksRes.data.total || 0);
       setTotalPending(tasksRes.data.total_pending || 0);
       setTotalInProgress(tasksRes.data.total_in_progress || 0);
       setTotalDone(tasksRes.data.total_done || 0);
@@ -356,11 +377,65 @@ const AccountingTasksPage = () => {
       setProjects(projRes.data);
       setAudits(auditRes.data);
       if (usersRes) setUsers(usersRes.data);
+      if (filterOptRes?.data) setFilterOptions(filterOptRes.data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [page, debouncedSearch, statusFilters, sortBy, sortDir]);
+  }, [page, debouncedSearch, statusFilters, projectFilter, assignedToFilter, assignedByFilter, sortBy, sortDir]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Options for Column Filter Dropdowns
+  const projectOptions = useMemo(() => {
+    const serverOpts = filterOptions.project_numbers || [];
+    const projOpts = (projects || []).map(p => p.job_no || p.project_code).filter(Boolean);
+    const auditOpts = (audits || []).map(a => a.audit_code || a.audit_offer).filter(Boolean);
+    const taskOpts = tasks.flatMap(t => [t.project_code, t.audit_code]).filter(Boolean);
+    const unique = Array.from(new Set([...serverOpts, ...projOpts, ...auditOpts, ...taskOpts])).filter(Boolean).sort();
+    return unique;
+  }, [filterOptions.project_numbers, projects, audits, tasks]);
+
+  const assignedToOptions = useMemo(() => {
+    const list = [...(filterOptions.assigned_to || [])];
+    const existingVals = new Set(list.map(x => (x.value || '').toLowerCase()));
+    (users || []).forEach(u => {
+      const val = u.username || u.id;
+      if (val && !existingVals.has(val.toLowerCase())) {
+        list.push({ value: val, label: u.name || u.username });
+        existingVals.add(val.toLowerCase());
+      }
+    });
+    return list.sort((a, b) => (a.label || '').localeCompare(b.label || ''));
+  }, [filterOptions.assigned_to, users]);
+
+  const assignedByOptions = useMemo(() => {
+    const list = [...(filterOptions.assigned_by || [])];
+    const existingVals = new Set(list.map(x => (x.value || '').toLowerCase()));
+    (users || []).forEach(u => {
+      const val = u.username || u.id;
+      if (val && !existingVals.has(val.toLowerCase())) {
+        list.push({ value: val, label: u.name || u.username });
+        existingVals.add(val.toLowerCase());
+      }
+    });
+    return list.sort((a, b) => (a.label || '').localeCompare(b.label || ''));
+  }, [filterOptions.assigned_by, users]);
+
+  const statusOptions = useMemo(() => [
+    { value: 'pending', label: 'Pending' },
+    { value: 'follow up required', label: 'Follow Up Required' },
+    { value: 'done', label: 'Done' },
+    { value: 'cancelled', label: 'Cancelled' }
+  ], []);
+
+  const hasActiveFilters = Boolean(projectFilter || assignedToFilter || assignedByFilter || statusFilters.length > 0);
+
+  const clearAllFilters = () => {
+    setProjectFilter('');
+    setAssignedToFilter('');
+    setAssignedByFilter('');
+    setStatusFilters([]);
+    setPage(1);
+  };
 
   const handleStatusChange = async (id, newStatus) => {
     try {
@@ -435,11 +510,96 @@ const AccountingTasksPage = () => {
                 Accounting Tasks
               </h1>
             </div>
-            <div className="flex flex-wrap gap-2 ml-14 uppercase text-xs font-bold">
-              <span className="badge" style={{ background: '#FEF2F2', color: '#991B1B', borderColor: '#F87171' }}>{totalPending} PENDING</span>
-              <span className="badge" style={{ background: '#FFFBEB', color: '#B45309', borderColor: '#FBBF24' }}>{totalInProgress} FOLLOW UP REQUIRED</span>
-              <span className="badge" style={{ background: '#D1FAE5', color: '#065F46', borderColor: '#34D399' }}>{totalDone} DONE</span>
-              <span className="badge" style={{ background: '#F3F4F6', color: '#374151', borderColor: '#9CA3AF' }}>{totalCancelled} CANCELLED</span>
+
+            {/* Clickable Status Cards / Filter Pills */}
+            <div className="flex flex-wrap items-center gap-2 ml-14 uppercase text-xs font-bold mt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilters([]);
+                  setPage(1);
+                }}
+                className={`badge cursor-pointer select-none transition-all duration-150 px-3 py-1 rounded-full border text-xs font-bold flex items-center gap-1.5 shadow-xs hover:shadow ${
+                  statusFilters.length === 0
+                    ? 'bg-[#10B981] text-white border-[#10B981] ring-2 ring-emerald-600/50 scale-105 font-extrabold'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+                title="Show all accounting tasks"
+              >
+                <span>{totalAll || total} ALL</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilters(prev => (prev.length === 1 && prev[0] === 'pending') ? [] : ['pending']);
+                  setPage(1);
+                }}
+                className={`badge cursor-pointer select-none transition-all duration-150 px-3 py-1 rounded-full border text-xs font-bold flex items-center gap-1.5 shadow-xs hover:shadow ${
+                  statusFilters.includes('pending')
+                    ? 'ring-2 ring-red-500 scale-105 shadow-md font-extrabold'
+                    : 'hover:brightness-95 opacity-85 hover:opacity-100'
+                }`}
+                style={{ background: '#FEF2F2', color: '#991B1B', borderColor: '#F87171' }}
+                title="Filter by Pending status"
+              >
+                <span>{totalPending} PENDING</span>
+                {statusFilters.includes('pending') && <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilters(prev => (prev.length === 1 && prev[0] === 'follow up required') ? [] : ['follow up required']);
+                  setPage(1);
+                }}
+                className={`badge cursor-pointer select-none transition-all duration-150 px-3 py-1 rounded-full border text-xs font-bold flex items-center gap-1.5 shadow-xs hover:shadow ${
+                  statusFilters.includes('follow up required')
+                    ? 'ring-2 ring-amber-500 scale-105 shadow-md font-extrabold'
+                    : 'hover:brightness-95 opacity-85 hover:opacity-100'
+                }`}
+                style={{ background: '#FFFBEB', color: '#B45309', borderColor: '#FBBF24' }}
+                title="Filter by Follow Up Required status"
+              >
+                <span>{totalInProgress} FOLLOW UP REQUIRED</span>
+                {statusFilters.includes('follow up required') && <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilters(prev => (prev.length === 1 && prev[0] === 'done') ? [] : ['done']);
+                  setPage(1);
+                }}
+                className={`badge cursor-pointer select-none transition-all duration-150 px-3 py-1 rounded-full border text-xs font-bold flex items-center gap-1.5 shadow-xs hover:shadow ${
+                  statusFilters.includes('done')
+                    ? 'ring-2 ring-emerald-500 scale-105 shadow-md font-extrabold'
+                    : 'hover:brightness-95 opacity-85 hover:opacity-100'
+                }`}
+                style={{ background: '#D1FAE5', color: '#065F46', borderColor: '#34D399' }}
+                title="Filter by Done status"
+              >
+                <span>{totalDone} DONE</span>
+                {statusFilters.includes('done') && <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilters(prev => (prev.length === 1 && prev[0] === 'cancelled') ? [] : ['cancelled']);
+                  setPage(1);
+                }}
+                className={`badge cursor-pointer select-none transition-all duration-150 px-3 py-1 rounded-full border text-xs font-bold flex items-center gap-1.5 shadow-xs hover:shadow ${
+                  statusFilters.includes('cancelled')
+                    ? 'ring-2 ring-gray-500 scale-105 shadow-md font-extrabold'
+                    : 'hover:brightness-95 opacity-85 hover:opacity-100'
+                }`}
+                style={{ background: '#F3F4F6', color: '#374151', borderColor: '#9CA3AF' }}
+                title="Filter by Cancelled status"
+              >
+                <span>{totalCancelled} CANCELLED</span>
+                {statusFilters.includes('cancelled') && <span className="w-1.5 h-1.5 rounded-full bg-gray-600 animate-pulse" />}
+              </button>
             </div>
           </div>
         </div>
@@ -492,14 +652,52 @@ const AccountingTasksPage = () => {
         </div>
       </div>
 
+      {/* Active Filters Bar */}
+      {hasActiveFilters && (
+        <div className="flex items-center flex-wrap gap-2 mb-4 p-2.5 bg-gray-50/80 border border-gray-200 rounded-lg text-xs">
+          <span className="text-gray-500 font-semibold uppercase tracking-wider text-[11px]">Active Filters:</span>
+          {projectFilter && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-medium">
+              Project / Audit: <span className="font-bold">{projectFilter}</span>
+              <button type="button" onClick={() => { setProjectFilter(''); setPage(1); }} className="hover:text-red-600 ml-0.5"><X size={12} /></button>
+            </span>
+          )}
+          {assignedByFilter && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200 font-medium">
+              Assign By: <span className="font-bold">{assignedByOptions.find(o => o.value.toLowerCase() === assignedByFilter.toLowerCase())?.label || assignedByFilter}</span>
+              <button type="button" onClick={() => { setAssignedByFilter(''); setPage(1); }} className="hover:text-red-600 ml-0.5"><X size={12} /></button>
+            </span>
+          )}
+          {assignedToFilter && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 font-medium">
+              Assign To: <span className="font-bold">{assignedToOptions.find(o => o.value.toLowerCase() === assignedToFilter.toLowerCase())?.label || assignedToFilter}</span>
+              <button type="button" onClick={() => { setAssignedToFilter(''); setPage(1); }} className="hover:text-red-600 ml-0.5"><X size={12} /></button>
+            </span>
+          )}
+          {statusFilters.length > 0 && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-medium">
+              Status: <span className="font-bold capitalize">{statusFilters.join(', ')}</span>
+              <button type="button" onClick={() => { setStatusFilters([]); setPage(1); }} className="hover:text-red-600 ml-0.5"><X size={12} /></button>
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={clearAllFilters}
+            className="text-xs text-red-600 hover:text-red-800 hover:underline ml-auto font-semibold"
+          >
+            Clear All
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       {loading ? (
         <div className="card text-center py-12" style={{ color: 'var(--cc-text-muted)' }}>Loading…</div>
       ) : tasks.length === 0 ? (
         <div className="card text-center py-14" style={{ color: 'var(--cc-text-muted)' }}>
           <Calculator size={34} className="mx-auto mb-3" style={{ opacity: 0.2 }} />
-          <div className="font-semibold text-sm">No accounting tasks yet</div>
-          <div className="text-xs mt-1">Click "New Task" to create the first one.</div>
+          <div className="font-semibold text-sm">No accounting tasks found</div>
+          <div className="text-xs mt-1">{hasActiveFilters ? 'Try adjusting your filters or click "Clear All".' : 'Click "New Task" to create the first one.'}</div>
         </div>
       ) : (
         <div className="card overflow-hidden">
@@ -508,16 +706,98 @@ const AccountingTasksPage = () => {
               <thead>
                 <tr>
                   <th style={{ width: 48 }} className="hidden sm:table-cell text-center">Sr No</th>
-                  <th className="hidden md:table-cell cursor-pointer select-none" onClick={() => toggleSort('project_code')}>Project / Audit <SortIcon col="project_code" /></th>
+                  
+                  {/* Project / Audit */}
+                  <th className="hidden md:table-cell">
+                    <div className="flex items-center justify-between gap-1.5">
+                      <div 
+                        className="cursor-pointer select-none inline-flex items-center flex-1 hover:text-[var(--cc-dark-green)]" 
+                        onClick={() => toggleSort('project_code')}
+                      >
+                        <span>Project / Audit</span>
+                        <SortIcon col="project_code" />
+                      </div>
+                      <ColumnFilterDropdown
+                        title="Project Number"
+                        type="project"
+                        options={projectOptions}
+                        value={projectFilter}
+                        onChange={(val) => { setProjectFilter(val); setPage(1); }}
+                        align="left"
+                      />
+                    </div>
+                  </th>
+
                   <th className="hidden lg:table-cell cursor-pointer select-none" onClick={() => toggleSort('site_location')}>Site <SortIcon col="site_location" /></th>
                   <th className="hidden lg:table-cell cursor-pointer select-none" onClick={() => toggleSort('contact_name')}>Contact Name <SortIcon col="contact_name" /></th>
                   <th className="hidden lg:table-cell cursor-pointer select-none" onClick={() => toggleSort('contact_no')}>Contact No. <SortIcon col="contact_no" /></th>
                   <th className="cursor-pointer select-none" onClick={() => toggleSort('work')}>Work <SortIcon col="work" /></th>
                   <th className="hidden md:table-cell cursor-pointer select-none" onClick={() => toggleSort('created_at')}>Assign Date <SortIcon col="created_at" /></th>
                   <th className="cursor-pointer select-none" onClick={() => toggleSort('follow_up_date')}>Follow Up Date <SortIcon col="follow_up_date" /></th>
-                  <th className="hidden md:table-cell cursor-pointer select-none" onClick={() => toggleSort('created_by_username')}>Assign By <SortIcon col="created_by_username" /></th>
-                  <th className="hidden md:table-cell cursor-pointer select-none" onClick={() => toggleSort('assigned_to_username')}>Assign To <SortIcon col="assigned_to_username" /></th>
-                  <th className="text-center cursor-pointer select-none" onClick={() => toggleSort('status')}>Status <SortIcon col="status" /></th>
+
+                  {/* Assign By */}
+                  <th className="hidden md:table-cell">
+                    <div className="flex items-center justify-between gap-1.5">
+                      <div 
+                        className="cursor-pointer select-none inline-flex items-center flex-1 hover:text-[var(--cc-dark-green)]" 
+                        onClick={() => toggleSort('created_by_username')}
+                      >
+                        <span>Assign By</span>
+                        <SortIcon col="created_by_username" />
+                      </div>
+                      <ColumnFilterDropdown
+                        title="Assign By"
+                        type="user"
+                        options={assignedByOptions}
+                        value={assignedByFilter}
+                        onChange={(val) => { setAssignedByFilter(val); setPage(1); }}
+                        align="right"
+                      />
+                    </div>
+                  </th>
+
+                  {/* Assign To */}
+                  <th className="hidden md:table-cell">
+                    <div className="flex items-center justify-between gap-1.5">
+                      <div 
+                        className="cursor-pointer select-none inline-flex items-center flex-1 hover:text-[var(--cc-dark-green)]" 
+                        onClick={() => toggleSort('assigned_to_username')}
+                      >
+                        <span>Assign To</span>
+                        <SortIcon col="assigned_to_username" />
+                      </div>
+                      <ColumnFilterDropdown
+                        title="Assign To"
+                        type="user"
+                        options={assignedToOptions}
+                        value={assignedToFilter}
+                        onChange={(val) => { setAssignedToFilter(val); setPage(1); }}
+                        align="right"
+                      />
+                    </div>
+                  </th>
+
+                  {/* Status */}
+                  <th className="text-center">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <div 
+                        className="cursor-pointer select-none inline-flex items-center hover:text-[var(--cc-dark-green)]" 
+                        onClick={() => toggleSort('status')}
+                      >
+                        <span>Status</span>
+                        <SortIcon col="status" />
+                      </div>
+                      <ColumnFilterDropdown
+                        title="Status"
+                        type="status"
+                        options={statusOptions}
+                        value={statusFilters.length === 1 ? statusFilters[0] : ''}
+                        onChange={(val) => { setStatusFilters(val ? [val] : []); setPage(1); }}
+                        align="right"
+                      />
+                    </div>
+                  </th>
+
                   <th className="text-center">Actions</th>
                 </tr>
               </thead>

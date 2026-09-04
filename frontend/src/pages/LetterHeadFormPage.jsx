@@ -9,12 +9,15 @@ const LetterHeadFormPage = () => {
   const navigate = useNavigate();
   const isEdit = !!id;
   const [saving, setSaving] = useState(false);
-  const [showScripts, setShowScripts] = useState(true);
   
   const [form, setForm] = useState({
     name: '',
     disabled: false,
     is_default: false,
+    phone: '9987076241',
+    email: 'project@creatorconsultant.net',
+    address_line1: 'A-001, Siddhivinayak Park, Sector 8A,',
+    address_line2: 'Plot No. 21, Airoli, Navi Mumbai - 400 708.',
     content: '',
     footer_content: ''
   });
@@ -62,83 +65,141 @@ const LetterHeadFormPage = () => {
           </button>
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-bold text-gray-900">{isEdit ? form.name : 'New Letter Head'}</h1>
-            {!isEdit ? <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-orange-50 text-orange-600 border border-orange-100/50">Not Saved</span> : <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-orange-50 text-orange-600 border border-orange-100/50" style={{backgroundColor: "#dbeafe", color: "#1d4ed8"}}>Saved</span>}
+            {!isEdit ? (
+              <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-orange-50 text-orange-600 border border-orange-100/50">Not Saved</span>
+            ) : (
+              <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-100">Saved</span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={handleSave} disabled={saving} className="frappe-btn frappe-btn-primary">
-            Save
+            {saving ? 'Saving...' : 'Save'}
           </button>
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto w-full px-6 py-6">
-        <div className="bg-white rounded-lg border border-gray-100 shadow-sm mb-6 overflow-hidden">
+      <div className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-6 space-y-6">
+        <div className="bg-white rounded-lg border border-gray-100 shadow-sm p-6">
+          <h2 className="text-base font-bold text-gray-900 mb-4 border-b pb-2">Letter Head Details</h2>
           
-          <div className="p-6">
-            <div className="mb-6 max-w-xl">
-              <label className="text-[12px] text-gray-500 mb-1 flex items-center tracking-tight">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div>
+              <label className="text-[12px] font-semibold text-gray-600 mb-1 flex items-center tracking-tight">
                 Letter Head Name <span className="text-red-500 ml-1">*</span>
               </label>
               <input
                 type="text"
                 value={form.name}
                 onChange={e => updateForm('name', e.target.value)}
-                className="w-full bg-gray-50/50 hover:bg-gray-100/50 focus:bg-white border border-gray-100 rounded-md px-3 py-1.5 text-[13px] text-gray-800 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-colors"
+                placeholder="e.g. Standard Letterhead"
+                className="w-full bg-gray-50 hover:bg-gray-100/50 focus:bg-white border border-gray-200 rounded-md px-3 py-2 text-[13px] text-gray-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-colors"
+              />
+            </div>
+
+            <div className="flex items-center gap-6 pt-6">
+              <label className="flex items-center gap-2 cursor-pointer text-[13px] font-medium text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={form.disabled}
+                  onChange={e => updateForm('disabled', e.target.checked)}
+                  className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-600"
+                />
+                Disabled
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer text-[13px] font-medium text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={form.is_default}
+                  onChange={e => updateForm('is_default', e.target.checked)}
+                  className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-600"
+                />
+                Is Default
+              </label>
+            </div>
+          </div>
+
+          <h3 className="text-sm font-bold text-gray-800 mb-3 border-b pb-1">Footer Contact Details (Printed on Letterhead)</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="text-[12px] font-semibold text-gray-600 mb-1 block">
+                Phone Number
+              </label>
+              <input
+                type="text"
+                value={form.phone}
+                onChange={e => updateForm('phone', e.target.value)}
+                placeholder="e.g. 9987076241"
+                className="w-full bg-gray-50 hover:bg-gray-100/50 focus:bg-white border border-gray-200 rounded-md px-3 py-2 text-[13px] text-gray-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-colors"
+              />
+            </div>
+
+            <div>
+              <label className="text-[12px] font-semibold text-gray-600 mb-1 block">
+                Email Address
+              </label>
+              <input
+                type="text"
+                value={form.email}
+                onChange={e => updateForm('email', e.target.value)}
+                placeholder="e.g. project@creatorconsultant.net"
+                className="w-full bg-gray-50 hover:bg-gray-100/50 focus:bg-white border border-gray-200 rounded-md px-3 py-2 text-[13px] text-gray-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-colors"
               />
             </div>
           </div>
-          
-          <div className="border-t border-gray-100">
-            <button 
-              onClick={() => setShowScripts(!showScripts)} 
-              className="w-full flex items-center justify-between p-4 bg-white hover:bg-gray-50 transition-colors"
-            >
-              <h3 className="text-[14px] font-bold text-gray-900 tracking-tight flex items-center gap-2">
-                Scripts
-                <ChevronUp size={16} className={`text-gray-400 transition-transform ${showScripts ? '' : 'rotate-180'}`} />
-              </h3>
-            </button>
-            
-            {showScripts && (
-              <div className="p-6 pt-0 border-t border-gray-100 mt-2">
-                <h4 className="text-[15px] font-bold text-gray-900 mb-2 mt-4">Letter Head Scripts</h4>
-                <p className="text-[13px] text-gray-600 mb-6">Header/Footer scripts can be used to add dynamic behaviours.</p>
-                
-                <div className="bg-gray-50 border border-gray-100 rounded-md p-4 mb-6">
-                  <pre className="text-[12px] text-gray-500 font-mono whitespace-pre-wrap overflow-x-auto">
-{`// The following Header Script will add the current date to an element in 'Header HTML' with class 'header-content'
-var el = document.getElementsByClassName("header-content");
-if (el.length > 0) {
-    el[0].textContent += " " + new Date().toGMTString();
-}`}
-                  </pre>
-                </div>
-                
-                <p className="text-[13px] text-gray-600 mb-6">You can also access wkhtmltopdf variables (valid only in PDF print):</p>
-                
-                <div className="bg-gray-50 border border-gray-100 rounded-md p-4">
-                  <pre className="text-[12px] text-gray-500 font-mono whitespace-pre-wrap overflow-x-auto">
-{`// Get Header and Footer wkhtmltopdf variables
-// Snippet and more variables: https://wkhtmltopdf.org/usage/wkhtmltopdf.txt
-var vars = {};
-var query_strings_from_url = document.location.search.substring(1).split('&');
-for (var query_string in query_strings_from_url) {
-    if (query_strings_from_url.hasOwnProperty(query_string)) {
-        var temp_var = query_strings_from_url[query_string].split('=', 2);
-        vars[temp_var[0]] = decodeURI(temp_var[1]);
-    }
-}
-var el = document.getElementsByClassName("header-content");
-if (el.length > 0 && vars["page"] == 1) {
-    el[0].textContent += " : " + vars["date"];
-}`}
-                  </pre>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div>
+              <label className="text-[12px] font-semibold text-gray-600 mb-1 block">
+                Address Line 1
+              </label>
+              <input
+                type="text"
+                value={form.address_line1}
+                onChange={e => updateForm('address_line1', e.target.value)}
+                placeholder="e.g. A-001, Siddhivinayak Park, Sector 8A,"
+                className="w-full bg-gray-50 hover:bg-gray-100/50 focus:bg-white border border-gray-200 rounded-md px-3 py-2 text-[13px] text-gray-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-colors"
+              />
+            </div>
+
+            <div>
+              <label className="text-[12px] font-semibold text-gray-600 mb-1 block">
+                Address Line 2
+              </label>
+              <input
+                type="text"
+                value={form.address_line2}
+                onChange={e => updateForm('address_line2', e.target.value)}
+                placeholder="e.g. Plot No. 21, Airoli, Navi Mumbai - 400 708."
+                className="w-full bg-gray-50 hover:bg-gray-100/50 focus:bg-white border border-gray-200 rounded-md px-3 py-2 text-[13px] text-gray-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-colors"
+              />
+            </div>
+          </div>
+
+          {/* Live Visual Preview of Letterhead Banner */}
+          <div className="mt-8 border border-gray-200 rounded-lg p-4 bg-gray-50">
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Live Letterhead Footer Preview</h4>
+            <div className="relative w-full max-w-[800px] mx-auto bg-white rounded shadow border border-gray-200 overflow-hidden">
+              <img src="/assets/footer_base.png" alt="Letterhead Base" className="w-full h-auto block select-none" />
+              <div 
+                className="absolute inset-0 flex flex-col justify-end pointer-events-none"
+                style={{
+                  paddingBottom: '2.5%',
+                  paddingRight: '29%'
+                }}
+              >
+                <div className="text-right text-white font-bold tracking-tight drop-shadow-sm leading-tight" style={{ fontSize: 'clamp(8px, 1.4vw, 13px)' }}>
+                  <div className="mb-0.5">{form.phone || '9987076241'}</div>
+                  <div className="mb-0.5">{form.email || 'project@creatorconsultant.net'}</div>
+                  <div className="mb-0.5">{form.address_line1 || 'A-001, Siddhivinayak Park, Sector 8A,'}</div>
+                  <div>{form.address_line2 || 'Plot No. 21, Airoli, Navi Mumbai - 400 708.'}</div>
                 </div>
               </div>
-            )}
+            </div>
           </div>
-          
+
         </div>
       </div>
     </div>

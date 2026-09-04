@@ -7,10 +7,14 @@ import { useNavigate } from 'react-router-dom';
 const NewLetterHeadModal = ({ open, onClose, onSave }) => {
   const navigate = useNavigate();
   const [form, setForm] = useState({
-    name: ''
+    name: '',
+    phone: '9987076241',
+    email: 'project@creatorconsultant.net',
+    address_line1: 'A-001, Siddhivinayak Park, Sector 8A,',
+    address_line2: 'Plot No. 21, Airoli, Navi Mumbai - 400 708.'
   });
   const [saving, setSaving] = useState(false);
-  const [showScripts, setShowScripts] = useState(true);
+  const [showScripts, setShowScripts] = useState(false);
 
   if (!open) return null;
 
@@ -49,16 +53,70 @@ const NewLetterHeadModal = ({ open, onClose, onSave }) => {
           </button>
         </div>
         
-        <div className="p-6 overflow-y-auto flex-1">
-          <div className="mb-6">
-            <label className="text-[12px] text-gray-500 mb-1 flex items-center tracking-tight">
+        <div className="p-6 overflow-y-auto flex-1 space-y-4">
+          <div>
+            <label className="text-[12px] font-semibold text-gray-600 mb-1 flex items-center tracking-tight">
               Letter Head Name <span className="text-red-500 ml-1">*</span>
             </label>
             <input
               type="text"
+              placeholder="e.g. Standard Letterhead"
               value={form.name}
               onChange={e => setForm({ ...form, name: e.target.value })}
-              className="w-full bg-gray-50/50 hover:bg-gray-100/50 focus:bg-white border border-gray-100 rounded-md px-3 py-1.5 text-[13px] text-gray-800 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-colors"
+              className="w-full bg-gray-50 hover:bg-gray-100/50 focus:bg-white border border-gray-200 rounded-md px-3 py-2 text-[13px] text-gray-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-colors"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="text-[12px] font-semibold text-gray-600 mb-1 block">
+                Phone Number
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. 9987076241"
+                value={form.phone}
+                onChange={e => setForm({ ...form, phone: e.target.value })}
+                className="w-full bg-gray-50 hover:bg-gray-100/50 focus:bg-white border border-gray-200 rounded-md px-3 py-2 text-[13px] text-gray-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="text-[12px] font-semibold text-gray-600 mb-1 block">
+                Email
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. project@creatorconsultant.net"
+                value={form.email}
+                onChange={e => setForm({ ...form, email: e.target.value })}
+                className="w-full bg-gray-50 hover:bg-gray-100/50 focus:bg-white border border-gray-200 rounded-md px-3 py-2 text-[13px] text-gray-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-colors"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[12px] font-semibold text-gray-600 mb-1 block">
+              Address Line 1
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. A-001, Siddhivinayak Park, Sector 8A,"
+              value={form.address_line1}
+              onChange={e => setForm({ ...form, address_line1: e.target.value })}
+              className="w-full bg-gray-50 hover:bg-gray-100/50 focus:bg-white border border-gray-200 rounded-md px-3 py-2 text-[13px] text-gray-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-colors"
+            />
+          </div>
+
+          <div>
+            <label className="text-[12px] font-semibold text-gray-600 mb-1 block">
+              Address Line 2
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Plot No. 21, Airoli, Navi Mumbai - 400 708."
+              value={form.address_line2}
+              onChange={e => setForm({ ...form, address_line2: e.target.value })}
+              className="w-full bg-gray-50 hover:bg-gray-100/50 focus:bg-white border border-gray-200 rounded-md px-3 py-2 text-[13px] text-gray-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-colors"
             />
           </div>
           

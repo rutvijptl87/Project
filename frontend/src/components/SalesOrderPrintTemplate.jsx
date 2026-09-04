@@ -375,7 +375,26 @@ const SalesOrderPrintTemplate = forwardRef(({ form, letterHead, printHeading, te
         </div>
       )}
 
-      {/* Footer is now handled dynamically on every page via jsPDF in Sales OrderCreatePage */}
+      {/* Dynamic Letterhead Footer Banner from LH.docx */}
+      <div className="mt-12 pt-4">
+        <div className="relative w-full rounded-sm overflow-hidden bg-white shadow-xs">
+          <img src="/assets/footer_base.png" alt="Creator Letterhead" className="w-full h-auto block select-none" />
+          <div 
+            className="absolute inset-0 flex flex-col justify-end pointer-events-none"
+            style={{
+              paddingBottom: '2.5%',
+              paddingRight: '29%'
+            }}
+          >
+            <div className="text-right text-white font-bold tracking-tight drop-shadow-sm leading-tight text-[11px]">
+              <div className="mb-0.5">{letterHead?.phone || '9987076241'}</div>
+              <div className="mb-0.5">{letterHead?.email || 'project@creatorconsultant.net'}</div>
+              <div className="mb-0.5">{letterHead?.address_line1 || 'A-001, Siddhivinayak Park, Sector 8A,'}</div>
+              <div>{letterHead?.address_line2 || 'Plot No. 21, Airoli, Navi Mumbai - 400 708.'}</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 });

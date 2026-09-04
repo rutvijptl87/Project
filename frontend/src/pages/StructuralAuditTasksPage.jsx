@@ -70,6 +70,7 @@ const StructuralAuditTasksPage = () => {
 
   const [tasks, setTasks]       = useState([]);
   const [total, setTotal]       = useState(0);
+  const [totalAll, setTotalAll] = useState(0);
   const [totalPending, setTotalPending] = useState(0);
   const [totalInProgress, setTotalInProgress] = useState(0);
   const [totalDone, setTotalDone]       = useState(0);
@@ -130,6 +131,7 @@ const StructuralAuditTasksPage = () => {
       ]);
       setTasks(tasksRes.data.data || []);
       setTotal(tasksRes.data.total || 0);
+      setTotalAll(tasksRes.data.total_all || tasksRes.data.total || 0);
       setTotalPending(tasksRes.data.total_pending || 0);
       setTotalInProgress(tasksRes.data.total_in_progress || 0);
       setTotalDone(tasksRes.data.total_done || 0);
@@ -164,8 +166,6 @@ const StructuralAuditTasksPage = () => {
     }
   };
 
-
-
   const openEdit = (task) => {
     setEditTask(task);
     setEditForm({
@@ -180,6 +180,7 @@ const StructuralAuditTasksPage = () => {
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
+    if (!editTask) return;
     setEditSaving(true);
     try {
       const payload = {
@@ -190,17 +191,18 @@ const StructuralAuditTasksPage = () => {
         site_location: editTask.site_location || '',
         work: editTask.work,
         start_date: editTask.start_date || null,
+        due_date: editTask.due_date || null,
         description: editForm.description,
         site_visit_date: editForm.site_visit_date || null,
         preparation_date: editForm.preparation_date || null,
         submission_date: editForm.submission_date || null,
         assigned_to_user_id: editForm.assigned_to_user_id || null,
-        assigned_to_accountant_id: editForm.assigned_to_accountant_id || null,
+        assigned_to_accountant_id: editForm.assigned_to_accountant_id || null
       };
       const res = await api.put(`/tasks/${editTask.id}`, payload);
       setTasks(prev => prev.map(t => t.id === editTask.id ? { ...t, ...res.data } : t));
+      toast.success('Task updated successfully');
       setEditTask(null);
-      toast.success('Task updated');
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Failed to update task');
     } finally {
@@ -278,13 +280,106 @@ const StructuralAuditTasksPage = () => {
           <button onClick={() => navigate('/tasks')} className="btn btn-outline btn-sm mt-1 flex-shrink-0" title="Back to Tasks">
             <ArrowLeft size={14} />
           </button>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-lg">
-              <HardHat size={20} />
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-lg flex-shrink-0">
+                <HardHat size={20} />
+              </div>
+              <h1 className="font-head text-3xl md:text-4xl font-extrabold" style={{ color: 'var(--cc-dark-green)' }}>
+                Structural Audit Tasks
+              </h1>
             </div>
-            <h1 className="font-head text-3xl md:text-4xl font-extrabold" style={{ color: 'var(--cc-dark-green)' }}>
-              Structural Audit Tasks
-            </h1>
+
+            {/* Clickable Status Cards / Filter Pills */}
+            <div className="flex flex-wrap items-center gap-2 ml-14 uppercase text-xs font-bold mt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilters([]);
+                  setPage(1);
+                }}
+                className={`badge cursor-pointer select-none transition-all duration-150 px-3 py-1 rounded-full border text-xs font-bold flex items-center gap-1.5 shadow-xs hover:shadow ${
+                  statusFilters.length === 0
+                    ? 'bg-emerald-800 text-white border-emerald-900 ring-2 ring-emerald-600/50 scale-105 font-extrabold'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+                title="Show all structural tasks"
+              >
+                <span>{totalAll || total} ALL</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilters(prev => (prev.length === 1 && prev[0] === 'pending') ? [] : ['pending']);
+                  setPage(1);
+                }}
+                className={`badge cursor-pointer select-none transition-all duration-150 px-3 py-1 rounded-full border text-xs font-bold flex items-center gap-1.5 shadow-xs hover:shadow ${
+                  statusFilters.includes('pending')
+                    ? 'ring-2 ring-red-500 scale-105 shadow-md font-extrabold'
+                    : 'hover:brightness-95 opacity-85 hover:opacity-100'
+                }`}
+                style={{ background: '#FEF2F2', color: '#991B1B', borderColor: '#F87171' }}
+                title="Filter by Pending status"
+              >
+                <span>{totalPending} PENDING</span>
+                {statusFilters.includes('pending') && <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilters(prev => (prev.length === 1 && prev[0] === 'in progress') ? [] : ['in progress']);
+                  setPage(1);
+                }}
+                className={`badge cursor-pointer select-none transition-all duration-150 px-3 py-1 rounded-full border text-xs font-bold flex items-center gap-1.5 shadow-xs hover:shadow ${
+                  statusFilters.includes('in progress')
+                    ? 'ring-2 ring-amber-500 scale-105 shadow-md font-extrabold'
+                    : 'hover:brightness-95 opacity-85 hover:opacity-100'
+                }`}
+                style={{ background: '#FFFBEB', color: '#B45309', borderColor: '#FBBF24' }}
+                title="Filter by In-Progress status"
+              >
+                <span>{totalInProgress} IN-PROGRESS</span>
+                {statusFilters.includes('in progress') && <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilters(prev => (prev.length === 1 && prev[0] === 'done') ? [] : ['done']);
+                  setPage(1);
+                }}
+                className={`badge cursor-pointer select-none transition-all duration-150 px-3 py-1 rounded-full border text-xs font-bold flex items-center gap-1.5 shadow-xs hover:shadow ${
+                  statusFilters.includes('done')
+                    ? 'ring-2 ring-emerald-500 scale-105 shadow-md font-extrabold'
+                    : 'hover:brightness-95 opacity-85 hover:opacity-100'
+                }`}
+                style={{ background: '#D1FAE5', color: '#065F46', borderColor: '#34D399' }}
+                title="Filter by Done status"
+              >
+                <span>{totalDone} DONE</span>
+                {statusFilters.includes('done') && <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusFilters(prev => (prev.length === 1 && prev[0] === 'cancelled') ? [] : ['cancelled']);
+                  setPage(1);
+                }}
+                className={`badge cursor-pointer select-none transition-all duration-150 px-3 py-1 rounded-full border text-xs font-bold flex items-center gap-1.5 shadow-xs hover:shadow ${
+                  statusFilters.includes('cancelled')
+                    ? 'ring-2 ring-gray-500 scale-105 shadow-md font-extrabold'
+                    : 'hover:brightness-95 opacity-85 hover:opacity-100'
+                }`}
+                style={{ background: '#F3F4F6', color: '#374151', borderColor: '#9CA3AF' }}
+                title="Filter by Cancelled status"
+              >
+                <span>{totalCancelled} CANCELLED</span>
+                {statusFilters.includes('cancelled') && <span className="w-1.5 h-1.5 rounded-full bg-gray-600 animate-pulse" />}
+              </button>
+            </div>
           </div>
         </div>
 

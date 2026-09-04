@@ -348,8 +348,14 @@ class LetterHeadIn(BaseModel):
     name: str
     disabled: bool = False
     is_default: bool = False
+    phone: Optional[str] = "9987076241"
+    email: Optional[str] = "project@creatorconsultant.net"
+    address_line1: Optional[str] = "A-001, Siddhivinayak Park, Sector 8A,"
+    address_line2: Optional[str] = "Plot No. 21, Airoli, Navi Mumbai - 400 708."
     content: str = ""
     footer_content: str = ""
+    image: Optional[str] = ""
+    footer_image: Optional[str] = ""
 
 class LetterHead(LetterHeadIn):
     model_config = ConfigDict(extra="ignore")
@@ -1163,7 +1169,7 @@ class DocumentIn(BaseModel):
     number_field: Optional[str] = ""  # the "Number" field on the form (free-text)
     remark: Optional[str] = ""
     audit_offer_path: Optional[str] = ""
-    audit_report_path: Optional[str] = ""
+    report_path: Optional[str] = ""
     contact_person: Optional[str] = ""
     mobile: Optional[str] = ""
     other_comments: Optional[str] = ""
@@ -1188,7 +1194,7 @@ class Document(BaseModel):
     number_field: str = ""
     remark: str = ""
     audit_offer_path: str = ""
-    audit_report_path: str = ""
+    report_path: str = ""
     contact_person: str = ""
     mobile: str = ""
     other_comments: str = ""
@@ -4184,15 +4190,91 @@ def _clean_quill_html(html_str: str) -> list:
     return [str(html_str)]
 
 
+def _render_dynamic_footer_letterhead(lh_doc: Optional[dict] = None) -> Optional[ImageReader]:
+    """Generates a composite footer letterhead ImageReader with editable phone, email, and address lines matching LH.docx."""
+    base_path = ROOT_DIR / "assets" / "footer_base.png"
+    if not base_path.exists():
+        orig_path = ROOT_DIR / "assets" / "footer_image_original.png"
+        if orig_path.exists():
+            return ImageReader(str(orig_path))
+        return None
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        base = Image.open(str(base_path)).convert("RGBA")
+        draw = ImageDraw.Draw(base)
+
+        phone = (lh_doc.get("phone") if lh_doc else None) or "9987076241"
+        email = (lh_doc.get("email") if lh_doc else None) or "project@creatorconsultant.net"
+        addr1 = (lh_doc.get("address_line1") if lh_doc else None) or "A-001, Siddhivinayak Park, Sector 8A,"
+        addr2 = (lh_doc.get("address_line2") if lh_doc else None) or "Plot No. 21, Airoli, Navi Mumbai - 400 708."
+
+        font_paths = [
+            "/usr/share/fonts/open-sans/OpenSans-Bold.ttf",
+            "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/google-noto/NotoSans-Bold.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf"
+        ]
+        font_path = None
+        for fp in font_paths:
+            if os.path.exists(fp):
+                font_path = fp
+                break
+
+        def _get_font(text_str, max_w, init_sz, min_sz=13):
+            if not font_path:
+                return ImageFont.load_default()
+            for sz in range(init_sz, min_sz - 1, -1):
+                f = ImageFont.truetype(font_path, sz)
+                bbox = draw.textbbox((0, 0), text_str, font=f)
+                if (bbox[2] - bbox[0]) <= max_w:
+                    return f
+            return ImageFont.truetype(font_path, min_sz)
+
+        # Lines matching exact LH.docx vertical baseline coordinates & horizontal boundary
+        items = [
+            (str(phone).strip(), 220, 23, 96),
+            (str(email).strip(), 370, 21, 126),
+            (str(addr1).strip(), 480, 20, 157),
+            (str(addr2).strip(), 620, 20, 187)
+        ]
+
+        for text_str, max_w, init_sz, y_pos in items:
+            if not text_str:
+                continue
+            font_obj = _get_font(text_str, max_w, init_sz)
+            bbox = draw.textbbox((0, 0), text_str, font=font_obj)
+            tw = bbox[2] - bbox[0]
+            draw.text((812 - tw, y_pos), text_str, font=font_obj, fill=(255, 255, 255, 255))
+
+        buf = io.BytesIO()
+        base.save(buf, format="PNG")
+        buf.seek(0)
+        return ImageReader(buf)
+    except Exception as e:
+        print(f"[pdf] Error rendering dynamic footer letterhead: {e}")
+        return None
+
+
 async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_type: str = "QUOTATION") -> bytes:
     """Generate Creator Consultant branded Quotation / Sales Order PDF using ReportLab.
-    Stamps the Creator Consultant letterhead under every page via _apply_letterhead.
+    Stamps the new footer letterhead (with editable phone, email, and address) on every page.
     """
+    lh_name = doc.get("letter_head") or ""
+    lh_doc = None
+    if lh_name:
+        lh_doc = await db.letter_heads.find_one({"$or": [{"name": lh_name}, {"letter_head_name": lh_name}]}, {"_id": 0})
+    if not lh_doc:
+        lh_doc = await db.letter_heads.find_one({"is_default": True}, {"_id": 0})
+    if not lh_doc:
+        lh_doc = await db.letter_heads.find_one({}, {"_id": 0})
+
+    footer_img_reader = _render_dynamic_footer_letterhead(lh_doc)
+
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
     margin = 18 * mm
-    LH_TOP_RESERVE = 22 * mm
+    LH_TOP_RESERVE = 16 * mm
     LH_BOTTOM_RESERVE = 46 * mm
     page_bottom_limit = LH_BOTTOM_RESERVE
 
@@ -4205,6 +4287,10 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
     tbl_num_style = ParagraphStyle("qo_tn", parent=styles["Normal"], fontSize=9, leading=12, fontName="Roboto", alignment=2, spaceAfter=0, spaceBefore=0)
 
     page_num = 1
+
+    def draw_footer():
+        if footer_img_reader:
+            c.drawImage(footer_img_reader, 0, 0, width=width, height=41.6 * mm, preserveAspectRatio=False, mask='auto')
 
     def header():
         if page_num == 1:
@@ -4226,6 +4312,7 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
     def check_space(needed_h):
         nonlocal y, page_num
         if y - needed_h < page_bottom_limit:
+            draw_footer()
             c.showPage()
             page_num += 1
             header()
@@ -4761,6 +4848,7 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
             pass
 
     if has_test_section:
+        draw_footer()
         c.showPage()
         page_num += 1
         header()
@@ -4845,12 +4933,14 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
 
                 if total_test_h <= usable_page_h:
                     if y - total_test_h < page_bottom_limit:
+                        draw_footer()
                         c.showPage()
                         page_num += 1
                         header()
                         y = height - LH_TOP_RESERVE - 5 * mm
                 else:
                     if y < height - LH_TOP_RESERVE - 10 * mm:
+                        draw_footer()
                         c.showPage()
                         page_num += 1
                         header()
@@ -4868,6 +4958,7 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
                     else:
                         _, p_td, pd_h, gap = item
                         if y - pd_h < page_bottom_limit:
+                            draw_footer()
                             c.showPage()
                             page_num += 1
                             header()
@@ -4879,6 +4970,7 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
                 if img_info:
                     ir, dw, dh = img_info
                     if y - dh < page_bottom_limit:
+                        draw_footer()
                         c.showPage()
                         page_num += 1
                         header()
@@ -4888,11 +4980,12 @@ async def _build_quotation_or_so_pdf(doc: dict, client_doc: Optional[dict], doc_
 
                 y -= test_gap
 
+    draw_footer()
     c.showPage()
     c.save()
     pdf_bytes = buf.getvalue()
     buf.close()
-    return _apply_letterhead(pdf_bytes)
+    return pdf_bytes
 
 
 @api_router.get("/quotations/{quotation_id}/pdf")
@@ -5887,7 +5980,8 @@ async def _enrich_document(d: dict) -> dict:
             d["architect_name"] = a.get("name", "")
             d["architect_phone"] = a.get("phone", "")
             d["architect_email"] = a.get("email", "")
-            d["architect_firm"] = a.get("firm", "")
+    if not d.get("report_path") and d.get("audit_report_path"):
+        d["report_path"] = d["audit_report_path"]
     return d
 
 
@@ -5908,7 +6002,7 @@ async def list_documents(
         q["$or"] = [
             {"doc_number": rx}, {"doc_type_name": rx}, {"client_name": rx}, {"architect_name": rx},
             {"plot_place": rx}, {"contact_person": rx}, {"mobile": rx}, {"remark": rx},
-            {"audit_offer_path": rx}, {"audit_report_path": rx},
+            {"audit_offer_path": rx}, {"report_path": rx},
         ]
     rows = await db.documents.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
     for r in rows:
@@ -5937,7 +6031,7 @@ async def list_documents_paginated(
         q["$or"] = [
             {"doc_number": rx}, {"doc_type_name": rx}, {"client_name": rx}, {"architect_name": rx},
             {"plot_place": rx}, {"contact_person": rx}, {"mobile": rx}, {"remark": rx},
-            {"audit_offer_path": rx}, {"audit_report_path": rx},
+            {"audit_offer_path": rx}, {"report_path": rx},
         ]
 
     total = await db.documents.count_documents(q)
@@ -5990,7 +6084,7 @@ async def create_document(data: DocumentIn):
         "number_field": data.number_field or "",
         "remark": data.remark or "",
         "audit_offer_path": data.audit_offer_path or "",
-        "audit_report_path": data.audit_report_path or "",
+        "report_path": data.report_path or "",
         "contact_person": data.contact_person or "",
         "mobile": data.mobile or "",
         "other_comments": data.other_comments or "",
@@ -6024,7 +6118,7 @@ async def update_document(doc_id: str, data: DocumentIn):
         "number_field": data.number_field or "",
         "remark": data.remark or "",
         "audit_offer_path": data.audit_offer_path or "",
-        "audit_report_path": data.audit_report_path or "",
+        "report_path": data.report_path or "",
         "contact_person": data.contact_person or "",
         "mobile": data.mobile or "",
         "other_comments": data.other_comments or "",
@@ -6205,8 +6299,8 @@ async def document_pdf(doc_id: str):
     rows = [
         ("Location", d.get("phase")),
         ("Audit Offer Path", d.get("audit_offer_path")),
-        ("Audit Report Path", d.get("audit_report_path")),
-        ("Path of Folder", d.get("remark") if not d.get("audit_offer_path") and not d.get("audit_report_path") else None),
+        ("Report Path", d.get("report_path")),
+        ("Path of Folder", d.get("remark") if not d.get("audit_offer_path") and not d.get("report_path") else None),
         ("Other Comments", d.get("other_comments")),
     ]
     styles = getSampleStyleSheet()
@@ -7758,6 +7852,7 @@ class TaskOut(BaseModel):
 class PaginatedTasks(BaseModel):
     data: List[TaskOut]
     total: int
+    total_all: int = 0
     total_pending: int = 0
     total_in_progress: int = 0
     total_done: int = 0
@@ -7868,6 +7963,89 @@ async def list_tasks(category: Optional[str] = None, project_id: Optional[str] =
     return items
 
 
+@api_router.get("/tasks/filter-options")
+async def get_task_filter_options(category: Optional[str] = None):
+    user = get_current_user_safe()
+    base_query: dict = {}
+    role_q = await _get_task_role_query(user)
+    if role_q:
+        base_query["$and"] = base_query.get("$and", [])
+        base_query["$and"].append(role_q)
+    if category:
+        base_query["category"] = category
+        
+    tasks = await db.tasks.find(base_query, {
+        "_id": 0,
+        "project_code": 1,
+        "audit_code": 1,
+        "audit_offer_no": 1,
+        "assigned_to_user_id": 1,
+        "assigned_to_accountant_id": 1,
+        "assigned_to_username": 1,
+        "created_by_user_id": 1,
+        "created_by_username": 1,
+        "status": 1
+    }).to_list(5000)
+    
+    user_ids = set()
+    for t in tasks:
+        if t.get("assigned_to_user_id"):
+            user_ids.add(t["assigned_to_user_id"])
+        if t.get("assigned_to_accountant_id"):
+            user_ids.add(t["assigned_to_accountant_id"])
+        if t.get("created_by_user_id"):
+            user_ids.add(t["created_by_user_id"])
+            
+    users_cursor = await db.users.find({"id": {"$in": list(user_ids)}}, {"_id": 0, "id": 1, "username": 1, "name": 1}).to_list(None)
+    user_map = {}
+    for u in users_cursor:
+        display = u.get("name") or u.get("username")
+        user_map[u["id"]] = {"id": u["id"], "username": u.get("username"), "name": display}
+
+    project_numbers = set()
+    assigned_to_map = {}
+    assigned_by_map = {}
+    statuses = set()
+
+    for t in tasks:
+        if t.get("project_code"):
+            project_numbers.add(t["project_code"].strip())
+        if t.get("audit_code"):
+            project_numbers.add(t["audit_code"].strip())
+        if t.get("audit_offer_no"):
+            project_numbers.add(t["audit_offer_no"].strip())
+            
+        # Assigned to
+        uid = t.get("assigned_to_user_id") or t.get("assigned_to_accountant_id")
+        if uid and uid in user_map:
+            u_info = user_map[uid]
+            key = u_info["username"] or u_info["id"]
+            assigned_to_map[key] = u_info["name"] or u_info["username"]
+        elif t.get("assigned_to_username"):
+            un = t["assigned_to_username"].strip()
+            assigned_to_map[un] = un
+            
+        # Assigned by
+        c_uid = t.get("created_by_user_id")
+        if c_uid and c_uid in user_map:
+            u_info = user_map[c_uid]
+            key = u_info["username"] or u_info["id"]
+            assigned_by_map[key] = u_info["name"] or u_info["username"]
+        elif t.get("created_by_username"):
+            un = t["created_by_username"].strip()
+            assigned_by_map[un] = un
+
+        if t.get("status"):
+            statuses.add(t["status"].strip().lower())
+
+    return {
+        "project_numbers": sorted([p for p in project_numbers if p]),
+        "assigned_to": [{"value": k, "label": v} for k, v in sorted(assigned_to_map.items(), key=lambda x: x[1].lower())],
+        "assigned_by": [{"value": k, "label": v} for k, v in sorted(assigned_by_map.items(), key=lambda x: x[1].lower())],
+        "statuses": sorted([s for s in statuses if s])
+    }
+
+
 @api_router.get("/tasks/paginated", response_model=PaginatedTasks)
 async def list_tasks_paginated(
     page: int = 1, 
@@ -7875,6 +8053,9 @@ async def list_tasks_paginated(
     q: Optional[str] = None,
     category: Optional[str] = None,
     status: Optional[str] = None,
+    project_code: Optional[str] = None,
+    assigned_to: Optional[str] = None,
+    assigned_by: Optional[str] = None,
     sort_by: Optional[str] = "created_at",
     sort_dir: Optional[str] = "desc"
 ):
@@ -7903,7 +8084,65 @@ async def list_tasks_paginated(
         ]
         base_query["$and"] = base_query.get("$and", [])
         base_query["$and"].append({"$or": search_or})
+
+    if project_code:
+        base_query["$and"] = base_query.get("$and", [])
+        base_query["$and"].append({
+            "$or": [
+                {"project_code": project_code},
+                {"audit_code": project_code},
+                {"audit_offer_no": project_code}
+            ]
+        })
+
+    if assigned_to:
+        matched_users = await db.users.find({
+            "$or": [
+                {"id": assigned_to},
+                {"username": assigned_to},
+                {"name": assigned_to}
+            ]
+        }, {"_id": 0, "id": 1, "username": 1}).to_list(None)
+        matched_ids = [u["id"] for u in matched_users if "id" in u]
+        matched_usernames = [u["username"] for u in matched_users if "username" in u]
+        if assigned_to not in matched_ids:
+            matched_ids.append(assigned_to)
+        if assigned_to not in matched_usernames:
+            matched_usernames.append(assigned_to)
+
+        base_query["$and"] = base_query.get("$and", [])
+        base_query["$and"].append({
+            "$or": [
+                {"assigned_to_user_id": {"$in": matched_ids}},
+                {"assigned_to_accountant_id": {"$in": matched_ids}},
+                {"assigned_to_username": {"$in": matched_usernames}}
+            ]
+        })
+
+    if assigned_by:
+        matched_users = await db.users.find({
+            "$or": [
+                {"id": assigned_by},
+                {"username": assigned_by},
+                {"name": assigned_by}
+            ]
+        }, {"_id": 0, "id": 1, "username": 1}).to_list(None)
+        matched_ids = [u["id"] for u in matched_users if "id" in u]
+        matched_usernames = [u["username"] for u in matched_users if "username" in u]
+        if assigned_by not in matched_ids:
+            matched_ids.append(assigned_by)
+        if assigned_by not in matched_usernames:
+            matched_usernames.append(assigned_by)
+
+        base_query["$and"] = base_query.get("$and", [])
+        base_query["$and"].append({
+            "$or": [
+                {"created_by_user_id": {"$in": matched_ids}},
+                {"created_by_username": {"$in": matched_usernames}}
+            ]
+        })
         
+    total_all = await db.tasks.count_documents(base_query)
     pending_query = base_query.copy()
     pending_query["status"] = {"$in": ["pending", None, ""]}
     total_pending = await db.tasks.count_documents(pending_query)
@@ -7962,7 +8201,7 @@ async def list_tasks_paginated(
         t["sr_no"] = skip + idx + 1
         await _enrich_task(t)
         
-    return {"data": items, "total": total, "total_pending": total_pending, "total_in_progress": total_in_progress, "total_done": total_done, "total_cancelled": total_cancelled}
+    return {"data": items, "total": total, "total_all": total_all, "total_pending": total_pending, "total_in_progress": total_in_progress, "total_done": total_done, "total_cancelled": total_cancelled}
 
 @api_router.post("/tasks")
 async def create_task(data: TaskIn):
