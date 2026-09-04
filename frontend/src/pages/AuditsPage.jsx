@@ -42,7 +42,8 @@ const emptyAudit = {
   total_amount: '',
   status: 'Outstanding',
   address: '',
-  file_path: '',
+  audit_offer_path: '',
+  report_path: '',
 };
 
 const StructuralAuditTaskModal = ({ open, onClose, audit, users = [], onSave }) => {
@@ -82,6 +83,7 @@ const StructuralAuditTaskModal = ({ open, onClose, audit, users = [], onSave }) 
       await api.post('/tasks', {
         category: 'structural',
         audit_id: audit.id,
+        audit_offer_no: audit.audit_offer || '',
         work: 'Structural Audit',
         description: form.description.trim(),
         site_visit_date: form.site_visit_date || null,
@@ -210,13 +212,13 @@ const AuditsPage = () => {
       if (showArchived) params.archived = true;
       const [a, c, u] = await Promise.all([
         api.get('/audits/paginated', { params }),
-        api.get('/clients'),
-        api.get('/auth/users/directory'),
+        api.get('/clients').catch(() => ({ data: [] })),
+        api.get('/auth/users/directory').catch(() => ({ data: [] })),
       ]);
-      setAudits(a.data.data);
-      setTotal(a.data.total);
-      setClients(c.data);
-      if (u) setUsers(u.data);
+      setAudits(a.data?.data || []);
+      setTotal(a.data?.total || 0);
+      setClients(c.data || []);
+      if (u?.data) setUsers(u.data);
     } catch (e) { logger.error('Audits load failed:', e); }
     finally { setLoading(false); }
   };
@@ -263,7 +265,8 @@ const AuditsPage = () => {
       total_amount: a.total_amount != null ? String(a.total_amount) : '',
       status: a.status || 'Outstanding',
       address: a.address || '',
-      file_path: a.file_path || '',
+      audit_offer_path: a.audit_offer_path || '',
+      report_path: a.report_path || a.file_path || '',
     });
     setFormError('');
     setModalOpen(true);
@@ -286,7 +289,8 @@ const AuditsPage = () => {
         total_amount: parseFloat(form.total_amount) || 0,
         status: form.status || 'Outstanding',
         address: form.address || '',
-        file_path: (form.file_path || '').trim(),
+        audit_offer_path: (form.audit_offer_path || '').trim(),
+        report_path: (form.report_path || '').trim(),
       };
       if (editing) {
         await api.put(`/audits/${editing.id}`, payload);
@@ -350,8 +354,7 @@ const AuditsPage = () => {
     
     try {
       await api.put(`/audits/${audit.id}`, {
-        audit_code: audit.audit_code,
-        audit_offer: audit.audit_offer,
+        ...audit,
         status: newStatus
       });
       showToast(`Status changed to ${newStatus}`);
@@ -364,8 +367,7 @@ const AuditsPage = () => {
   const handleTaskModalSave = async () => {
     try {
       await api.put(`/audits/${confirmingAudit.id}`, {
-        audit_code: confirmingAudit.audit_code,
-        audit_offer: confirmingAudit.audit_offer,
+        ...confirmingAudit,
         status: 'Confirm'
       });
       setTaskModalOpen(false);
@@ -461,7 +463,7 @@ const AuditsPage = () => {
                   <td className="font-mono-data text-sm font-semibold" style={{ color: a.outstanding_amount > 0 ? '#DC2626' : '#065F46' }}>{formatINR(a.outstanding_amount)}</td>
                   <td className="hidden md:table-cell">
                     <select
-                      className={`text-xs font-semibold py-1 pl-2 pr-6 rounded-full border appearance-none outline-none cursor-pointer focus:ring-2 focus:ring-offset-1 transition-all shadow-sm ${a.status === 'Confirm' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : a.status === 'Cancelled' ? 'bg-gray-100 text-gray-800 border-gray-300' : 'bg-red-50 text-red-800 border-red-300'}`}
+                      className={`text-xs font-semibold py-1 pl-2 pr-6 rounded-full border appearance-none outline-none cursor-pointer focus:ring-2 focus:ring-offset-1 transition-all shadow-sm ${a.status === 'Confirm' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : a.status === 'Cancelled' ? 'bg-gray-100 text-gray-800 border-gray-300' : a.status === 'Settled' ? 'bg-blue-100 text-blue-800 border-blue-300' : 'bg-red-50 text-red-800 border-red-300'}`}
                       style={{
                         backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='currentColor'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
                         backgroundRepeat: 'no-repeat',
@@ -474,6 +476,7 @@ const AuditsPage = () => {
                       <option value="Outstanding">Outstanding</option>
                       <option value="Confirm">Confirm</option>
                       <option value="Cancelled">Cancelled</option>
+                      {a.status === 'Settled' && <option value="Settled">Settled</option>}
                     </select>
                   </td>
                   <td className="hidden md:table-cell">{contactCell(a)}</td>
@@ -583,6 +586,8 @@ const AuditsPage = () => {
               <label className="label">Status</label>
               <select className="select" value={form.status} onChange={(e) => update('status', e.target.value)} data-testid="audit-form-status">
                 <option value="Outstanding">Outstanding</option>
+                <option value="Confirm">Confirm</option>
+                <option value="Cancelled">Cancelled</option>
                 <option value="Settled">Settled</option>
               </select>
             </div>
@@ -592,13 +597,23 @@ const AuditsPage = () => {
             <textarea className="textarea" rows={3} value={form.address} onChange={(e) => update('address', e.target.value)} placeholder="Site Location / Address" data-testid="audit-form-address" />
           </div>
           <div>
-            <label className="label">File Path <span className="text-xs font-normal" style={{ color: 'var(--cc-text-muted)' }}>(path of the audit report PDF / Excel on your PC)</span></label>
+            <label className="label">Audit Offer Path <span className="text-xs font-normal" style={{ color: 'var(--cc-text-muted)' }}>(path of the audit offer on your PC)</span></label>
             <input
               className="input font-mono-data text-xs"
-              value={form.file_path}
-              onChange={(e) => update('file_path', e.target.value)}
+              value={form.audit_offer_path}
+              onChange={(e) => update('audit_offer_path', e.target.value)}
+              placeholder={`e.g. D:\\CreatorConsultant\\Offers\\2026\\STR-AUDIT-2026-006.pdf`}
+              data-testid="audit-form-audit-offer-path"
+            />
+          </div>
+          <div>
+            <label className="label">Report Path <span className="text-xs font-normal" style={{ color: 'var(--cc-text-muted)' }}>(path of the audit report on your PC)</span></label>
+            <input
+              className="input font-mono-data text-xs"
+              value={form.report_path}
+              onChange={(e) => update('report_path', e.target.value)}
               placeholder={`e.g. D:\\CreatorConsultant\\Audits\\2026\\STR-AUDIT-2026-006.pdf`}
-              data-testid="audit-form-file-path"
+              data-testid="audit-form-report-path"
             />
           </div>
           {formError && <div className="text-sm text-red-600" data-testid="audit-form-error">{formError}</div>}

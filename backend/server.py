@@ -1168,8 +1168,6 @@ class DocumentIn(BaseModel):
     phase: Optional[str] = ""
     number_field: Optional[str] = ""  # the "Number" field on the form (free-text)
     remark: Optional[str] = ""
-    audit_offer_path: Optional[str] = ""
-    report_path: Optional[str] = ""
     contact_person: Optional[str] = ""
     mobile: Optional[str] = ""
     other_comments: Optional[str] = ""
@@ -1193,8 +1191,6 @@ class Document(BaseModel):
     phase: str = ""
     number_field: str = ""
     remark: str = ""
-    audit_offer_path: str = ""
-    report_path: str = ""
     contact_person: str = ""
     mobile: str = ""
     other_comments: str = ""
@@ -2822,7 +2818,7 @@ async def project_invoice_pdf(project_id: str):
 # ---------------------- AUDITS ----------------------
 class AuditIn(BaseModel):
     audit_code: Optional[str] = ""      # editable; auto-filled if blank
-    audit_offer: str = ""                # e.g. "Structural Audit" (free text)
+    audit_offer: Optional[str] = ""     # e.g. "Structural Audit" (free text)
     report_id: Optional[str] = ""        # editable; auto-filled if blank
     client_id: Optional[str] = None
     # Free-text client contact fields. When set, override whatever would be
@@ -2831,10 +2827,11 @@ class AuditIn(BaseModel):
     client_name_override: Optional[str] = ""
     client_phone_override: Optional[str] = ""
     client_email_override: Optional[str] = ""
-    total_amount: float = 0.0
+    total_amount: Optional[float] = 0.0
     status: Optional[str] = "Outstanding"
     address: Optional[str] = ""
-    file_path: Optional[str] = ""        # path on user's PC, e.g. D:\Audits\2026\STR-AUDIT-006.pdf
+    audit_offer_path: Optional[str] = ""
+    report_path: Optional[str] = ""
 
 
 class Audit(BaseModel):
@@ -2855,7 +2852,8 @@ class Audit(BaseModel):
     outstanding_amount: float = 0.0
     status: str = "Outstanding"
     address: str = ""
-    file_path: str = ""
+    audit_offer_path: str = ""
+    report_path: str = ""
     archived: bool = False
     last_edited_by_user_id: Optional[str] = None
     last_edited_by_username: Optional[str] = ""
@@ -2966,6 +2964,8 @@ async def _enrich_audit(a: dict) -> dict:
         a["status"] = a.get("status") or "Outstanding"
         if a["status"] == "Settled":
             a["status"] = "Outstanding"
+    a["audit_offer_path"] = a.get("audit_offer_path", "") or ""
+    a["report_path"] = a.get("report_path", "") or a.get("file_path", "") or ""
     return a
 
 
@@ -3101,6 +3101,8 @@ async def list_audits_paginated(
             {"client_name": {"$regex": s, "$options": "i"}},
             {"client_name_override": {"$regex": s, "$options": "i"}},
             {"address": {"$regex": s, "$options": "i"}},
+            {"audit_offer_path": {"$regex": s, "$options": "i"}},
+            {"report_path": {"$regex": s, "$options": "i"}},
         ]
         if client_ids:
             or_conds.append({"client_id": {"$in": client_ids}})
@@ -3139,6 +3141,8 @@ async def list_audits(archived: Optional[bool] = False, search: Optional[str] = 
             {"report_id": {"$regex": s, "$options": "i"}},
             {"client_name": {"$regex": s, "$options": "i"}},
             {"address": {"$regex": s, "$options": "i"}},
+            {"audit_offer_path": {"$regex": s, "$options": "i"}},
+            {"report_path": {"$regex": s, "$options": "i"}},
         ]
     items = await db.audits.find(query, {"_id": 0}).sort("created_at", -1).to_list(5000)
     for a in items:
@@ -3185,14 +3189,14 @@ async def update_audit(audit_id: str, data: AuditIn):
     if not existing:
         raise HTTPException(404, "Audit not found")
     old_total = existing.get("total_amount", 0)
-    update = data.model_dump()
+    update = data.model_dump(exclude_unset=True)
     # Keep the existing code/report_id/audit_offer if new value is blank
-    if not (update.get("audit_code") or "").strip():
-        update["audit_code"] = existing.get("audit_code", "")
-    if not (update.get("report_id") or "").strip():
-        update["report_id"] = existing.get("report_id", "")
-    if not (update.get("audit_offer") or "").strip():
-        update["audit_offer"] = existing.get("audit_offer", "")
+    if "audit_code" in update and not (update["audit_code"] or "").strip():
+        update.pop("audit_code")
+    if "report_id" in update and not (update["report_id"] or "").strip():
+        update.pop("report_id")
+    if "audit_offer" in update and not (update["audit_offer"] or "").strip():
+        update.pop("audit_offer")
     existing.update(update)
     _stamp_edit(existing)
     await _enrich_audit(existing)
@@ -3477,6 +3481,8 @@ async def export_audit_excel(audit_id: str):
         ("Received (INR)", audit.get("received_amount", 0)),
         ("Outstanding (INR)", audit.get("outstanding_amount", 0)),
         ("Address", audit.get("address", "")),
+        ("Audit Offer Path", audit.get("audit_offer_path", "")),
+        ("Report Path", audit.get("report_path", "")),
         ("Status", audit.get("status", "")),
         ("Created", audit.get("created_at", "")),
     ]
@@ -5980,8 +5986,6 @@ async def _enrich_document(d: dict) -> dict:
             d["architect_name"] = a.get("name", "")
             d["architect_phone"] = a.get("phone", "")
             d["architect_email"] = a.get("email", "")
-    if not d.get("report_path") and d.get("audit_report_path"):
-        d["report_path"] = d["audit_report_path"]
     return d
 
 
@@ -6002,7 +6006,6 @@ async def list_documents(
         q["$or"] = [
             {"doc_number": rx}, {"doc_type_name": rx}, {"client_name": rx}, {"architect_name": rx},
             {"plot_place": rx}, {"contact_person": rx}, {"mobile": rx}, {"remark": rx},
-            {"audit_offer_path": rx}, {"report_path": rx},
         ]
     rows = await db.documents.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
     for r in rows:
@@ -6031,7 +6034,6 @@ async def list_documents_paginated(
         q["$or"] = [
             {"doc_number": rx}, {"doc_type_name": rx}, {"client_name": rx}, {"architect_name": rx},
             {"plot_place": rx}, {"contact_person": rx}, {"mobile": rx}, {"remark": rx},
-            {"audit_offer_path": rx}, {"report_path": rx},
         ]
 
     total = await db.documents.count_documents(q)
@@ -6083,8 +6085,6 @@ async def create_document(data: DocumentIn):
         "phase": data.phase or "",
         "number_field": data.number_field or "",
         "remark": data.remark or "",
-        "audit_offer_path": data.audit_offer_path or "",
-        "report_path": data.report_path or "",
         "contact_person": data.contact_person or "",
         "mobile": data.mobile or "",
         "other_comments": data.other_comments or "",
@@ -6117,8 +6117,6 @@ async def update_document(doc_id: str, data: DocumentIn):
         "phase": data.phase or "",
         "number_field": data.number_field or "",
         "remark": data.remark or "",
-        "audit_offer_path": data.audit_offer_path or "",
-        "report_path": data.report_path or "",
         "contact_person": data.contact_person or "",
         "mobile": data.mobile or "",
         "other_comments": data.other_comments or "",
@@ -6298,9 +6296,7 @@ async def document_pdf(doc_id: str):
 
     rows = [
         ("Location", d.get("phase")),
-        ("Audit Offer Path", d.get("audit_offer_path")),
-        ("Report Path", d.get("report_path")),
-        ("Path of Folder", d.get("remark") if not d.get("audit_offer_path") and not d.get("report_path") else None),
+        ("Path of Folder", d.get("remark")),
         ("Other Comments", d.get("other_comments")),
     ]
     styles = getSampleStyleSheet()
@@ -7813,6 +7809,8 @@ class TaskOut(BaseModel):
     category: str
     project_id: Optional[str] = None
     project_code: str = ""
+    project_name: str = ""
+    job_no: str = ""
     audit_id: Optional[str] = None
     audit_code: str = ""
     audit_offer_no: str = ""
@@ -7873,17 +7871,22 @@ async def _enrich_task(t: dict):
             t["assigned_accountant_username"] = u.get("username") or ""
             t["assigned_accountant_color"] = u.get("color") or ""
             
-    # Enrich audit_code if missing
-    if t.get("audit_id") and not t.get("audit_code"):
-        a = await db.audits.find_one({"id": t["audit_id"]})
-        if a:
-            t["audit_code"] = a.get("audit_code") or ""
-
-    # Enrich project_code if missing
-    if t.get("project_id") and not t.get("project_code"):
-        p = await db.projects.find_one({"id": t["project_id"]}, {"_id": 0, "project_code": 1, "job_no": 1})
+    # Enrich project details
+    if t.get("project_id"):
+        p = await db.projects.find_one({"id": t["project_id"]}, {"_id": 0, "project_code": 1, "job_no": 1, "name": 1})
         if p:
-            t["project_code"] = p.get("job_no") or p.get("project_code") or ""
+            t["project_name"] = p.get("name") or ""
+            t["job_no"] = p.get("job_no") or ""
+            if not t.get("project_code"):
+                t["project_code"] = p.get("job_no") or p.get("project_code") or ""
+    elif t.get("audit_id"):
+        a = await db.audits.find_one({"id": t["audit_id"]}, {"_id": 0, "audit_code": 1, "audit_offer": 1})
+        if a:
+            t["project_name"] = a.get("audit_offer") or "Structural Audit"
+            if not t.get("audit_code"):
+                t["audit_code"] = a.get("audit_code") or ""
+            if not t.get("audit_offer_no"):
+                t["audit_offer_no"] = a.get("audit_offer") or ""
 
 
 async def _get_task_role_query(user: dict) -> dict:
@@ -7930,18 +7933,7 @@ async def _get_task_role_query(user: dict) -> dict:
 def _can_modify_task(task: dict, user: dict) -> bool:
     if not user:
         return False
-    if user.get("role") == "admin":
-        return True
-    user_id = user.get("id")
-    assigned_user = task.get("assigned_to_user_id")
-    assigned_acc = task.get("assigned_to_accountant_id")
-    created_by = task.get("created_by_user_id")
-    
-    if user_id and user_id in (assigned_user, assigned_acc, created_by):
-        return True
-    if not assigned_user and not assigned_acc:
-        return True
-    return False
+    return True
 
 
 @api_router.get("/tasks")
@@ -7976,6 +7968,10 @@ async def get_task_filter_options(category: Optional[str] = None):
         
     tasks = await db.tasks.find(base_query, {
         "_id": 0,
+        "project_id": 1,
+        "audit_id": 1,
+        "project_name": 1,
+        "job_no": 1,
         "project_code": 1,
         "audit_code": 1,
         "audit_offer_no": 1,
@@ -8008,6 +8004,10 @@ async def get_task_filter_options(category: Optional[str] = None):
     statuses = set()
 
     for t in tasks:
+        if t.get("project_name"):
+            project_numbers.add(t["project_name"].strip())
+        if t.get("job_no"):
+            project_numbers.add(t["job_no"].strip())
         if t.get("project_code"):
             project_numbers.add(t["project_code"].strip())
         if t.get("audit_code"):
@@ -8086,14 +8086,34 @@ async def list_tasks_paginated(
         base_query["$and"].append({"$or": search_or})
 
     if project_code:
-        base_query["$and"] = base_query.get("$and", [])
-        base_query["$and"].append({
+        matching_proj_ids = [p["id"] async for p in db.projects.find({
             "$or": [
-                {"project_code": project_code},
-                {"audit_code": project_code},
-                {"audit_offer_no": project_code}
+                {"name": project_code}, 
+                {"job_no": project_code}, 
+                {"project_code": project_code}
             ]
-        })
+        }, {"_id": 0, "id": 1})]
+        matching_audit_ids = [a["id"] async for a in db.audits.find({
+            "$or": [
+                {"audit_offer": project_code}, 
+                {"audit_code": project_code}
+            ]
+        }, {"_id": 0, "id": 1})]
+        
+        proj_filter_or = [
+            {"project_code": project_code},
+            {"audit_code": project_code},
+            {"audit_offer_no": project_code},
+            {"project_name": project_code},
+            {"job_no": project_code}
+        ]
+        if matching_proj_ids:
+            proj_filter_or.append({"project_id": {"$in": matching_proj_ids}})
+        if matching_audit_ids:
+            proj_filter_or.append({"audit_id": {"$in": matching_audit_ids}})
+
+        base_query["$and"] = base_query.get("$and", [])
+        base_query["$and"].append({"$or": proj_filter_or})
 
     if assigned_to:
         matched_users = await db.users.find({
@@ -8225,14 +8245,17 @@ async def create_task(data: TaskIn):
     doc["created_at"] = _now()
 
     if data.project_id:
-        p = await db.projects.find_one({"id": data.project_id}, {"_id": 0, "site_location": 1, "project_code": 1, "job_no": 1})
+        p = await db.projects.find_one({"id": data.project_id}, {"_id": 0, "site_location": 1, "project_code": 1, "job_no": 1, "name": 1})
         if p:
+            doc["project_name"] = p.get("name") or ""
+            doc["job_no"] = p.get("job_no") or ""
             doc["project_code"] = p.get("job_no") or p.get("project_code") or ""
             if not (data.site_location or "").strip():
                 doc["site_location"] = p.get("site_location") or ""
     elif data.audit_id:
         a = await db.audits.find_one({"id": data.audit_id}, {"_id": 0, "address": 1, "audit_code": 1, "audit_offer": 1})
         if a:
+            doc["project_name"] = a.get("audit_offer") or "Structural Audit"
             doc["audit_code"] = a.get("audit_code") or ""
             doc["audit_offer_no"] = a.get("audit_offer") or ""
             if not (data.site_location or "").strip():
@@ -8283,14 +8306,17 @@ async def update_task(task_id: str, data: TaskIn):
 
     update = data.model_dump()
     if data.project_id:
-        p = await db.projects.find_one({"id": data.project_id}, {"_id": 0, "site_location": 1, "project_code": 1, "job_no": 1})
+        p = await db.projects.find_one({"id": data.project_id}, {"_id": 0, "site_location": 1, "project_code": 1, "job_no": 1, "name": 1})
         if p:
+            update["project_name"] = p.get("name") or ""
+            update["job_no"] = p.get("job_no") or ""
             update["project_code"] = p.get("job_no") or p.get("project_code") or ""
             if not (data.site_location or "").strip():
                 update["site_location"] = p.get("site_location") or ""
     elif data.audit_id:
         a = await db.audits.find_one({"id": data.audit_id}, {"_id": 0, "address": 1, "audit_code": 1, "audit_offer": 1})
         if a:
+            update["project_name"] = a.get("audit_offer") or "Structural Audit"
             update["audit_code"] = a.get("audit_code") or ""
             update["audit_offer_no"] = a.get("audit_offer") or ""
             if not (data.site_location or "").strip():
@@ -8331,8 +8357,8 @@ async def update_task(task_id: str, data: TaskIn):
 
 @api_router.delete("/tasks/{task_id}")
 async def delete_task(task_id: str, user: dict = Depends(get_current_user_safe)):
-    if user and user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Only admins are permitted to delete tasks")
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
     result = await db.tasks.delete_one({"id": task_id})
     if result.deleted_count == 0:
         raise HTTPException(404, "Task not found")

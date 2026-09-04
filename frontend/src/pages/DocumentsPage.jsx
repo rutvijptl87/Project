@@ -23,8 +23,6 @@ const emptyDoc = {
   phase: '',
   number_field: '',
   remark: '',
-  audit_offer_path: '',
-  report_path: '',
   contact_person: '',
   mobile: '',
   other_comments: '',
@@ -176,8 +174,6 @@ const DocumentsPage = () => {
       phase: d.phase || '',
       number_field: d.number_field || '',
       remark: d.remark || '',
-      audit_offer_path: d.audit_offer_path || '',
-      report_path: d.report_path || d.audit_report_path || '',
       contact_person: d.contact_person || '',
       mobile: d.mobile || '',
       other_comments: d.other_comments || '',
@@ -601,13 +597,8 @@ const DocumentsPage = () => {
           </div>
 
           <div>
-            <label className="label">Audit Offer Path</label>
-            <input className="input font-mono-data w-full" value={form.audit_offer_path} onChange={(e) => update('audit_offer_path', e.target.value)} placeholder="e.g. D:/Projects/2026/ACCP-003-Offer" data-testid="document-form-audit-offer-path" />
-          </div>
-
-          <div>
-            <label className="label">Report Path</label>
-            <input className="input font-mono-data w-full" value={form.report_path} onChange={(e) => update('report_path', e.target.value)} placeholder="e.g. D:/Projects/2026/ACCP-003-Report" data-testid="document-form-report-path" />
+            <label className="label">Path of Folder</label>
+            <input className="input font-mono-data w-full" value={form.remark} onChange={(e) => update('remark', e.target.value)} placeholder="e.g. D:/Projects/2026/ACCP-003" data-testid="document-form-folder-path" />
           </div>
 
           <div>

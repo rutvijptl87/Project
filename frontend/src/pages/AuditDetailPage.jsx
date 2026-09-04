@@ -7,11 +7,13 @@ import { downloadFile } from '../lib/download';
 import { useUserDirectory } from '../lib/userDirectory';
 import InitialsBadge from '../components/InitialsBadge';
 import RecordPaymentModal from '../components/RecordPaymentModal';
+import Modal from '../components/Modal';
+import InlinePicker from '../components/InlinePicker';
 import { logger } from '../lib/logger';
 import {
   ArrowLeft, Pencil, Trash2, FileText, Download, Archive,
   Plus, CreditCard, ClipboardList, Clock, Phone, Mail, MessageCircle,
-  StickyNote, Save, X, ClipboardCheck, FolderOpen, Copy,
+  StickyNote, Save, X, ClipboardCheck, FolderOpen, Copy, Check,
 } from 'lucide-react';
 
 const actionStyle = (action) => {
@@ -40,7 +42,16 @@ const AuditDetailPage = () => {
   const [payments, setPayments] = useState([]);
   const [revisions, setRevisions] = useState([]);
   const [activity, setActivity] = useState([]);
+  const [clients, setClients] = useState([]);
   const [showPay, setShowPay] = useState(false);
+  const [copiedOffer, setCopiedOffer] = useState(false);
+  const [copiedReport, setCopiedReport] = useState(false);
+
+  // Edit audit modal
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
 
   // Quote revision form
   const [newAmount, setNewAmount] = useState('');
@@ -53,21 +64,88 @@ const AuditDetailPage = () => {
   const [savingNotes, setSavingNotes] = useState(false);
 
   const load = useCallback(async () => {
-    const [a, pay, rev, act] = await Promise.all([
-      api.get(`/audits/${id}`),
-      api.get('/audit-payments', { params: { audit_id: id } }),
-      api.get(`/audits/${id}/revisions`),
-      api.get(`/audits/${id}/activity`),
-    ]);
-    setAudit(a.data);
-    setPayments(pay.data);
-    setRevisions(rev.data);
-    setActivity(act.data);
+    try {
+      const [a, pay, rev, act, c] = await Promise.all([
+        api.get(`/audits/${id}`),
+        api.get('/audit-payments', { params: { audit_id: id } }).catch(() => ({ data: [] })),
+        api.get(`/audits/${id}/revisions`).catch(() => ({ data: [] })),
+        api.get(`/audits/${id}/activity`).catch(() => ({ data: [] })),
+        api.get('/clients').catch(() => ({ data: [] })),
+      ]);
+      setAudit(a.data);
+      setPayments(pay.data || []);
+      setRevisions(rev.data || []);
+      setActivity(act.data || []);
+      setClients(c.data || []);
+    } catch (e) {
+      logger.error('Failed to load audit:', e);
+    }
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
 
   if (!audit) return <div className="max-w-5xl mx-auto p-8">Loading...</div>;
+
+  const copyToClipboard = (text, type) => {
+    navigator.clipboard?.writeText(text).then(() => {
+      if (type === 'offer') {
+        setCopiedOffer(true);
+        setTimeout(() => setCopiedOffer(false), 2000);
+      } else {
+        setCopiedReport(true);
+        setTimeout(() => setCopiedReport(false), 2000);
+      }
+    }).catch(() => {});
+  };
+
+  const openEditModal = () => {
+    setEditForm({
+      audit_code: audit.audit_code || '',
+      audit_offer: audit.audit_offer || '',
+      report_id: audit.report_id || '',
+      client_id: audit.client_id || '',
+      client_name_override: audit.client_name_override || '',
+      client_phone_override: audit.client_phone_override || '',
+      client_email_override: audit.client_email_override || '',
+      total_amount: audit.total_amount != null ? String(audit.total_amount) : '',
+      status: audit.status || 'Outstanding',
+      address: audit.address || '',
+      audit_offer_path: audit.audit_offer_path || '',
+      report_path: audit.report_path || audit.file_path || '',
+    });
+    setEditError('');
+    setEditOpen(true);
+  };
+
+  const updateEditForm = (k, v) => setEditForm(f => ({ ...f, [k]: v }));
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    setEditSaving(true);
+    try {
+      const payload = {
+        audit_code: (editForm.audit_code || '').trim(),
+        audit_offer: (editForm.audit_offer || '').trim(),
+        report_id: (editForm.report_id || '').trim(),
+        client_id: editForm.client_id || null,
+        client_name_override: (editForm.client_name_override || '').trim(),
+        client_phone_override: (editForm.client_phone_override || '').trim(),
+        client_email_override: (editForm.client_email_override || '').trim(),
+        total_amount: parseFloat(editForm.total_amount) || 0,
+        status: editForm.status || 'Outstanding',
+        address: editForm.address || '',
+        audit_offer_path: (editForm.audit_offer_path || '').trim(),
+        report_path: (editForm.report_path || '').trim(),
+      };
+      await api.put(`/audits/${id}`, payload);
+      setEditOpen(false);
+      load();
+    } catch (err) {
+      setEditError(err?.response?.data?.detail || 'Failed to save audit');
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   const startEditAddress = () => { setAddressDraft(audit?.address || ''); setEditingNotes(true); };
   const cancelEditNotes = () => { setEditingNotes(false); setAddressDraft(''); };
@@ -171,11 +249,13 @@ const AuditDetailPage = () => {
                 </span>
               </>
             )}
-            <span className={`badge ml-2 ${audit.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`}>{audit.status}</span>
+            <span className={`badge ml-2 ${audit.status === 'Confirm' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : audit.status === 'Cancelled' ? 'bg-gray-100 text-gray-800 border-gray-300' : audit.status === 'Settled' ? 'badge-settled' : 'badge-outstanding'}`}>{audit.status}</span>
           </div>
         </div>
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto [&_.btn]:w-full sm:[&_.btn]:w-auto">
           <button onClick={downloadExcel} className="btn btn-outline" data-testid="audit-detail-btn-excel"><Download size={15}/> Export Excel</button>
+          <button onClick={downloadInvoice} className="btn btn-outline" data-testid="audit-detail-btn-invoice"><FileText size={15}/> Invoice PDF</button>
+          <button onClick={openEditModal} className="btn btn-outline" data-testid="audit-detail-btn-edit"><Pencil size={15}/> Edit</button>
           <button onClick={handleDelete} className="btn btn-danger" data-testid="audit-detail-btn-delete"><Trash2 size={15}/> Delete</button>
         </div>
       </div>
@@ -204,26 +284,48 @@ const AuditDetailPage = () => {
         </div>
       )}
 
-      {/* File path (audit report stored on user's PC) */}
-      {audit.file_path && (
+      {/* Audit Offer Path */}
+      {audit.audit_offer_path && (
         <div
-          className="card p-3 mb-6 flex items-center justify-between gap-3 flex-wrap"
-          data-testid="audit-detail-file-path"
+          className="card p-3 mb-3 flex items-center justify-between gap-3 flex-wrap"
+          data-testid="audit-detail-offer-path"
         >
           <div className="flex items-center gap-2 text-xs min-w-0 flex-1">
+            <span className="text-[10px] uppercase font-bold text-gray-500">Offer Path:</span>
             <FolderOpen size={14} style={{ color: 'var(--cc-accent)', flexShrink: 0 }}/>
-            <span className="font-mono-data truncate" title={audit.file_path}>{audit.file_path}</span>
+            <span className="font-mono-data truncate" title={audit.audit_offer_path}>{audit.audit_offer_path}</span>
           </div>
           <button
             type="button"
-            onClick={() => {
-              navigator.clipboard?.writeText(audit.file_path).catch(() => {});
-            }}
+            onClick={() => copyToClipboard(audit.audit_offer_path, 'offer')}
             className="btn btn-outline btn-sm"
             title="Copy path"
-            data-testid="audit-detail-copy-file-path"
+            data-testid="audit-detail-copy-offer-path"
           >
-            <Copy size={12}/> Copy
+            {copiedOffer ? <><Check size={12} className="text-emerald-600"/> Copied!</> : <><Copy size={12}/> Copy</>}
+          </button>
+        </div>
+      )}
+
+      {/* Report Path */}
+      {(audit.report_path || audit.file_path) && (
+        <div
+          className="card p-3 mb-6 flex items-center justify-between gap-3 flex-wrap"
+          data-testid="audit-detail-report-path"
+        >
+          <div className="flex items-center gap-2 text-xs min-w-0 flex-1">
+            <span className="text-[10px] uppercase font-bold text-gray-500">Report Path:</span>
+            <FolderOpen size={14} style={{ color: 'var(--cc-accent)', flexShrink: 0 }}/>
+            <span className="font-mono-data truncate" title={audit.report_path || audit.file_path}>{audit.report_path || audit.file_path}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => copyToClipboard(audit.report_path || audit.file_path, 'report')}
+            className="btn btn-outline btn-sm"
+            title="Copy path"
+            data-testid="audit-detail-copy-report-path"
+          >
+            {copiedReport ? <><Check size={12} className="text-emerald-600"/> Copied!</> : <><Copy size={12}/> Copy</>}
           </button>
         </div>
       )}
@@ -388,6 +490,117 @@ const AuditDetailPage = () => {
           })}
         </div>
       </div>
+
+      {/* Edit Audit Modal */}
+      <Modal open={editOpen} onClose={() => setEditOpen(false)} title={`Edit Audit ${audit.audit_code}`} testId="audit-detail-edit-modal">
+        <form onSubmit={handleSaveEdit} className="space-y-3">
+          <div>
+            <label className="label">Report ID</label>
+            <input className="input font-mono-data" value={editForm.report_id || ''} onChange={(e) => updateEditForm('report_id', e.target.value)} placeholder="Report ID" data-testid="audit-detail-edit-report-id" />
+          </div>
+          <div>
+            <label className="label">Audit Offer Number</label>
+            <input
+              className="input font-mono-data"
+              value={editForm.audit_offer || ''}
+              onChange={(e) => updateEditForm('audit_offer', e.target.value)}
+              placeholder="Audit Offer Number"
+              data-testid="audit-detail-edit-offer"
+            />
+          </div>
+          <div>
+            <label className="label">Name (Client)</label>
+            <InlinePicker
+              entityType="client"
+              value={editForm.client_id}
+              onChange={(v) => updateEditForm('client_id', v)}
+              items={clients}
+              onItemsChange={setClients}
+              testIdPrefix="audit-detail-edit-client-"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="label">Client Name</label>
+              <input
+                className="input"
+                value={editForm.client_name_override || ''}
+                onChange={(e) => updateEditForm('client_name_override', e.target.value)}
+                placeholder="e.g. Vijay Mishra"
+                data-testid="audit-detail-edit-client-name"
+              />
+            </div>
+            <div>
+              <label className="label">Phone</label>
+              <input
+                className="input"
+                type="tel"
+                inputMode="tel"
+                value={editForm.client_phone_override || ''}
+                onChange={(e) => updateEditForm('client_phone_override', e.target.value)}
+                placeholder="+91 98xxxxxxxx"
+                data-testid="audit-detail-edit-client-phone"
+              />
+            </div>
+            <div>
+              <label className="label">Email</label>
+              <input
+                className="input"
+                type="email"
+                value={editForm.client_email_override || ''}
+                onChange={(e) => updateEditForm('client_email_override', e.target.value)}
+                placeholder="name@example.com"
+                data-testid="audit-detail-edit-client-email"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">Total Amount (₹)</label>
+              <input type="number" step="0.01" className="input" value={editForm.total_amount || ''} onChange={(e) => updateEditForm('total_amount', e.target.value)} placeholder="0.00" data-testid="audit-detail-edit-total" />
+            </div>
+            <div>
+              <label className="label">Status</label>
+              <select className="select" value={editForm.status || 'Outstanding'} onChange={(e) => updateEditForm('status', e.target.value)} data-testid="audit-detail-edit-status">
+                <option value="Outstanding">Outstanding</option>
+                <option value="Confirm">Confirm</option>
+                <option value="Cancelled">Cancelled</option>
+                <option value="Settled">Settled</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="label">Address</label>
+            <textarea className="textarea" rows={3} value={editForm.address || ''} onChange={(e) => updateEditForm('address', e.target.value)} placeholder="Site Location / Address" data-testid="audit-detail-edit-address" />
+          </div>
+          <div>
+            <label className="label">Audit Offer Path <span className="text-xs font-normal" style={{ color: 'var(--cc-text-muted)' }}>(path of the audit offer on your PC)</span></label>
+            <input
+              className="input font-mono-data text-xs"
+              value={editForm.audit_offer_path || ''}
+              onChange={(e) => updateEditForm('audit_offer_path', e.target.value)}
+              placeholder={`e.g. D:\\CreatorConsultant\\Offers\\2026\\STR-AUDIT-2026-006.pdf`}
+              data-testid="audit-detail-edit-offer-path"
+            />
+          </div>
+          <div>
+            <label className="label">Report Path <span className="text-xs font-normal" style={{ color: 'var(--cc-text-muted)' }}>(path of the audit report on your PC)</span></label>
+            <input
+              className="input font-mono-data text-xs"
+              value={editForm.report_path || ''}
+              onChange={(e) => updateEditForm('report_path', e.target.value)}
+              placeholder={`e.g. D:\\CreatorConsultant\\Audits\\2026\\STR-AUDIT-2026-006.pdf`}
+              data-testid="audit-detail-edit-report-path"
+            />
+          </div>
+          {editError && <div className="text-sm text-red-600" data-testid="audit-detail-edit-error">{editError}</div>}
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setEditOpen(false)} className="btn btn-outline">Cancel</button>
+            <button type="submit" disabled={editSaving} className="btn btn-primary" data-testid="audit-detail-edit-save">{editSaving ? 'Saving...' : 'Save'}</button>
+          </div>
+        </form>
+      </Modal>
 
       <RecordPaymentModal open={showPay} onClose={() => setShowPay(false)} entityType="audit" defaultAuditId={id} onSaved={load} />
     </div>

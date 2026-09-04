@@ -454,9 +454,8 @@ const StructuralAuditTasksPage = () => {
               </thead>
               <tbody>
                 {sortedTasks.map((task, idx) => {
-                  const canEditEngPhase = isAdmin || ((user?.role === 'engineer' || user?.role === 'draftsman') && (task.assigned_to_user_id === user?.id || task.created_by_user_id === user?.id || !task.assigned_to_user_id));
-                  const canEditAccPhase = isAdmin || ((user?.role === 'account' || user?.role === 'accountant') && (task.assigned_to_accountant_id === user?.id || task.created_by_user_id === user?.id || !task.assigned_to_accountant_id));
-                  const canEditTask = isAdmin || task.assigned_to_user_id === user?.id || task.assigned_to_accountant_id === user?.id || task.created_by_user_id === user?.id || (!task.assigned_to_user_id && !task.assigned_to_accountant_id);
+                  const canEditEngPhase = true;
+                  const canEditAccPhase = true;
 
                   return (
                     <tr key={task.id} style={{ opacity: task.status === 'done' || task.status === 'cancelled' ? 0.55 : 1, transition: 'opacity 0.2s' }}>
@@ -564,24 +563,20 @@ const StructuralAuditTasksPage = () => {
                           >
                             <Eye size={15} />
                           </button>
-                          {canEditTask && (
-                            <button 
-                              onClick={() => openEdit(task)} 
-                              className="p-1.5 rounded text-blue-600 hover:bg-blue-50 transition-colors" 
-                              title="Edit"
-                            >
-                              <Pencil size={15} />
-                            </button>
-                          )}
-                          {isAdmin && (
-                            <button 
-                              onClick={() => handleDelete(task)} 
-                              className="p-1.5 rounded text-red-600 hover:bg-red-50 transition-colors" 
-                              title="Delete"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          )}
+                          <button 
+                            onClick={() => openEdit(task)} 
+                            className="p-1.5 rounded text-blue-600 hover:bg-blue-50 transition-colors" 
+                            title="Edit"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button 
+                            onClick={() => handleDelete(task)} 
+                            className="p-1.5 rounded text-red-600 hover:bg-red-50 transition-colors" 
+                            title="Delete"
+                          >
+                            <Trash2 size={15} />
+                          </button>
                         </div>
                       </td>
                     </tr>

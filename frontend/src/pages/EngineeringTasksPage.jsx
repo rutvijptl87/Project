@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
 import Pagination from '../components/Pagination';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import Modal from '../components/Modal';
@@ -157,11 +157,11 @@ const TaskFormModal = ({ open, onClose, onSaved, editing, users = [], projects =
       <form onSubmit={handleSubmit} className="space-y-3">
 
         <div>
-          <label className="label">Project Number</label>
+          <label className="label">Project</label>
           <SearchableSelect
             options={projectList.map(p => ({
               value: p.id,
-              label: p.job_no ? `${p.job_no} – ${p.name}` : `${p.project_code} – ${p.name}`
+              label: p.job_no ? `${p.name} (Job: ${p.job_no})` : (p.project_code ? `${p.name} (${p.project_code})` : p.name)
             }))}
             value={form.project_id}
             onChange={(val) => handleProjectChange(val)}
@@ -351,8 +351,8 @@ const EngineeringTasksPage = () => {
   // Options for Column Filter Dropdowns
   const projectOptions = useMemo(() => {
     const serverOpts = filterOptions.project_numbers || [];
-    const projOpts = (projects || []).map(p => p.job_no || p.project_code).filter(Boolean);
-    const taskOpts = tasks.map(t => t.project_code).filter(Boolean);
+    const projOpts = (projects || []).map(p => p.name || p.job_no || p.project_code).filter(Boolean);
+    const taskOpts = tasks.map(t => t.project_name || t.project_code).filter(Boolean);
     const unique = Array.from(new Set([...serverOpts, ...projOpts, ...taskOpts])).filter(Boolean).sort();
     return unique;
   }, [filterOptions.project_numbers, projects, tasks]);
@@ -670,18 +670,18 @@ const EngineeringTasksPage = () => {
                 <tr>
                   <th style={{ width: 48 }} className="hidden sm:table-cell text-center">Sr No</th>
                   
-                  {/* Project Number */}
+                  {/* Project Name */}
                   <th className="hidden md:table-cell">
                     <div className="flex items-center justify-between gap-1.5">
-                      <div 
+                       <div 
                         className="cursor-pointer select-none inline-flex items-center flex-1 hover:text-[var(--cc-dark-green)]" 
-                        onClick={() => toggleSort('project_code')}
+                        onClick={() => toggleSort('project_name')}
                       >
-                        <span>Project Number</span>
-                        <SortIcon col="project_code" />
+                        <span>Project Name</span>
+                        <SortIcon col="project_name" />
                       </div>
                       <ColumnFilterDropdown
-                        title="Project Number"
+                        title="Project Name"
                         type="project"
                         options={projectOptions}
                         value={projectFilter}
@@ -764,11 +764,26 @@ const EngineeringTasksPage = () => {
               </thead>
               <tbody>
                 {sortedTasks.map((task, idx) => {
-                  const canEdit = isAdmin || task.assigned_to_user_id === user?.id || task.created_by_user_id === user?.id || !task.assigned_to_user_id;
+                  const canEdit = true;
                   return (
                     <tr key={task.id} style={{ opacity: task.status === 'done' || task.status === 'cancelled' ? 0.55 : 1, transition: 'opacity 0.2s' }} data-testid={`eng-task-row-${task.id}`}>
                       <td className="font-mono-data text-xs text-center hidden sm:table-cell" style={{ color: 'var(--cc-text-muted)' }}>{(page - 1) * limit + idx + 1}</td>
-                      <td className="font-mono-data text-xs font-medium hidden md:table-cell" style={{ color: 'var(--cc-dark-green)' }}>{task.project_code || '—'}</td>
+                      <td className="hidden md:table-cell">
+                        {task.project_id ? (
+                          <Link to={`/projects/${task.project_id}`} className="font-medium text-xs link-underline line-clamp-2" style={{ color: 'var(--cc-dark-green)' }} title={task.project_name || task.project_code}>
+                            {task.project_name || task.project_code || '—'}
+                          </Link>
+                        ) : (
+                          <div className="font-medium text-xs line-clamp-2" style={{ color: 'var(--cc-dark-green)' }}>
+                            {task.project_name || task.project_code || '—'}
+                          </div>
+                        )}
+                        {task.job_no ? (
+                          <div className="text-[10px] font-mono-data text-gray-500">Job {task.job_no}</div>
+                        ) : task.project_code && task.project_code !== task.project_name ? (
+                          <div className="text-[10px] font-mono-data text-gray-400">{task.project_code}</div>
+                        ) : null}
+                      </td>
                       <td className="hidden lg:table-cell"><div className="text-xs max-w-[180px]">{task.site_location || <span style={{ color: 'var(--cc-text-muted)' }}>—</span>}</div></td>
                       <td>
                         <div className="font-medium text-sm leading-snug" style={{ color: 'var(--cc-text)' }}>{task.work}</div>
@@ -817,24 +832,20 @@ const EngineeringTasksPage = () => {
                           >
                             <Eye size={15} />
                           </button>
-                          {canEdit && (
-                            <button 
-                              onClick={() => { setEditing(task); setModalOpen(true); }} 
-                              className="p-1.5 rounded text-blue-600 hover:bg-blue-50 transition-colors" 
-                              title="Edit"
-                            >
-                              <Pencil size={15} />
-                            </button>
-                          )}
-                          {isAdmin && (
-                            <button 
-                              onClick={() => handleDelete(task)} 
-                              className="p-1.5 rounded text-red-600 hover:bg-red-50 transition-colors" 
-                              title="Delete"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          )}
+                          <button 
+                            onClick={() => { setEditing(task); setModalOpen(true); }} 
+                            className="p-1.5 rounded text-blue-600 hover:bg-blue-50 transition-colors" 
+                            title="Edit"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button 
+                            onClick={() => handleDelete(task)} 
+                            className="p-1.5 rounded text-red-600 hover:bg-red-50 transition-colors" 
+                            title="Delete"
+                          >
+                            <Trash2 size={15} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -856,8 +867,11 @@ const EngineeringTasksPage = () => {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4 border-b pb-4" style={{ borderColor: 'var(--cc-border)' }}>
               <div>
-                <div className="text-xs font-semibold mb-1 text-gray-500">Project Code</div>
-                <div className="font-medium text-emerald-800">{viewTask.project_code || '—'}</div>
+                <div className="text-xs font-semibold mb-1 text-gray-500">Project Name</div>
+                <div className="font-medium text-emerald-800">
+                  {viewTask.project_name || viewTask.project_code || '—'}
+                  {viewTask.job_no && <span className="text-xs font-normal text-gray-500 ml-2">(Job: {viewTask.job_no})</span>}
+                </div>
               </div>
               <div>
                 <div className="text-xs font-semibold mb-1 text-gray-500">Site Location</div>
