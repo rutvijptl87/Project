@@ -28,10 +28,14 @@ from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 try:
-    pdfmetrics.registerFont(TTFont('DejaVuSans', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
-    pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'))
+    if os.path.exists(str(Path(__file__).parent / 'fonts' / 'LiberationSans-Regular.ttf')):
+        pdfmetrics.registerFont(TTFont('DejaVuSans', str(Path(__file__).parent / 'fonts' / 'LiberationSans-Regular.ttf')))
+        pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', str(Path(__file__).parent / 'fonts' / 'LiberationSans-Bold.ttf')))
+    elif os.path.exists('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'):
+        pdfmetrics.registerFont(TTFont('DejaVuSans', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
+        pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'))
 except Exception as e:
-    print(f"Font registration failed: {e}")
+    pass
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
@@ -4215,6 +4219,10 @@ def _render_dynamic_footer_letterhead(lh_doc: Optional[dict] = None) -> Optional
         addr2 = (lh_doc.get("address_line2") if lh_doc else None) or "Plot No. 21, Airoli, Navi Mumbai - 400 708."
 
         font_paths = [
+            str(ROOT_DIR / "fonts" / "LiberationSans-Bold.ttf"),
+            str(ROOT_DIR / "fonts" / "Roboto-Bold.ttf"),
+            str(ROOT_DIR / "fonts" / "LiberationSans-Regular.ttf"),
+            str(ROOT_DIR / "fonts" / "Roboto-Regular.ttf"),
             "/usr/share/fonts/open-sans/OpenSans-Bold.ttf",
             "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Bold.ttf",
             "/usr/share/fonts/google-noto/NotoSans-Bold.ttf",
@@ -4227,21 +4235,21 @@ def _render_dynamic_footer_letterhead(lh_doc: Optional[dict] = None) -> Optional
                 break
 
         def _get_font(text_str, max_w, init_sz, min_sz=13):
-            if not font_path:
-                return ImageFont.load_default()
-            for sz in range(init_sz, min_sz - 1, -1):
-                f = ImageFont.truetype(font_path, sz)
-                bbox = draw.textbbox((0, 0), text_str, font=f)
-                if (bbox[2] - bbox[0]) <= max_w:
-                    return f
-            return ImageFont.truetype(font_path, min_sz)
+            if font_path and os.path.exists(font_path):
+                for sz in range(init_sz, min_sz - 1, -1):
+                    f = ImageFont.truetype(font_path, sz)
+                    bbox = draw.textbbox((0, 0), text_str, font=f)
+                    if (bbox[2] - bbox[0]) <= max_w:
+                        return f
+                return ImageFont.truetype(font_path, min_sz)
+            return ImageFont.load_default()
 
         # Lines matching exact LH.docx vertical baseline coordinates & horizontal boundary
         items = [
-            (str(phone).strip(), 220, 23, 96),
-            (str(email).strip(), 370, 21, 126),
-            (str(addr1).strip(), 480, 20, 157),
-            (str(addr2).strip(), 620, 20, 187)
+            (str(phone).strip(), 250, 21, 102),
+            (str(email).strip(), 380, 19, 131),
+            (str(addr1).strip(), 500, 18, 160),
+            (str(addr2).strip(), 640, 18, 188)
         ]
 
         for text_str, max_w, init_sz, y_pos in items:
@@ -4250,7 +4258,7 @@ def _render_dynamic_footer_letterhead(lh_doc: Optional[dict] = None) -> Optional
             font_obj = _get_font(text_str, max_w, init_sz)
             bbox = draw.textbbox((0, 0), text_str, font=font_obj)
             tw = bbox[2] - bbox[0]
-            draw.text((812 - tw, y_pos), text_str, font=font_obj, fill=(255, 255, 255, 255))
+            draw.text((808 - tw, y_pos), text_str, font=font_obj, fill=(255, 255, 255, 255))
 
         buf = io.BytesIO()
         base.save(buf, format="PNG")
