@@ -64,6 +64,7 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 # Auth: /api/auth/* — public (login) + JWT-protected (others)
@@ -698,7 +699,7 @@ class ProjectIn(BaseModel):
 class Project(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str
-    project_code: str  # e.g. CC-0001
+    project_code: str = ""  # e.g. CC-0001
     job_no: str = ""
     name: str
     client_id: Optional[str] = None
@@ -972,6 +973,7 @@ class InvoiceIn(BaseModel):
     tds_percent: float = 10.0
     tds_section: str = "194J"
     received_amount: float = 0.0
+    po_no: Optional[str] = ""
 
 
 class Invoice(InvoiceIn):
@@ -8696,26 +8698,74 @@ def num_to_words_indian(number: float) -> str:
     return result + " Only"
 
 
-async def _next_proforma_no() -> str:
+from datetime import datetime
+def _get_financial_year(dt: datetime) -> str:
+    if dt.month >= 4:
+        return f"{dt.strftime('%y')}/{(dt.year + 1) % 100:02d}"
+    else:
+        return f"{(dt.year - 1) % 100:02d}/{dt.strftime('%y')}"
+
+async def _next_proforma_no(project_name: str = "General", invoice_date: str = "") -> str:
+    try:
+        dt = datetime.strptime(invoice_date, "%Y-%m-%d")
+    except:
+        dt = datetime.now()
+        
+    fy = _get_financial_year(dt)
+    mo = dt.strftime('%b').upper()
+    
+    counter_id = f"proforma_invoice_{fy.replace('/', '_')}"
+    counter = await db.counters.find_one({"_id": counter_id})
+    if not counter:
+        start_seq = 0
+        if fy == "26/27":
+            legacy = await db.counters.find_one({"_id": "proforma_invoice"})
+            start_seq = legacy.get("seq", 0) if legacy else 0
+        await db.counters.update_one(
+            {"_id": counter_id},
+            {"$setOnInsert": {"seq": start_seq}},
+            upsert=True
+        )
+        
     counter = await db.counters.find_one_and_update(
-        {"_id": "proforma_invoice"},
+        {"_id": counter_id},
         {"$inc": {"seq": 1}},
-        upsert=True,
         return_document=True,
     )
     seq = (counter or {}).get("seq", 1)
-    return f"CC > PIC > {seq:03d}"
+    clean_project = str(project_name).strip()
+    return f"CC-PIC-{mo}{fy}-{seq:03d}-{clean_project}"
 
+async def _next_tax_invoice_no(project_name: str = "General", invoice_date: str = "") -> str:
+    try:
+        dt = datetime.strptime(invoice_date, "%Y-%m-%d")
+    except:
+        dt = datetime.now()
+        
+    fy = _get_financial_year(dt)
+    mo = dt.strftime('%b').upper()
+    
+    counter_id = f"tax_invoice_{fy.replace('/', '_')}"
+    counter = await db.counters.find_one({"_id": counter_id})
+    if not counter:
+        start_seq = 0
+        if fy == "26/27":
+            legacy = await db.counters.find_one({"_id": "tax_invoice"})
+            start_seq = legacy.get("seq", 0) if legacy else 0
+        await db.counters.update_one(
+            {"_id": counter_id},
+            {"$setOnInsert": {"seq": start_seq}},
+            upsert=True
+        )
 
-async def _next_tax_invoice_no() -> str:
     counter = await db.counters.find_one_and_update(
-        {"_id": "tax_invoice"},
+        {"_id": counter_id},
         {"$inc": {"seq": 1}},
-        upsert=True,
         return_document=True,
     )
     seq = (counter or {}).get("seq", 1)
-    return f"CC > ARL > {seq:03d}"
+    clean_project = str(project_name).strip()
+    return f"CC-TAX-{mo}{fy}-{seq:03d}-{clean_project}"
 
 
 async def _next_quotation_no(job_sub_type: Optional[str] = None) -> str:
@@ -9177,10 +9227,18 @@ async def create_invoice(data: InvoiceIn, current_user: dict = Depends(auth_modu
     invoice_data = data.model_dump()
     invoice_data["place_of_supply"] = format_place_of_supply(invoice_data.get("place_of_supply"), invoice_data.get("client_gstin"))
     
+    project_name = "General"
+    if invoice_data.get("project_id"):
+        project = await db.projects.find_one({"id": invoice_data["project_id"]}, {"name": 1})
+        if project and project.get("name"):
+            project_name = project["name"]
+            
+    inv_date = invoice_data.get("invoice_date", "")
+
     if invoice_data["type"] == "proforma":
-        invoice_no = await _next_proforma_no()
+        invoice_no = await _next_proforma_no(project_name, inv_date)
     else:
-        invoice_no = await _next_tax_invoice_no()
+        invoice_no = await _next_tax_invoice_no(project_name, inv_date)
         
     invoice_id = _new_id()
     doc = {
@@ -9691,7 +9749,18 @@ async def _build_invoice_document_pdf(invoice: dict) -> bytes:
         c.drawCentredString(c3, y_meta_top, "Expiry Date")
         
         c.setFont("Roboto", 10)
-        c.drawCentredString(c1, y_meta_top - 5 * mm, invoice.get("invoice_no", ""))
+        
+        # Use Paragraph to wrap long invoice numbers
+        meta_style = ParagraphStyle('MetaStyle', parent=styles['Normal'], fontName='Roboto', fontSize=10, leading=11, alignment=1)
+        
+        inv_no_full = invoice.get("invoice_no", "")
+        parts = inv_no_full.split("-")
+        inv_no_display = "-".join(parts[:4]) if len(parts) >= 4 else inv_no_full
+        
+        p_inv = Paragraph(inv_no_display, meta_style)
+        w, h = p_inv.wrap(rp_w * 0.3, 20 * mm)
+        p_inv.drawOn(c, c1 - w/2, y_meta_top - 1.5 * mm - h)
+        
         c.drawCentredString(c2, y_meta_top - 5 * mm, inv_date_str)
         c.drawCentredString(c3, y_meta_top - 5 * mm, exp_date_str)
     else:
@@ -9704,7 +9773,18 @@ async def _build_invoice_document_pdf(invoice: dict) -> bytes:
         c.drawCentredString(c2, y_meta_top, "Invoice Date")
         
         c.setFont("Roboto", 10)
-        c.drawCentredString(c1, y_meta_top - 5 * mm, invoice.get("invoice_no", ""))
+        
+        # Use Paragraph to wrap long invoice numbers
+        meta_style = ParagraphStyle('MetaStyle', parent=styles['Normal'], fontName='Roboto', fontSize=10, leading=11, alignment=1)
+        
+        inv_no_full = invoice.get("invoice_no", "")
+        parts = inv_no_full.split("-")
+        inv_no_display = "-".join(parts[:4]) if len(parts) >= 4 else inv_no_full
+        
+        p_inv = Paragraph(inv_no_display, meta_style)
+        w, h = p_inv.wrap(rp_w * 0.45, 20 * mm)
+        p_inv.drawOn(c, c1 - w/2, y_meta_top - 1.5 * mm - h)
+        
         c.drawCentredString(c2, y_meta_top - 5 * mm, inv_date_str)
 
     # Horizontal divider in right panel below invoice no / date
@@ -9712,23 +9792,25 @@ async def _build_invoice_document_pdf(invoice: dict) -> bytes:
     c.setLineWidth(1.0)
     c.line(v_split, y_split_line, width - margin, y_split_line)
 
-    # HSN CODE | PAN NO — two sub-columns in lower part of right panel
+    # HSN CODE | PO NO | PAN NO — three sub-columns in lower part of right panel
     v_pan_split = v_split + (rp_w / 2)
-    # Line removed based on user feedback
 
-    c1_hsn = v_split + 12.5 * mm
-    c2_pan = (width - margin) - 12.5 * mm
+    c1_hsn = v_split + (rp_w * 1 / 6)
+    c2_po  = v_split + (rp_w * 3 / 6)
+    c3_pan = v_split + (rp_w * 5 / 6)
 
     h2 = header_h - 22 * mm
     y_meta_bottom_top = y_split_line - (h2 / 2 - 2 * mm)
 
-    c.setFont("Roboto-Bold", 10)
+    c.setFont("Roboto-Bold", 9)
     c.drawCentredString(c1_hsn, y_meta_bottom_top, "HSN CODE")
-    c.drawCentredString(c2_pan, y_meta_bottom_top, "PAN NO")
+    c.drawCentredString(c2_po, y_meta_bottom_top, "PO NO")
+    c.drawCentredString(c3_pan, y_meta_bottom_top, "PAN NO")
 
-    c.setFont("Roboto", 10)
-    c.drawCentredString(c1_hsn, y_meta_bottom_top - 5 * mm, invoice.get("hsn_code", "998332"))
-    c.drawCentredString(c2_pan, y_meta_bottom_top - 5 * mm, cd.get("pan", ""))
+    c.setFont("Roboto", 9)
+    c.drawCentredString(c1_hsn, y_meta_bottom_top - 5 * mm, invoice.get("hsn_code", "998332") or "-")
+    c.drawCentredString(c2_po, y_meta_bottom_top - 5 * mm, invoice.get("po_no") or "-")
+    c.drawCentredString(c3_pan, y_meta_bottom_top - 5 * mm, cd.get("pan", "") or "-")
 
     # ── Bill To block ─────────────────────────────────────────────────────
     y_billto = y_header_bottom
@@ -9822,12 +9904,36 @@ async def _build_invoice_document_pdf(invoice: dict) -> bytes:
     ]
     # amount col right edge = width - margin
 
+    # ── Compute amounts ───────────────────────────────────────────────────
+    items = invoice.get("items", [])
+    if not items:
+        # Fallback for old invoices
+        items = [{
+            "service_description": invoice.get("service_description", ""),
+            "qty": float(invoice.get("qty", 1.0)),
+            "rate": float(invoice.get("rate", 0.0))
+        }]
+
+    base_taxable     = sum(float(it.get("qty", 1.0)) * float(it.get("rate", 0.0)) for it in items)
+    gst_percent      = float(invoice.get("gst_percent", 18.0))
+    tax_amount       = base_taxable * (gst_percent / 100.0)
+    cgst_amount      = tax_amount / 2.0
+    sgst_amount      = tax_amount / 2.0
+    total_amount_with_gst = base_taxable + tax_amount
+
+    tds_percent      = float(invoice.get("tds_percent", 10.0))
+    tds_amount       = base_taxable * (tds_percent / 100.0)
+    payable_amount   = total_amount_with_gst - tds_amount
+    received_amount  = float(invoice.get("received_amount", 0.0))
+    balance_amount   = payable_amount - received_amount
+    
+    n_math_rows = 4 if tds_amount > 0 else 3
+
     y_table = y_billto_bottom
     
     # Dynamically calculate table bottom so footer hits the bottom margin
     required_bottom_space = 85 + 30 + 42 + (2 * mm) # HSN Summary table height changed to 42
-    if not is_proforma:
-        required_bottom_space += 21 * 4
+    required_bottom_space += 21 * n_math_rows
         
     y_table_bottom = margin + required_bottom_space
     table_h = y_table - y_table_bottom
@@ -9862,29 +9968,6 @@ async def _build_invoice_document_pdf(invoice: dict) -> bytes:
     c.drawCentredString(mid_rate, y_hdr_text, "RATE")
     c.drawCentredString(mid_tax,  y_hdr_text, "TAX")
     c.drawCentredString(mid_amt,  y_hdr_text, "AMOUNT")
-
-    # ── Compute amounts ───────────────────────────────────────────────────
-    items = invoice.get("items", [])
-    if not items:
-        # Fallback for old invoices
-        items = [{
-            "service_description": invoice.get("service_description", ""),
-            "qty": float(invoice.get("qty", 1.0)),
-            "rate": float(invoice.get("rate", 0.0))
-        }]
-
-    base_taxable     = sum(float(it.get("qty", 1.0)) * float(it.get("rate", 0.0)) for it in items)
-    gst_percent      = float(invoice.get("gst_percent", 18.0))
-    tax_amount       = base_taxable * (gst_percent / 100.0)
-    cgst_amount      = tax_amount / 2.0
-    sgst_amount      = tax_amount / 2.0
-    total_amount_with_gst = base_taxable + tax_amount
-
-    tds_percent      = float(invoice.get("tds_percent", 10.0))
-    tds_amount       = base_taxable * (tds_percent / 100.0)
-    payable_amount   = total_amount_with_gst - tds_amount
-    received_amount  = float(invoice.get("received_amount", 0.0))
-    balance_amount   = payable_amount - received_amount
 
     # ── Data rows ─────────────────────────────────────────────────────────
     c.setFont("Roboto", 9)
@@ -9977,56 +10060,55 @@ async def _build_invoice_document_pdf(invoice: dict) -> bytes:
     # Attach directly to the bottom of the main table
     y_cursor = y_table_bottom
 
-    if not is_proforma:
-        tds_section = invoice.get("tds_section", "194J")
-        math_row_h  = 21
+    tds_section = invoice.get("tds_section", "194J")
+    math_row_h  = 21
 
-        math_rows = []
-        if tds_amount > 0:
-            math_rows.append((f"TDS @{tds_percent:g}% {tds_section}", f"- ₹ {_format_inr(tds_amount)}",  False, False))
-            
-        math_rows.extend([
-            ("AMOUNT PAYABLE",                         f"₹ {_format_inr(payable_amount, show_decimals=False)}", False, False),
-            # ("RECEIVED AMOUNT",                        f"₹ {_format_inr(received_amount)}", False, False),
-            ("BALANCE AMOUNT",                         f"₹ {_format_inr(balance_amount)}",  False, False),
-        ])
+    math_rows = []
+    if tds_amount > 0:
+        math_rows.append((f"TDS @{tds_percent:g}% {tds_section}", f"- ₹ {_format_inr(tds_amount)}",  False, False))
+        
+    math_rows.extend([
+        ("AMOUNT PAYABLE",                         f"₹ {_format_inr(payable_amount, show_decimals=False)}", False, False),
+        ("RECEIVED AMOUNT",                        f"₹ {_format_inr(received_amount)}", False, False),
+        ("BALANCE AMOUNT",                         f"₹ {_format_inr(balance_amount)}",  False, False),
+    ])
 
-        n_rows        = len(math_rows)
-        math_block_h  = math_row_h * n_rows
-        y_math_top    = y_cursor
-        y_math_bottom = y_math_top - math_block_h
+    n_rows        = len(math_rows)
+    math_block_h  = math_row_h * n_rows
+    y_math_top    = y_cursor
+    y_math_bottom = y_math_top - math_block_h
 
+    c.setLineWidth(1.0)
+    c.rect(margin, y_math_bottom, printable_width, math_block_h, fill=0, stroke=1)
+
+    y_r = y_math_top
+    for label, value, highlighted, bold in math_rows:
+        row_bottom = y_r - math_row_h
+        if highlighted:
+            c.setFillColor(colors.HexColor("#CFE9FA"))
+            c.rect(margin, row_bottom, printable_width, math_row_h, fill=1, stroke=0)
+            c.setStrokeColor(colors.black)
+        
         c.setLineWidth(1.0)
-        c.rect(margin, y_math_bottom, printable_width, math_block_h, fill=0, stroke=1)
+        c.line(margin, row_bottom, width - margin, row_bottom)
+        # Continue vertical lines from main table
+        for x in col_x:
+            c.line(x, row_bottom, x, y_r)
 
-        y_r = y_math_top
-        for label, value, highlighted, bold in math_rows:
-            row_bottom = y_r - math_row_h
-            if highlighted:
-                c.setFillColor(colors.HexColor("#CFE9FA"))
-                c.rect(margin, row_bottom, printable_width, math_row_h, fill=1, stroke=0)
-                c.setStrokeColor(colors.black)
-            
-            c.setLineWidth(1.0)
-            c.line(margin, row_bottom, width - margin, row_bottom)
-            # Continue vertical lines from main table
-            for x in col_x:
-                c.line(x, row_bottom, x, y_r)
+        c.setFillColor(colors.black)
+        fn = "Roboto-Medium" if bold else "Roboto"
+        c.setFont(fn, 9)
+        # Label: right-aligned in SERVICES column (col_x[1])
+        lbl_x = col_x[1] - 3 * mm
+        # Value: right-aligned in AMOUNT column
+        text_y = row_bottom + 6.5
+        c.drawRightString(lbl_x, text_y, label)
+        
+        _draw_scaled_right(c, width - margin - 2 * mm, text_y, value, max_w=amt_w_avail - 2 * mm, font=fn, base_size=9)
+        
+        y_r -= math_row_h
 
-            c.setFillColor(colors.black)
-            fn = "Roboto-Medium" if bold else "Roboto"
-            c.setFont(fn, 9)
-            # Label: right-aligned in SERVICES column (col_x[1])
-            lbl_x = col_x[1] - 3 * mm
-            # Value: right-aligned in AMOUNT column
-            text_y = row_bottom + 6.5
-            c.drawRightString(lbl_x, text_y, label)
-            
-            _draw_scaled_right(c, width - margin - 2 * mm, text_y, value, max_w=amt_w_avail - 2 * mm, font=fn, base_size=9)
-            
-            y_r -= math_row_h
-
-        y_cursor = y_math_bottom
+    y_cursor = y_math_bottom
 
     # ── HSN Summary Table ─────────────────────────────────────────────────
     # Layout: HSN/SAC(30mm) | Taxable Value(40mm) | CGST(47mm) | SGST(47mm) | Total Tax(rest)
@@ -10246,11 +10328,12 @@ async def serve_invoice_pdf(invoice_id: str):
         
     pdf_bytes = await _build_invoice_document_pdf(doc)
     
-    fn = f"invoice_{doc.get('invoice_no', 'doc')}.pdf".replace(" ", "_").replace(">", "")
+    # Replace spaces and slashes so the browser parses the filename correctly
+    fn = f"{doc.get('invoice_no', 'doc')}.pdf".replace(" ", "_").replace(">", "").replace("/", "-")
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={fn}"}
+        headers={"Content-Disposition": f'attachment; filename="{fn}"'}
     )
 
 
@@ -12056,6 +12139,7 @@ app.add_middleware(
     allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 logging.basicConfig(

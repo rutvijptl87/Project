@@ -137,7 +137,8 @@ const InvoicesPage = () => {
     gst_percent: 18,
     tds_percent: 10,
     tds_section: '194J',
-    received_amount: 0
+    received_amount: 0,
+    po_no: ''
   };
   const [draft, setDraft] = useState(initialForm);
 
@@ -234,7 +235,8 @@ const InvoicesPage = () => {
       gst_percent: inv.gst_percent ?? 18,
       tds_percent: inv.tds_percent ?? 10,
       tds_section: inv.tds_section || '194J',
-      received_amount: inv.received_amount ?? 0
+      received_amount: inv.received_amount ?? 0,
+      po_no: inv.po_no || ''
     });
     setClientSearch(inv.client_name);
     setView('create_form');
@@ -265,6 +267,7 @@ const InvoicesPage = () => {
         tds_percent: tdsApplicable ? tdsPercent : 0,
         tds_section: tdsApplicable ? tdsSection : '',
         received_amount: convertModal.received_amount || 0,
+        po_no: convertModal.po_no || '',
         type: 'tax',
         invoice_date: new Date().toISOString().split('T')[0]
       };
@@ -504,7 +507,7 @@ const InvoicesPage = () => {
                 Tax Invoices
               </h2>
               <p className="text-xs mb-6" style={{ color: 'var(--cc-text-muted)' }}>
-                Official GST tax invoices. Features automatic CC-ARL numbering sequencing and tax calculations.
+                Official GST tax invoices. Features automatic CC-TAX numbering sequencing and tax calculations.
               </p>
               <button className="btn btn-primary w-full pointer-events-none text-white">
                 Open Tax Invoices
@@ -618,6 +621,8 @@ const InvoicesPage = () => {
                     {formType === 'proforma' && <th className="hidden sm:table-cell">Expiry</th>}
                     <th className="num hidden lg:table-cell" style={{ textAlign: 'right' }}>Base Amount</th>
                     <th className="num hidden sm:table-cell" style={{ textAlign: 'right' }}>Tax (GST)</th>
+                    <th className="num hidden lg:table-cell" style={{ textAlign: 'right' }}>Received</th>
+                    <th className="num hidden lg:table-cell" style={{ textAlign: 'right' }}>Balance</th>
                     <th className="num" style={{ textAlign: 'right' }}>Payable</th>
                     <th className="text-center">Actions</th>
                   </tr>
@@ -648,6 +653,12 @@ const InvoicesPage = () => {
                           <td className="num font-mono-data hidden lg:table-cell">{formatINR(base)}</td>
                           <td className="num font-mono-data text-xs hidden sm:table-cell" style={{ color: 'var(--cc-text-muted)' }}>
                             {formatINR(tax)} ({inv.gst_percent}%)
+                          </td>
+                          <td className="num font-mono-data hidden lg:table-cell" style={{ color: 'var(--cc-text-muted)' }}>
+                            {formatINR(inv.received_amount || 0)}
+                          </td>
+                          <td className="num font-mono-data hidden lg:table-cell text-red-600">
+                            {formatINR(payable - (inv.received_amount || 0))}
                           </td>
                           <td className="num font-mono-data font-semibold" style={{ color: 'var(--cc-dark-green)' }}>
                             {formatINR(payable)}
@@ -764,6 +775,19 @@ const InvoicesPage = () => {
                       onChange={(e) => handleInputChange('hsn_code', e.target.value)}
                       placeholder="e.g. 998332"
                       data-testid="hsn-code-input"
+                    />
+                  </div>
+
+                  {/* Editable PO No. */}
+                  <div>
+                    <label className="label">PO No.</label>
+                    <input
+                      type="text"
+                      className="input font-mono-data"
+                      value={draft.po_no}
+                      onChange={(e) => handleInputChange('po_no', e.target.value)}
+                      placeholder="e.g. PO-2024-001"
+                      data-testid="po-no-input"
                     />
                   </div>
 
@@ -1176,6 +1200,21 @@ const InvoicesPage = () => {
                   <div className="flex justify-between font-bold text-lg text-emerald-700 pt-2 border-t">
                     <span>Net Amount Payable:</span>
                     <span>{formatINRRound(payableAmount)}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center text-sm font-medium pt-2">
+                    <span>Received Amount:</span>
+                    <input
+                      type="number"
+                      className="input w-32 text-right py-1"
+                      value={draft.received_amount === 0 ? '' : draft.received_amount}
+                      onChange={(e) => handleInputChange('received_amount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="flex justify-between font-bold text-lg text-rose-700 pt-2 border-t">
+                    <span>Balance Amount:</span>
+                    <span>{formatINRRound(payableAmount - (draft.received_amount || 0))}</span>
                   </div>
                 </div>
 
