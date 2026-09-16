@@ -439,7 +439,7 @@ const InvoicesPage = () => {
   }, 0) : 0;
   const gstAmount = baseValue * (draft.gst_percent / 100);
   const totalWithGst = baseValue + gstAmount;
-  const tdsAmount = formType === 'proforma' ? 0 : baseValue * (draft.tds_percent / 100);
+  const tdsAmount = baseValue * (draft.tds_percent / 100);
   const payableAmount = totalWithGst - tdsAmount;
 
   // Filter clients based on name or GSTIN
@@ -640,7 +640,7 @@ const InvoicesPage = () => {
                         ? inv.items.reduce((s, it) => s + (it.qty * it.rate), 0)
                         : (inv.qty * inv.rate);
                       const tax = base * (inv.gst_percent / 100);
-                      const tdsDeduction = formType === 'proforma' ? 0 : (base * (inv.tds_percent / 100));
+                      const tdsDeduction = base * (inv.tds_percent / 100);
                       const payable = (base + tax) - tdsDeduction;
                       return (
                         <tr key={inv.id} data-testid={`invoice-row-${inv.invoice_no}`}>
@@ -1130,35 +1130,31 @@ const InvoicesPage = () => {
                       </div>
                     </div>
 
-                    {formType !== 'proforma' && (
-                      <div>
-                        <label className="label">TDS Rate (%)</label>
-                        <input
-                          type="text"
-                          required
-                          className="input font-mono-data"
-                          value={draft.tds_percent}
-                          onChange={(e) => handleInputChange('tds_percent', e.target.value === '' ? '' : parseInt(e.target.value, 10) || 0)}
-                          placeholder="e.g. 10"
-                          data-testid="item-tds-input"
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  {formType !== 'proforma' && (
                     <div>
-                      <label className="label">TDS Section Code</label>
+                      <label className="label">TDS Rate (%)</label>
                       <input
                         type="text"
+                        required
                         className="input font-mono-data"
-                        value={draft.tds_section}
-                        onChange={(e) => handleInputChange('tds_section', e.target.value)}
-                        placeholder="e.g. 194J"
-                        data-testid="item-tds-section-input"
+                        value={draft.tds_percent}
+                        onChange={(e) => handleInputChange('tds_percent', e.target.value === '' ? '' : parseInt(e.target.value, 10) || 0)}
+                        placeholder="e.g. 10"
+                        data-testid="item-tds-input"
                       />
                     </div>
-                  )}
+                  </div>
+
+                  <div>
+                    <label className="label">TDS Section Code</label>
+                    <input
+                      type="text"
+                      className="input font-mono-data"
+                      value={draft.tds_section}
+                      onChange={(e) => handleInputChange('tds_section', e.target.value)}
+                      placeholder="e.g. 194J"
+                      data-testid="item-tds-section-input"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -1190,12 +1186,10 @@ const InvoicesPage = () => {
                     <span>{formatINR(totalWithGst)}</span>
                   </div>
 
-                  {formType !== 'proforma' && (
-                    <div className="flex justify-between text-red-600 border-b pb-2 border-dashed">
-                      <span>TDS Deduction (-{draft.tds_percent}%):</span>
-                      <span>-{formatINR(tdsAmount)}</span>
-                    </div>
-                  )}
+                  <div className="flex justify-between text-red-600 border-b pb-2 border-dashed">
+                    <span>TDS Deduction (-{draft.tds_percent}%):</span>
+                    <span>-{formatINR(tdsAmount)}</span>
+                  </div>
 
                   <div className="flex justify-between font-bold text-lg text-emerald-700 pt-2 border-t">
                     <span>Net Amount Payable:</span>

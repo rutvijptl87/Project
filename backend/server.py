@@ -9737,55 +9737,30 @@ async def _build_invoice_document_pdf(invoice: dict) -> bytes:
     # Push the text down to vertically center it in the 22mm box
     y_meta_top = y_top - 10 * mm
 
-    if is_proforma:
-        # Three columns, centered in thirds
-        c1 = v_split + (rp_w * 0.23)
-        c2 = v_split + (rp_w * 0.60)
-        c3 = v_split + (rp_w * 0.86)
-        
-        c.setFont("Roboto-Bold", 10)
-        c.drawCentredString(c1, y_meta_top, "Proforma Invoice No.")
-        c.drawCentredString(c2, y_meta_top, "Proforma Date")
-        c.drawCentredString(c3, y_meta_top, "Expiry Date")
-        
-        c.setFont("Roboto", 10)
-        
-        # Use Paragraph to wrap long invoice numbers
-        meta_style = ParagraphStyle('MetaStyle', parent=styles['Normal'], fontName='Roboto', fontSize=10, leading=11, alignment=1)
-        
-        inv_no_full = invoice.get("invoice_no", "")
-        parts = inv_no_full.split("-")
-        inv_no_display = "-".join(parts[:4]) if len(parts) >= 4 else inv_no_full
-        
-        p_inv = Paragraph(inv_no_display, meta_style)
-        w, h = p_inv.wrap(rp_w * 0.3, 20 * mm)
-        p_inv.drawOn(c, c1 - w/2, y_meta_top - 1.5 * mm - h)
-        
-        c.drawCentredString(c2, y_meta_top - 5 * mm, inv_date_str)
-        c.drawCentredString(c3, y_meta_top - 5 * mm, exp_date_str)
-    else:
-        # Two columns, centered in halves
-        c1 = v_split + (rp_w / 4)
-        c2 = v_split + (rp_w * 3 / 4)
-        
-        c.setFont("Roboto-Bold", 10)
-        c.drawCentredString(c1, y_meta_top, "Invoice No.")
-        c.drawCentredString(c2, y_meta_top, "Invoice Date")
-        
-        c.setFont("Roboto", 10)
-        
-        # Use Paragraph to wrap long invoice numbers
-        meta_style = ParagraphStyle('MetaStyle', parent=styles['Normal'], fontName='Roboto', fontSize=10, leading=11, alignment=1)
-        
-        inv_no_full = invoice.get("invoice_no", "")
-        parts = inv_no_full.split("-")
-        inv_no_display = "-".join(parts[:4]) if len(parts) >= 4 else inv_no_full
-        
-        p_inv = Paragraph(inv_no_display, meta_style)
-        w, h = p_inv.wrap(rp_w * 0.45, 20 * mm)
-        p_inv.drawOn(c, c1 - w/2, y_meta_top - 1.5 * mm - h)
-        
-        c.drawCentredString(c2, y_meta_top - 5 * mm, inv_date_str)
+    # Two columns, centered in halves
+    c1 = v_split + (rp_w / 4)
+    c2 = v_split + (rp_w * 3 / 4)
+    
+    c.setFont("Roboto-Bold", 10)
+    label_no = "Proforma Invoice No." if is_proforma else "Invoice No."
+    label_date = "Proforma Date" if is_proforma else "Invoice Date"
+    c.drawCentredString(c1, y_meta_top, label_no)
+    c.drawCentredString(c2, y_meta_top, label_date)
+    
+    c.setFont("Roboto", 10)
+    
+    # Use Paragraph to wrap long invoice numbers
+    meta_style = ParagraphStyle('MetaStyle', parent=styles['Normal'], fontName='Roboto', fontSize=10, leading=11, alignment=1)
+    
+    inv_no_full = invoice.get("invoice_no", "")
+    parts = inv_no_full.split("-")
+    inv_no_display = "-".join(parts[:4]) if len(parts) >= 4 else inv_no_full
+    
+    p_inv = Paragraph(inv_no_display, meta_style)
+    w, h = p_inv.wrap(rp_w * 0.45, 20 * mm)
+    p_inv.drawOn(c, c1 - w/2, y_meta_top - 1.5 * mm - h)
+    
+    c.drawCentredString(c2, y_meta_top - 5 * mm, inv_date_str)
 
     # Horizontal divider in right panel below invoice no / date
     y_split_line = y_top - 22 * mm
@@ -10328,8 +10303,15 @@ async def serve_invoice_pdf(invoice_id: str):
         
     pdf_bytes = await _build_invoice_document_pdf(doc)
     
+    inv_no_str = doc.get('invoice_no', 'doc')
+    if "-" in inv_no_str:
+        parts = inv_no_str.rsplit("-", 1)
+        client_name = doc.get("client_name", "Client").strip()
+        safe_client = "".join(c if c.isalnum() else "_" for c in client_name)
+        inv_no_str = f"{parts[0]}-{safe_client}"
+        
     # Replace spaces and slashes so the browser parses the filename correctly
-    fn = f"{doc.get('invoice_no', 'doc')}.pdf".replace(" ", "_").replace(">", "").replace("/", "-")
+    fn = f"{inv_no_str}.pdf".replace(" ", "_").replace(">", "").replace("/", "-")
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
